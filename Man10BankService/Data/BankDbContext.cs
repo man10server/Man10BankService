@@ -36,6 +36,8 @@ public class BankDbContext : DbContext
             e.HasKey(x => x.Id);
             e.HasIndex(x => x.Used);
             e.Property(x => x.Amount).HasPrecision(20, 0);
+            e.Property(x => x.UseDate).HasColumnName("use_date");
+            e.Property(x => x.UsePlayer).HasColumnName("use_player");
         });
 
         modelBuilder.Entity<Estate>(e =>
@@ -46,7 +48,7 @@ public class BankDbContext : DbContext
             e.Property(x => x.Vault).HasPrecision(20, 0);
             e.Property(x => x.Bank).HasPrecision(20, 0);
             e.Property(x => x.Cash).HasPrecision(20, 0);
-            e.Property(x => x.EstateAmount).HasPrecision(20, 0);
+            e.Property(x => x.EstateAmount).HasColumnName("estate").HasPrecision(20, 0);
             e.Property(x => x.Loan).HasPrecision(20, 0);
             e.Property(x => x.Shop).HasPrecision(20, 0);
             e.Property(x => x.Crypto).HasPrecision(20, 0);
@@ -61,7 +63,7 @@ public class BankDbContext : DbContext
             e.Property(x => x.Vault).HasPrecision(20, 0);
             e.Property(x => x.Bank).HasPrecision(20, 0);
             e.Property(x => x.Cash).HasPrecision(20, 0);
-            e.Property(x => x.EstateAmount).HasPrecision(20, 0);
+            e.Property(x => x.EstateAmount).HasColumnName("estate").HasPrecision(20, 0);
             e.Property(x => x.Loan).HasPrecision(20, 0);
             e.Property(x => x.Shop).HasPrecision(20, 0);
             e.Property(x => x.Crypto).HasPrecision(20, 0);
@@ -74,6 +76,13 @@ public class BankDbContext : DbContext
             e.HasKey(x => x.Id);
             e.HasIndex(x => new { x.BorrowPlayer, x.BorrowUuid });
             e.Property(x => x.Amount).HasPrecision(20, 0);
+            e.Property(x => x.LendPlayer).HasColumnName("lend_player");
+            e.Property(x => x.LendUuid).HasColumnName("lend_uuid");
+            e.Property(x => x.BorrowPlayer).HasColumnName("borrow_player");
+            e.Property(x => x.BorrowUuid).HasColumnName("borrow_uuid");
+            e.Property(x => x.BorrowDate).HasColumnName("borrow_date");
+            e.Property(x => x.PaybackDate).HasColumnName("payback_date");
+            e.Property(x => x.CollateralItem).HasColumnName("collateral_item");
         });
 
         modelBuilder.Entity<MoneyLog>(e =>
@@ -82,6 +91,8 @@ public class BankDbContext : DbContext
             e.HasKey(x => x.Id);
             e.HasIndex(x => new { x.Id, x.Uuid, x.Player });
             e.Property(x => x.Amount).HasPrecision(20, 0);
+            e.Property(x => x.PluginName).HasColumnName("plugin_name");
+            e.Property(x => x.DisplayNote).HasColumnName("display_note");
         });
 
         modelBuilder.Entity<ServerEstateHistory>(e =>
@@ -92,7 +103,7 @@ public class BankDbContext : DbContext
             e.Property(x => x.Vault).HasPrecision(20, 0);
             e.Property(x => x.Bank).HasPrecision(20, 0);
             e.Property(x => x.Cash).HasPrecision(20, 0);
-            e.Property(x => x.EstateAmount).HasPrecision(20, 0);
+            e.Property(x => x.EstateAmount).HasColumnName("estate").HasPrecision(20, 0);
             e.Property(x => x.Loan).HasPrecision(20, 0);
             e.Property(x => x.Shop).HasPrecision(20, 0);
             e.Property(x => x.Crypto).HasPrecision(20, 0);
@@ -104,8 +115,13 @@ public class BankDbContext : DbContext
             e.ToTable("server_loan_tbl");
             e.HasKey(x => x.Id);
             e.HasIndex(x => new { x.Uuid, x.BorrowAmount });
-            e.Property(x => x.BorrowAmount).HasPrecision(20, 0);
-            e.Property(x => x.PaymentAmount).HasPrecision(20, 0);
+            e.Property(x => x.BorrowAmount).HasColumnName("borrow_amount").HasPrecision(20, 0);
+            e.Property(x => x.PaymentAmount).HasColumnName("payment_amount").HasPrecision(20, 0);
+            e.Property(x => x.BorrowDate).HasColumnName("borrow_date");
+            e.Property(x => x.LastPayDate).HasColumnName("last_pay_date");
+            e.Property(x => x.FailedPayment).HasColumnName("failed_payment");
+            e.Property(x => x.StopInterest).HasColumnName("stop_interest");
+            e.Property(x => x.Uuid).HasColumnName("uuid");
         });
 
         modelBuilder.Entity<UserBank>(e =>
@@ -117,4 +133,3 @@ public class BankDbContext : DbContext
         });
     }
 }
-
