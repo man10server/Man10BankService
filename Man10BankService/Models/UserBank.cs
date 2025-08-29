@@ -13,7 +13,7 @@ public class UserBank
         set
         {
             if (value < 0)
-                throw new ArgumentOutOfRangeException(nameof(Balance), "Balance cannot be negative.");
+                throw new ArgumentOutOfRangeException(nameof(Balance), "所持金がマイナスになることはできません");
             _balance = value;
         }
     }

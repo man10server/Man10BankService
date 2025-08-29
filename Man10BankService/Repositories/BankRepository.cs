@@ -20,28 +20,15 @@ public class BankRepository
             .FirstOrDefaultAsync(x => x.Uuid == uuid);
         return bank?.Balance ?? 0m;
     }
-
-    public async Task<List<MoneyLog>> GetMoneyLogsAsync(string uuid, int limit = 100, int offset = 0)
-    {
-        limit = Math.Clamp(limit, 1, 1000);
-        offset = Math.Max(0, offset);
-        return await _db.MoneyLogs
-            .AsNoTracking()
-            .Where(x => x.Uuid == uuid)
-            .OrderByDescending(x => x.Date).ThenByDescending(x => x.Id)
-            .Skip(offset)
-            .Take(limit)
-            .ToListAsync();
-    }
-
+    
     public async Task<decimal> ChangeBalanceAsync(
         string uuid,
         string player,
         decimal delta,
-        string pluginName = "api",
-        string note = "",
-        string displayNote = "",
-        string server = "")
+        string pluginName,
+        string note,
+        string displayNote,
+        string server)
     {
         await using var tx = await _db.Database.BeginTransactionAsync();
 
@@ -83,6 +70,19 @@ public class BankRepository
 
         await tx.CommitAsync();
         return bank.Balance;
+    }
+
+    public async Task<List<MoneyLog>> GetMoneyLogsAsync(string uuid, int limit = 100, int offset = 0)
+    {
+        limit = Math.Clamp(limit, 1, 1000);
+        offset = Math.Max(0, offset);
+        return await _db.MoneyLogs
+            .AsNoTracking()
+            .Where(x => x.Uuid == uuid)
+            .OrderByDescending(x => x.Date).ThenByDescending(x => x.Id)
+            .Skip(offset)
+            .Take(limit)
+            .ToListAsync();
     }
 
     private async Task AddMoneyLogAsync(
