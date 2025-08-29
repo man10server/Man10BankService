@@ -1,6 +1,7 @@
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOpenApi();
+builder.Services.AddControllers();
 
 // DB 接続設定を起動時に一度だけ設定（IConfiguration を渡す）
 Man10BankService.Data.BankDbContext.Configure(builder.Configuration);
@@ -17,5 +18,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+app.MapControllers();
 
 app.Run();
