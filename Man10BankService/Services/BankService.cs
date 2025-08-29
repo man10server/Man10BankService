@@ -10,20 +10,17 @@ namespace Man10BankService.Services;
 public class BankService
 {
     private readonly BankRepository _repo;
+    private readonly IDbContextFactory<BankDbContext> _dbFactory;
+
+    public BankService(BankRepository repo, IDbContextFactory<BankDbContext> dbFactory)
+    {
+        _repo = repo;
+        _dbFactory = dbFactory;
+    }
 
     // UUID ごとに直列実行するためのキュー
     private readonly ConcurrentDictionary<string, Channel<BalanceWorkItemDecimal>> _queues = new();
     private readonly ConcurrentDictionary<string, Task> _workers = new();
-
-    public BankService(BankRepository repo)
-    {
-        _repo = repo;
-    }
-
-    // DI を使わない場合の簡易コンストラクタ（内部で Repository を組み立てる）
-    public BankService() : this(new BankRepository(new BankDbContext(new DbContextOptions<BankDbContext>())))
-    {
-    }
 
     // 残高取得（読み取りのため直列化は不要）
     public async Task<Result<decimal>> GetBalanceAsync(string uuid)
@@ -82,7 +79,9 @@ public class BankService
         {
             try
             {
-                var bal = await _repo.ChangeBalanceAsync(uuid, player, amount, pluginName, note, displayNote, server);
+                await using var db = await _dbFactory.CreateDbContextAsync();
+                var repo = new BankRepository(db);
+                var bal = await repo.ChangeBalanceAsync(uuid, player, amount, pluginName, note, displayNote, server);
                 return Result<decimal>.Ok(bal);
             }
             catch (ArgumentException ex)
@@ -122,7 +121,9 @@ public class BankService
                 if (current < amount)
                     return Result<decimal>.Fail(ResultCode.InsufficientFunds, "残高不足のため出金できません。");
 
-                var bal = await _repo.ChangeBalanceAsync(uuid, player, -amount, pluginName, note, displayNote, server);
+                await using var db = await _dbFactory.CreateDbContextAsync();
+                var repo = new BankRepository(db);
+                var bal = await repo.ChangeBalanceAsync(uuid, player, -amount, pluginName, note, displayNote, server);
                 return Result<decimal>.Ok(bal);
             }
             catch (ArgumentException ex)
