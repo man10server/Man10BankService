@@ -2,6 +2,8 @@ using System.Collections.Concurrent;
 using System.Threading.Channels;
 using Man10BankService.Models;
 using Man10BankService.Repositories;
+using Man10BankService.Data;
+using Microsoft.EntityFrameworkCore;
 
 namespace Man10BankService.Services;
 
@@ -16,6 +18,11 @@ public class BankService
     public BankService(BankRepository repo)
     {
         _repo = repo;
+    }
+
+    // DI を使わない場合の簡易コンストラクタ（内部で Repository を組み立てる）
+    public BankService() : this(new BankRepository(new BankDbContext(new DbContextOptions<BankDbContext>())))
+    {
     }
 
     // 残高取得（読み取りのため直列化は不要）
