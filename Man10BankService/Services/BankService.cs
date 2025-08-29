@@ -1,11 +1,8 @@
-using System.Collections.Concurrent;
 using System.Threading.Channels;
-using Man10BankService.Models;
 using Man10BankService.Models.Database;
 using Man10BankService.Models.Requests;
 using Man10BankService.Repositories;
 using Man10BankService.Data;
-using Man10BankService.Models.Database;
 using Microsoft.EntityFrameworkCore;
 
 namespace Man10BankService.Services;
@@ -124,7 +121,4 @@ public class BankService
             }
         }
     }
-
-    // 入出金リクエストの形式検証は Request DTO 側（DataAnnotations）で実施。
-    // Service はビジネスルール（残高不足など）のみで判定する。
 }

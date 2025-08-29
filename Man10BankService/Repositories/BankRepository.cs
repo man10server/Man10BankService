@@ -1,5 +1,4 @@
 using Man10BankService.Data;
-using Man10BankService.Models;
 using Man10BankService.Models.Database;
 using Microsoft.EntityFrameworkCore;
 
