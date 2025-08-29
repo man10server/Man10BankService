@@ -13,17 +13,15 @@ public class BankRepository
         _db = db;
     }
 
-    // public: 所持金取得（UUID指定）
-    public async Task<decimal> GetBalanceAsync(string uuid, CancellationToken ct = default)
+    public async Task<decimal> GetBalanceAsync(string uuid)
     {
         var bank = await _db.UserBanks
             .AsNoTracking()
-            .FirstOrDefaultAsync(x => x.Uuid == uuid, ct);
+            .FirstOrDefaultAsync(x => x.Uuid == uuid);
         return bank?.Balance ?? 0m;
     }
 
-    // public: MoneyLog 取得（UUID指定、簡易ページング）
-    public async Task<List<MoneyLog>> GetMoneyLogsAsync(string uuid, int limit = 100, int offset = 0, CancellationToken ct = default)
+    public async Task<List<MoneyLog>> GetMoneyLogsAsync(string uuid, int limit = 100, int offset = 0)
     {
         limit = Math.Clamp(limit, 1, 1000);
         offset = Math.Max(0, offset);
@@ -33,11 +31,9 @@ public class BankRepository
             .OrderByDescending(x => x.Date).ThenByDescending(x => x.Id)
             .Skip(offset)
             .Take(limit)
-            .ToListAsync(ct);
+            .ToListAsync();
     }
 
-    // public: 所持金の増減（UUID指定）。増減後の残高を返す。
-    // delta > 0 で入金（Deposit=true）、delta < 0 で出金（Deposit=false）
     public async Task<decimal> ChangeBalanceAsync(
         string uuid,
         string player,
@@ -45,14 +41,13 @@ public class BankRepository
         string pluginName = "api",
         string note = "",
         string displayNote = "",
-        string server = "",
-        CancellationToken ct = default)
+        string server = "")
     {
-        await using var tx = await _db.Database.BeginTransactionAsync(ct);
+        await using var tx = await _db.Database.BeginTransactionAsync();
 
         // 口座の取得/作成
         var bank = await _db.UserBanks
-            .FirstOrDefaultAsync(x => x.Uuid == uuid, ct);
+            .FirstOrDefaultAsync(x => x.Uuid == uuid);
 
         if (bank == null)
         {
@@ -62,7 +57,7 @@ public class BankRepository
                 Uuid = uuid,
                 Balance = 0m
             };
-            await _db.UserBanks.AddAsync(bank, ct);
+            await _db.UserBanks.AddAsync(bank);
         }
         else
         {
@@ -73,7 +68,7 @@ public class BankRepository
 
         // 残高更新
         bank.Balance += delta;
-        await _db.SaveChangesAsync(ct);
+        await _db.SaveChangesAsync();
 
         // MoneyLog 追加
         await AddMoneyLogAsync(
@@ -84,14 +79,12 @@ public class BankRepository
             note: note,
             displayNote: displayNote,
             server: server,
-            deposit: delta >= 0m,
-            ct: ct);
+            deposit: delta >= 0m);
 
-        await tx.CommitAsync(ct);
+        await tx.CommitAsync();
         return bank.Balance;
     }
 
-    // private: MoneyLog 追加
     private async Task AddMoneyLogAsync(
         string uuid,
         string player,
@@ -100,8 +93,7 @@ public class BankRepository
         string note,
         string displayNote,
         string server,
-        bool deposit,
-        CancellationToken ct)
+        bool deposit)
     {
         var log = new MoneyLog
         {
@@ -116,8 +108,7 @@ public class BankRepository
             // Date は DB 既定値（CURRENT_TIMESTAMP）を使用
         };
 
-        await _db.MoneyLogs.AddAsync(log, ct);
-        await _db.SaveChangesAsync(ct);
+        await _db.MoneyLogs.AddAsync(log);
+        await _db.SaveChangesAsync();
     }
 }
-
