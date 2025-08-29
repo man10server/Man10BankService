@@ -4,8 +4,8 @@ public class Estate
 {
     public int Id { get; set; }
     public string Uuid { get; set; } = null!;
-    public DateTime? Date { get; set; }
-    public string? Player { get; set; }
+    public DateTime Date { get; set; }
+    public string Player { get; set; } = string.Empty;
 
     public decimal Vault { get; set; }
     public decimal Bank { get; set; }
@@ -16,4 +16,3 @@ public class Estate
     public decimal Crypto { get; set; }
     public decimal Total { get; set; }
 }
-
