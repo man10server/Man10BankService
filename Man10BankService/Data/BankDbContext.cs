@@ -7,11 +7,18 @@ namespace Man10BankService.Data;
 public class BankDbContext : DbContext
 {
     private static string? _connectionString;
+    private static IConfiguration? _configuration;
 
     // アプリ起動時に一度だけ呼び出し、接続文字列を設定する
     public static void ConfigureConnection(string connectionString)
     {
         _connectionString = connectionString;
+    }
+
+    // 起動時に IConfiguration 全体を渡すオプション（Database セクションから組み立て）
+    public static void Configure(IConfiguration configuration)
+    {
+        _configuration = configuration;
     }
 
     public BankDbContext(DbContextOptions<BankDbContext> options) : base(options)
@@ -33,13 +40,28 @@ public class BankDbContext : DbContext
         if (optionsBuilder.IsConfigured)
             return;
 
-        // Program.cs 側から設定された静的接続文字列を使用
-        if (string.IsNullOrWhiteSpace(_connectionString))
+        // 優先: 明示的な接続文字列 -> IConfiguration(Database セクション) -> 例外
+        if (!string.IsNullOrWhiteSpace(_connectionString))
         {
-            throw new InvalidOperationException("データベース接続が未設定です。起動時に BankDbContext.ConfigureConnection(...) を呼び出してください。");
+            optionsBuilder.UseMySql(_connectionString, ServerVersion.AutoDetect(_connectionString));
+            return;
         }
 
-        optionsBuilder.UseMySql(_connectionString, ServerVersion.AutoDetect(_connectionString));
+        if (_configuration is not null)
+        {
+            var db = _configuration.GetSection("Database");
+            var host = db["Host"] ?? "localhost";
+            var port = db["Port"] ?? "3306";
+            var name = db["Name"] ?? "man10bank";
+            var user = db["User"] ?? "root";
+            var password = db["Password"] ?? "";
+            var treatTiny = (db["TreatTinyAsBoolean"] ?? "true").ToLowerInvariant();
+            var cs = $"Server={host};Port={port};Database={name};User Id={user};Password={password};TreatTinyAsBoolean={treatTiny};";
+            optionsBuilder.UseMySql(cs, ServerVersion.AutoDetect(cs));
+            return;
+        }
+
+        throw new InvalidOperationException("データベース接続が未設定です。起動時に BankDbContext.Configure(...) もしくは ConfigureConnection(...) を呼び出してください。");
     }
     
     protected override void OnModelCreating(ModelBuilder modelBuilder)
