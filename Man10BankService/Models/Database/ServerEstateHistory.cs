@@ -1,4 +1,4 @@
-namespace Man10BankService.Models;
+namespace Man10BankService.Models.Database;
 
 public class ServerEstateHistory
 {

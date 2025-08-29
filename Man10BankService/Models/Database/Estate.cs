@@ -1,11 +1,11 @@
-namespace Man10BankService.Models;
+namespace Man10BankService.Models.Database;
 
 public class Estate
 {
     public int Id { get; set; }
-    public string Uuid { get; set; } = null!;
+    public string Uuid { get; set; }
     public DateTime Date { get; set; }
-    public string Player { get; set; } = string.Empty;
+    public string Player { get; set; }
 
     public decimal Vault { get; set; }
     public decimal Bank { get; set; }

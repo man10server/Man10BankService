@@ -1,10 +1,10 @@
-namespace Man10BankService.Models;
+namespace Man10BankService.Models.Database;
 
 public class UserBank
 {
     public int Id { get; set; }
-    public string Player { get; set; } = null!;
-    public string Uuid { get; set; } = null!;
+    public string Player { get; set; }
+    public string Uuid { get; set; }
 
     private decimal _balance;
     public decimal Balance

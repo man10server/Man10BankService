@@ -1,14 +1,14 @@
-namespace Man10BankService.Models;
+namespace Man10BankService.Models.Database;
 
 public class Loan
 {
     public int Id { get; set; }
-    public string LendPlayer { get; set; } = string.Empty;
-    public string LendUuid { get; set; } = string.Empty;
-    public string BorrowPlayer { get; set; } = string.Empty;
-    public string BorrowUuid { get; set; } = string.Empty;
+    public string LendPlayer { get; set; }
+    public string LendUuid { get; set; }
+    public string BorrowPlayer { get; set; }
+    public string BorrowUuid { get; set; }
     public DateTime BorrowDate { get; set; }
     public DateTime PaybackDate { get; set; }
     public decimal Amount { get; set; }
-    public string CollateralItem { get; set; } = string.Empty;
+    public string CollateralItem { get; set; }
 }

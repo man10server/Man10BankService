@@ -1,6 +1,6 @@
 using Man10BankService.Models;
+using Man10BankService.Models.Database;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
 
 namespace Man10BankService.Data;
 
@@ -8,7 +8,6 @@ public class BankDbContext : DbContext
 {
     private static string? _connectionString;
 
-    // 起動時に IConfiguration 全体を渡すオプション（Database セクションから組み立て）
     public static void Configure(IConfiguration configuration)
     {
         var db = configuration.GetSection("Database");

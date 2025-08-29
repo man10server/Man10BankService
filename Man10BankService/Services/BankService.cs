@@ -26,8 +26,6 @@ public class BankService
 
     public async Task<ApiResult<decimal>> GetBalanceAsync(string uuid)
     {
-        var (ok, err) = ValidateUuid(uuid);
-        if (!ok) return ApiResult<decimal>.BadRequest(err);
         try
         {
             var repo = new BankRepository(_dbFactory);
@@ -42,8 +40,6 @@ public class BankService
 
     public async Task<ApiResult<List<MoneyLog>>> GetLogsAsync(string uuid, int limit = 100, int offset = 0)
     {
-        var (ok, err) = ValidateUuid(uuid);
-        if (!ok) return ApiResult<List<MoneyLog>>.BadRequest(err);
         if (limit is < 1 or > 1000)
             return ApiResult<List<MoneyLog>>.BadRequest("limit は 1..1000 の範囲で指定してください。");
         if (offset < 0)

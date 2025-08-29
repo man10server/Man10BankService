@@ -1,10 +1,10 @@
-namespace Man10BankService.Models;
+namespace Man10BankService.Models.Database;
 
 public class Cheque
 {
     public int Id { get; set; }
-    public string Player { get; set; } = string.Empty;
-    public string Uuid { get; set; } = string.Empty;
+    public string Player { get; set; }
+    public string Uuid { get; set; }
     public decimal Amount { get; set; }
     public string Note { get; set; } = string.Empty;
     public DateTime Date { get; set; }
