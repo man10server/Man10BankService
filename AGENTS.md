@@ -1,38 +1,43 @@
-# Repository Guidelines
+# リポジトリ運用ガイドライン
 
-## Project Structure & Module Organization
-- Root: solution `Man10BankService.sln`.
-- App: `Man10BankService/` (ASP.NET Core minimal API, .NET 9).
-  - Entry: `Program.cs`
-  - Config: `appsettings.json`, `appsettings.Development.json`
-  - HTTP samples: `Man10BankService.http`
-  - Build output: `bin/`, `obj/` (git-ignored)
+## プロジェクト構成・モジュール構成
+- ルート: ソリューション `Man10BankService.sln`。
+- アプリ: `Man10BankService/`（ASP.NET Core Minimal API、.NET 9）。
+  - エントリーポイント: `Program.cs`
+  - 設定: `appsettings.json`, `appsettings.Development.json`
+  - HTTP サンプル: `Man10BankService.http`
+  - ビルド成果物: `bin/`, `obj/`（Git で無視）
 
-## Build, Test, and Development Commands
-- Build: `dotnet build` — restores packages and compiles the solution.
-- Run (dev): `dotnet run --project Man10BankService` — starts Kestrel; OpenAPI doc is served only in Development at `/openapi/v1.json`.
-- Watch: `dotnet watch --project Man10BankService run` — hot-reloads on file changes.
-- Restore: `dotnet restore` — fetches NuGet deps.
+## ビルド・テスト・開発コマンド
+- Build: `dotnet build` — パッケージを復元し、ソリューションをコンパイルする。
+- Run (dev): `dotnet run --project Man10BankService` — Kestrel を起動。OpenAPI ドキュメントは Development のみ `/openapi/v1.json` で提供。
+- Watch: `dotnet watch --project Man10BankService run` — ファイル変更でホットリロード。
+- Restore: `dotnet restore` — NuGet 依存関係を取得。
 
-## Coding Style & Naming Conventions
-- Language: C# with `nullable` and `implicit usings` enabled.
-- Indentation: 4 spaces; UTF-8; LF line endings.
-- Naming: PascalCase for types/methods; camelCase for locals/params; suffix async methods with `Async`.
-- Minimal APIs: prefer clear route names (e.g., `.WithName("GetWeatherForecast")`) and small records/DTOs near usage or under `Man10BankService/Models/` when they grow.
-- Formatting: run `dotnet format` before pushing (if installed).
+## コーディングスタイル・命名規則
+- 言語: C#（`nullable` と `implicit usings` を有効化）。
+- インデント: 4 スペース、UTF-8、LF 改行。
+- 命名: 型/メソッドは PascalCase、ローカル変数/引数は camelCase、非同期メソッドは `Async` 接尾辞を付与。
+- Minimal API: ルート名は明確に（例: `.WithName("GetWeatherForecast")`）。小さなレコード/DTO は使用箇所近くに配置し、肥大化したら `Man10BankService/Models/` 配下へ。
+- フォーマット: 可能ならプッシュ前に `dotnet format` を実行。
 
-## Testing Guidelines
-- Framework: xUnit (recommended). Create `tests/Man10BankService.Tests/` with a parallelizable test project.
-- Naming: `ClassName_MethodName_ShouldExpected` (file and method level).
-- Run tests: `dotnet test` (from repo root) once a test project exists.
-- Coverage (recommended): use `coverlet` or `dotnet test /p:CollectCoverage=true`.
+## テストガイドライン
+- フレームワーク: xUnit（推奨）。`tests/Man10BankService.Tests/` に並列実行可能なテストプロジェクトを作成。
+- 命名: `ClassName_MethodName_ShouldExpected`（ファイル名・メソッド名）。
+- 実行: テストプロジェクト作成後はリポジトリルートで `dotnet test`。
+- カバレッジ（推奨）: `coverlet` または `dotnet test /p:CollectCoverage=true` を使用。
 
-## Commit & Pull Request Guidelines
-- Commits: use concise, imperative messages; consider Conventional Commits (e.g., `feat: add account deposit endpoint`).
-- PRs: include purpose, linked issues, and brief testing notes; add screenshots of API responses or OpenAPI diffs when relevant.
-- CI-readiness: ensure `dotnet build` and (if present) `dotnet test` pass locally; no console warnings.
+## コミット & プルリクエスト ガイドライン
+- コミット: 簡潔で命令形のメッセージを使用。Conventional Commits を推奨（例: `feat: add account deposit endpoint`）。
+- 機能追加のたびにコミット: 機能を追加するごとに、関連変更を小さく分割して Git にコミットする（動く単位で頻繁にコミット）。
+- PR: 目的、関連 Issue、簡単なテストノートを含める。必要に応じて API レスポンスのスクリーンショットや OpenAPI の差分を添付。
+- CI 準備: ローカルで `dotnet build` と（存在する場合）`dotnet test` が成功し、コンソールに警告が出ない状態にする。
 
-## Security & Configuration Tips
-- Secrets: do not commit secrets; prefer environment variables or user secrets (`dotnet user-secrets`) for local dev.
-- Profiles: app reads `appsettings.*.json` by environment; default is `Development` when using `dotnet run` locally.
-- HTTPS: app enforces HTTPS redirection; use the dev certificate (`dotnet dev-certs https --trust`) if needed.
+## セキュリティ & 設定のヒント
+- シークレット: シークレットはコミットしない。ローカル開発では環境変数またはユーザーシークレット（`dotnet user-secrets`）を使用。
+- プロファイル: アプリは環境ごとに `appsettings.*.json` を読み込む。ローカルの `dotnet run` は既定で `Development`。
+- HTTPS: HTTPS リダイレクトを強制。必要に応じて開発証明書を信頼設定（`dotnet dev-certs https --trust`）。
+
+## コミュニケーションルール
+- 言語: すべてのコミュニケーション（Issue、PR、コメント、ドキュメント、コミットメッセージ）は日本語で行う。
+- 明瞭性: 結論→理由→補足の順で簡潔に記述し、必要に応じてコード断片やパス（例: `Program.cs`）を示す。
