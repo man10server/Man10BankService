@@ -1,5 +1,6 @@
 using Man10BankService.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 
 namespace Man10BankService.Data;
 
@@ -166,5 +167,25 @@ public class BankDbContext : DbContext
             e.HasIndex(x => new { x.Id, x.Uuid, x.Player });
             e.Property(x => x.Balance).HasPrecision(20, 0);
         });
+    }
+
+    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+    {
+        if (optionsBuilder.IsConfigured)
+            return;
+
+        // Fallback: load connection string from appsettings.json if not configured by DI
+        var environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production";
+        var configuration = new ConfigurationBuilder()
+            .SetBasePath(AppContext.BaseDirectory)
+            .AddJsonFile("appsettings.json", optional: true, reloadOnChange: false)
+            .AddJsonFile($"appsettings.{environment}.json", optional: true, reloadOnChange: false)
+            .AddEnvironmentVariables()
+            .Build();
+
+        var connectionString = configuration.GetConnectionString("Default")
+                               ?? "Server=localhost;Port=3306;Database=man10bank;User Id=root;Password=;TreatTinyAsBoolean=true;";
+
+        optionsBuilder.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString));
     }
 }
