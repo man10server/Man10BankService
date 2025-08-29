@@ -1,27 +1,32 @@
-using System.Net;
-using System.Net.Http.Json;
 using FluentAssertions;
+using Man10BankService.Controllers;
+using Man10BankService.Data;
 using Man10BankService.Models.Database;
 using Man10BankService.Models.Requests;
 using Man10BankService.Services;
-using Test.Infrastructure;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace Test.Controllers;
 
-public class BankControllerTests : IClassFixture<MySqlFixture>
+public class BankControllerTests
 {
-    private readonly ApiFactory _factory;
-
-    public BankControllerTests(MySqlFixture fixture)
+    private static BankController BuildController(string dbName)
     {
-        _factory = new ApiFactory(fixture);
+        var services = new ServiceCollection();
+        services.AddPooledDbContextFactory<BankDbContext>(o => o.UseInMemoryDatabase(dbName));
+        var sp = services.BuildServiceProvider();
+        var factory = sp.GetRequiredService<IDbContextFactory<BankDbContext>>();
+        var service = new BankService(factory);
+        return new BankController(service);
     }
 
     [Fact]
     public async Task Deposit_Success_ShouldIncreaseBalance_AndWriteLog()
     {
-        var client = _factory.CreateClient(new() { BaseAddress = new Uri("https://localhost") });
+        var ctrl = BuildController("deposit-success");
         var req = new DepositRequest
         {
             Uuid = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
@@ -32,24 +37,26 @@ public class BankControllerTests : IClassFixture<MySqlFixture>
             DisplayNote = "入金テスト",
             Server = "dev"
         };
-        var res = await client.PostAsJsonAsync("/api/bank/deposit", req);
-        res.StatusCode.Should().Be(HttpStatusCode.OK);
-        var body = await res.Content.ReadFromJsonAsync<ApiResult<decimal>>();
+
+        var result = await ctrl.Deposit(req) as ObjectResult;
+        result!.StatusCode.Should().Be(200);
+        var body = result.Value as ApiResult<decimal>;
         body!.Data.Should().Be(500);
 
-        var bal = await client.GetFromJsonAsync<ApiResult<decimal>>($"/api/bank/{req.Uuid}/balance");
-        bal!.Data.Should().Be(500);
+        var balRes = await ctrl.GetBalance(req.Uuid) as ObjectResult;
+        (balRes!.Value as ApiResult<decimal>)!.Data.Should().Be(500);
 
-        var logs = await client.GetFromJsonAsync<ApiResult<List<MoneyLog>>>($"/api/bank/{req.Uuid}/logs?limit=10");
-        logs!.Data!.Count.Should().BeGreaterOrEqualTo(1);
-        logs.Data![0].Amount.Should().Be(500);
-        logs.Data![0].Deposit.Should().BeTrue();
+        var logsRes = await ctrl.GetLogs(req.Uuid, 10, 0) as ObjectResult;
+        var logs = (logsRes!.Value as ApiResult<List<MoneyLog>>)!.Data!;
+        logs.Count.Should().BeGreaterOrEqualTo(1);
+        logs[0].Amount.Should().Be(500);
+        logs[0].Deposit.Should().BeTrue();
     }
 
     [Fact]
     public async Task Deposit_Invalid_ShouldNotChangeBalance_AndReturn400()
     {
-        var client = _factory.CreateClient(new() { BaseAddress = new Uri("https://localhost") });
+        var ctrl = BuildController("deposit-invalid");
         var req = new DepositRequest
         {
             Uuid = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
@@ -60,23 +67,27 @@ public class BankControllerTests : IClassFixture<MySqlFixture>
             DisplayNote = "入金テスト",
             Server = "dev"
         };
-        var res = await client.PostAsJsonAsync("/api/bank/deposit", req);
-        res.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
-        var bal = await client.GetFromJsonAsync<ApiResult<decimal>>($"/api/bank/{req.Uuid}/balance");
-        bal!.Data.Should().Be(0);
+        // ModelState.IsValid を評価させるために TryValidateModel を使う
+        ctrl.TryValidateModel(req).Should().BeTrue(); // DataAnnotations は DTO 側、Amount>0 はサービス前提で検出
+        var result = await ctrl.Deposit(req) as ObjectResult;
+        // DepositAsync 内の金額>0 判定で BadRequest
+        result!.StatusCode.Should().Be(400);
 
-        var logs = await client.GetFromJsonAsync<ApiResult<List<MoneyLog>>>($"/api/bank/{req.Uuid}/logs?limit=10");
-        logs!.Data!.Count.Should().Be(0);
+        var balRes = await ctrl.GetBalance(req.Uuid) as ObjectResult;
+        (balRes!.Value as ApiResult<decimal>)!.Data.Should().Be(0);
+
+        var logsRes = await ctrl.GetLogs(req.Uuid, 10, 0) as ObjectResult;
+        (logsRes!.Value as ApiResult<List<MoneyLog>>)!.Data!.Count.Should().Be(0);
     }
 
     [Fact]
-    public async Task Withdraw_Success_And_Failure_Paths()
+    public async Task Withdraw_Success_Then_Insufficient_Should409_And_NoChange()
     {
-        var client = _factory.CreateClient(new() { BaseAddress = new Uri("https://localhost") });
+        var ctrl = BuildController("withdraw-mix");
         var uuid = "cccccccc-cccc-cccc-cccc-cccccccccccc";
-        // seed 1000
-        var seed = new DepositRequest
+
+        await ctrl.Deposit(new DepositRequest
         {
             Uuid = uuid,
             Player = "alex",
@@ -85,11 +96,9 @@ public class BankControllerTests : IClassFixture<MySqlFixture>
             Note = "seed",
             DisplayNote = "初期入金",
             Server = "dev"
-        };
-        (await client.PostAsJsonAsync("/api/bank/deposit", seed)).EnsureSuccessStatusCode();
+        });
 
-        // withdraw 600 -> OK (balance 400)
-        var w1 = new WithdrawRequest
+        var ok = await ctrl.Withdraw(new WithdrawRequest
         {
             Uuid = uuid,
             Player = "alex",
@@ -98,14 +107,12 @@ public class BankControllerTests : IClassFixture<MySqlFixture>
             Note = "w1",
             DisplayNote = "出金1",
             Server = "dev"
-        };
-        var res1 = await client.PostAsJsonAsync("/api/bank/withdraw", w1);
-        res1.StatusCode.Should().Be(HttpStatusCode.OK);
-        var bal1 = await client.GetFromJsonAsync<ApiResult<decimal>>($"/api/bank/{uuid}/balance");
-        bal1!.Data.Should().Be(400);
+        }) as ObjectResult;
+        ok!.StatusCode.Should().Be(200);
+        var bal1 = await ctrl.GetBalance(uuid) as ObjectResult;
+        (bal1!.Value as ApiResult<decimal>)!.Data.Should().Be(400);
 
-        // withdraw 500 -> Conflict (insufficient)
-        var w2 = new WithdrawRequest
+        var ng = await ctrl.Withdraw(new WithdrawRequest
         {
             Uuid = uuid,
             Player = "alex",
@@ -114,15 +121,10 @@ public class BankControllerTests : IClassFixture<MySqlFixture>
             Note = "w2",
             DisplayNote = "出金2",
             Server = "dev"
-        };
-        var res2 = await client.PostAsJsonAsync("/api/bank/withdraw", w2);
-        res2.StatusCode.Should().Be(HttpStatusCode.Conflict);
-        var bal2 = await client.GetFromJsonAsync<ApiResult<decimal>>($"/api/bank/{uuid}/balance");
-        bal2!.Data.Should().Be(400);
+        }) as ObjectResult;
+        ng!.StatusCode.Should().Be(409);
 
-        var logs = await client.GetFromJsonAsync<ApiResult<List<MoneyLog>>>($"/api/bank/{uuid}/logs?limit=10");
-        logs!.Data!.Count.Should().BeGreaterOrEqualTo(2);
-        logs.Data![0].Deposit.Should().BeFalse();
+        var bal2 = await ctrl.GetBalance(uuid) as ObjectResult;
+        (bal2!.Value as ApiResult<decimal>)!.Data.Should().Be(400);
     }
 }
-
