@@ -6,6 +6,14 @@ namespace Man10BankService.Data;
 
 public class BankDbContext : DbContext
 {
+    private static string? _connectionString;
+
+    // アプリ起動時に一度だけ呼び出し、接続文字列を設定する
+    public static void ConfigureConnection(string connectionString)
+    {
+        _connectionString = connectionString;
+    }
+
     public BankDbContext(DbContextOptions<BankDbContext> options) : base(options)
     {
     }
@@ -19,7 +27,21 @@ public class BankDbContext : DbContext
     public DbSet<ServerEstateHistory> ServerEstateHistories => Set<ServerEstateHistory>();
     public DbSet<ServerLoan> ServerLoans => Set<ServerLoan>();
     public DbSet<UserBank> UserBanks => Set<UserBank>();
+    
+    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+    {
+        if (optionsBuilder.IsConfigured)
+            return;
 
+        // Program.cs 側から設定された静的接続文字列を使用
+        if (string.IsNullOrWhiteSpace(_connectionString))
+        {
+            throw new InvalidOperationException("データベース接続が未設定です。起動時に BankDbContext.ConfigureConnection(...) を呼び出してください。");
+        }
+
+        optionsBuilder.UseMySql(_connectionString, ServerVersion.AutoDetect(_connectionString));
+    }
+    
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -167,25 +189,5 @@ public class BankDbContext : DbContext
             e.HasIndex(x => new { x.Id, x.Uuid, x.Player });
             e.Property(x => x.Balance).HasPrecision(20, 0);
         });
-    }
-
-    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-    {
-        if (optionsBuilder.IsConfigured)
-            return;
-
-        // Fallback: load connection string from appsettings.json if not configured by DI
-        var environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production";
-        var configuration = new ConfigurationBuilder()
-            .SetBasePath(AppContext.BaseDirectory)
-            .AddJsonFile("appsettings.json", optional: true, reloadOnChange: false)
-            .AddJsonFile($"appsettings.{environment}.json", optional: true, reloadOnChange: false)
-            .AddEnvironmentVariables()
-            .Build();
-
-        var connectionString = configuration.GetConnectionString("Default")
-                               ?? "Server=localhost;Port=3306;Database=man10bank;User Id=root;Password=;TreatTinyAsBoolean=true;";
-
-        optionsBuilder.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString));
     }
 }
