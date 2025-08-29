@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Threading.Channels;
 using Man10BankService.Models;
+using Man10BankService.Models.Requests;
 using Man10BankService.Repositories;
 using Man10BankService.Data;
 using Microsoft.EntityFrameworkCore;
@@ -11,147 +12,125 @@ public class BankService
 {
     private readonly IDbContextFactory<BankDbContext> _dbFactory;
 
+    // サービス全体で1本のトランザクションキュー（書き込み系のみが対象）
+    private readonly Channel<TxWorkItem> _txChannel = Channel.CreateUnbounded<TxWorkItem>(
+        new UnboundedChannelOptions { SingleReader = true, SingleWriter = false });
+    private readonly Task _txWorker;
+
     public BankService(IDbContextFactory<BankDbContext> dbFactory)
     {
         _dbFactory = dbFactory;
+        _txWorker = Task.Run(WorkerLoopAsync);
     }
 
-    // UUID ごとに直列実行するためのキュー
-    private readonly ConcurrentDictionary<string, Channel<BalanceWorkItemDecimal>> _queues = new();
-    private readonly ConcurrentDictionary<string, Task> _workers = new();
-
-    // 残高取得（読み取りのため直列化は不要）
-    public async Task<Result<decimal>> GetBalanceAsync(string uuid)
+    public async Task<ApiResult<decimal>> GetBalanceAsync(string uuid)
     {
         var (ok, err) = ValidateUuid(uuid);
-        if (!ok) return Result<decimal>.Fail(ResultCode.InvalidArgument, err);
+        if (!ok) return ApiResult<decimal>.BadRequest(err);
         try
         {
             var repo = new BankRepository(_dbFactory);
             var bal = await repo.GetBalanceAsync(uuid);
-            return Result<decimal>.Ok(bal);
+            return ApiResult<decimal>.Ok(bal);
         }
         catch (Exception ex)
         {
-            return Result<decimal>.Fail(ResultCode.Error, $"残高取得に失敗しました: {ex.Message}");
+            return ApiResult<decimal>.Error($"残高取得に失敗しました: {ex.Message}");
         }
     }
 
-    // MoneyLog 取得（読み取りのため直列化は不要）
-    public async Task<Result<List<MoneyLog>>> GetLogsAsync(string uuid, int limit = 100, int offset = 0)
+    public async Task<ApiResult<List<MoneyLog>>> GetLogsAsync(string uuid, int limit = 100, int offset = 0)
     {
         var (ok, err) = ValidateUuid(uuid);
-        if (!ok) return Result<List<MoneyLog>>.Fail(ResultCode.InvalidArgument, err);
-        if (limit < 1 || limit > 1000)
-            return Result<List<MoneyLog>>.Fail(ResultCode.InvalidArgument, "limit は 1..1000 の範囲で指定してください。");
+        if (!ok) return ApiResult<List<MoneyLog>>.BadRequest(err);
+        if (limit is < 1 or > 1000)
+            return ApiResult<List<MoneyLog>>.BadRequest("limit は 1..1000 の範囲で指定してください。");
         if (offset < 0)
-            return Result<List<MoneyLog>>.Fail(ResultCode.InvalidArgument, "offset は 0 以上で指定してください。");
+            return ApiResult<List<MoneyLog>>.BadRequest("offset は 0 以上で指定してください。");
         try
         {
             var repo = new BankRepository(_dbFactory);
             var logs = await repo.GetMoneyLogsAsync(uuid, limit, offset);
-            return Result<List<MoneyLog>>.Ok(logs);
+            return ApiResult<List<MoneyLog>>.Ok(logs);
         }
         catch (Exception ex)
         {
-            return Result<List<MoneyLog>>.Fail(ResultCode.Error, $"ログ取得に失敗しました: {ex.Message}");
+            return ApiResult<List<MoneyLog>>.Error($"ログ取得に失敗しました: {ex.Message}");
         }
     }
 
-    // 入金（直列化して順番に実行）
-    public Task<Result<decimal>> DepositAsync(
-        string uuid,
-        string player,
-        decimal amount,
-        string pluginName,
-        string note,
-        string displayNote,
-        string server)
+    // 入金（サービス全体で直列化）
+    public Task<ApiResult<decimal>> DepositAsync(DepositRequest req)
     {
-        var (ok, err) = ValidateUuid(uuid);
-        if (!ok) return Task.FromResult(Result<decimal>.Fail(ResultCode.InvalidArgument, err));
-        var (okP, errP) = ValidatePlayer(player);
-        if (!okP) return Task.FromResult(Result<decimal>.Fail(ResultCode.InvalidArgument, errP));
-        if (amount <= 0m)
-            return Task.FromResult(Result<decimal>.Fail(ResultCode.InvalidArgument, "入金額は 0 より大きい必要があります。"));
+        var (ok, err) = ValidateUuid(req.Uuid);
+        if (!ok) return Task.FromResult(ApiResult<decimal>.BadRequest(err));
+        var (okP, errP) = ValidatePlayer(req.Player);
+        if (!okP) return Task.FromResult(ApiResult<decimal>.BadRequest(errP));
+        if (req.Amount <= 0m)
+            return Task.FromResult(ApiResult<decimal>.BadRequest("入金額は 0 より大きい必要があります。"));
 
-        return EnqueueBalanceChange(uuid, async () =>
+        return EnqueueBalanceChange(async () =>
         {
             try
             {
                 var repo = new BankRepository(_dbFactory);
-                var bal = await repo.ChangeBalanceAsync(uuid, player, amount, pluginName, note, displayNote, server);
-                return Result<decimal>.Ok(bal);
+                var bal = await repo.ChangeBalanceAsync(req.Uuid, req.Player, req.Amount, req.PluginName, req.Note, req.DisplayNote, req.Server);
+                return ApiResult<decimal>.Ok(bal);
             }
             catch (ArgumentException ex)
             {
-                return Result<decimal>.Fail(ResultCode.InvalidArgument, ex.Message);
+                return ApiResult<decimal>.BadRequest(ex.Message);
             }
             catch (Exception ex)
             {
-                return Result<decimal>.Fail(ResultCode.Error, $"入金に失敗しました: {ex.Message}");
+                return ApiResult<decimal>.Error($"入金に失敗しました: {ex.Message}");
             }
         });
     }
 
-    // 出金（直列化して順番に実行）
-    public Task<Result<decimal>> WithdrawAsync(
-        string uuid,
-        string player,
-        decimal amount,
-        string pluginName,
-        string note,
-        string displayNote,
-        string server)
+    // 出金（サービス全体で直列化）
+    public Task<ApiResult<decimal>> WithdrawAsync(WithdrawRequest req)
     {
-        var (ok, err) = ValidateUuid(uuid);
-        if (!ok) return Task.FromResult(Result<decimal>.Fail(ResultCode.InvalidArgument, err));
-        var (okP, errP) = ValidatePlayer(player);
-        if (!okP) return Task.FromResult(Result<decimal>.Fail(ResultCode.InvalidArgument, errP));
-        if (amount <= 0m)
-            return Task.FromResult(Result<decimal>.Fail(ResultCode.InvalidArgument, "出金額は 0 より大きい必要があります。"));
+        var (ok, err) = ValidateUuid(req.Uuid);
+        if (!ok) return Task.FromResult(ApiResult<decimal>.BadRequest(err));
+        var (okP, errP) = ValidatePlayer(req.Player);
+        if (!okP) return Task.FromResult(ApiResult<decimal>.BadRequest(errP));
+        if (req.Amount <= 0m)
+            return Task.FromResult(ApiResult<decimal>.BadRequest("出金額は 0 より大きい必要があります。"));
 
-        return EnqueueBalanceChange(uuid, async () =>
+        return EnqueueBalanceChange(async () =>
         {
             try
             {
-                // 直列実行キュー内で残高確認 → 不足なら即エラー
                 var repo = new BankRepository(_dbFactory);
-                var current = await repo.GetBalanceAsync(uuid);
-                if (current < amount)
-                    return Result<decimal>.Fail(ResultCode.InsufficientFunds, "残高不足のため出金できません。");
+                var current = await repo.GetBalanceAsync(req.Uuid);
+                if (current < req.Amount)
+                    return ApiResult<decimal>.Conflict("残高不足のため出金できません。");
 
-                var bal = await repo.ChangeBalanceAsync(uuid, player, -amount, pluginName, note, displayNote, server);
-                return Result<decimal>.Ok(bal);
+                var bal = await repo.ChangeBalanceAsync(req.Uuid, req.Player, -req.Amount, req.PluginName, req.Note, req.DisplayNote, req.Server);
+                return ApiResult<decimal>.Ok(bal);
             }
             catch (ArgumentException ex)
             {
-                return Result<decimal>.Fail(ResultCode.InvalidArgument, ex.Message);
+                return ApiResult<decimal>.BadRequest(ex.Message);
             }
             catch (Exception ex)
             {
-                return Result<decimal>.Fail(ResultCode.Error, $"出金に失敗しました: {ex.Message}");
+                return ApiResult<decimal>.Error($"出金に失敗しました: {ex.Message}");
             }
         });
     }
 
-    // キュー投入とワーカー起動
-    private Task<Result<decimal>> EnqueueBalanceChange(string uuid, Func<Task<Result<decimal>>> work)
+    private Task<ApiResult<decimal>> EnqueueBalanceChange(Func<Task<ApiResult<decimal>>> work)
     {
-        var channel = _queues.GetOrAdd(uuid, _ => Channel.CreateUnbounded<BalanceWorkItemDecimal>(
-            new UnboundedChannelOptions { SingleReader = true, SingleWriter = false }));
-
-        // ワーカーが起動していなければ起動
-        _workers.GetOrAdd(uuid, _ => Task.Run(() => WorkerLoopAsync(uuid, channel)));
-
-        var tcs = new TaskCompletionSource<Result<decimal>>(TaskCreationOptions.RunContinuationsAsynchronously);
-        channel.Writer.TryWrite(new BalanceWorkItemDecimal(work, tcs));
+        var tcs = new TaskCompletionSource<ApiResult<decimal>>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _txChannel.Writer.TryWrite(new TxWorkItem(work, tcs));
         return tcs.Task;
     }
 
-    private async Task WorkerLoopAsync(string uuid, Channel<BalanceWorkItemDecimal> channel)
+    private async Task WorkerLoopAsync()
     {
-        await foreach (var item in channel.Reader.ReadAllAsync())
+        await foreach (var item in _txChannel.Reader.ReadAllAsync())
         {
             try
             {
@@ -160,10 +139,9 @@ public class BankService
             }
             catch (Exception ex)
             {
-                item.Tcs.SetResult(Result<decimal>.Fail(ResultCode.Error, $"処理中にエラーが発生しました: {ex.Message}"));
+                item.Tcs.SetResult(ApiResult<decimal>.Error($"処理中にエラーが発生しました: {ex.Message}"));
             }
         }
-        // channel が閉じることは現状ない想定
     }
 
     private static (bool ok, string error) ValidateUuid(string uuid)
@@ -180,5 +158,5 @@ public class BankService
         return (true, "");
     }
 
-    private readonly record struct BalanceWorkItemDecimal(Func<Task<Result<decimal>>> Work, TaskCompletionSource<Result<decimal>> Tcs);
+    private readonly record struct TxWorkItem(Func<Task<ApiResult<decimal>>> Work, TaskCompletionSource<ApiResult<decimal>> Tcs);
 }
