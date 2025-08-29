@@ -2,16 +2,18 @@ using System.Collections.Concurrent;
 using System.Threading.Channels;
 using Man10BankService.Models;
 using Man10BankService.Repositories;
+using Man10BankService.Data;
+using Microsoft.EntityFrameworkCore;
 
 namespace Man10BankService.Services;
 
 public class BankService
 {
-    private readonly BankRepository _repo;
+    private readonly IDbContextFactory<BankDbContext> _dbFactory;
 
-    public BankService(BankRepository repo)
+    public BankService(IDbContextFactory<BankDbContext> dbFactory)
     {
-        _repo = repo;
+        _dbFactory = dbFactory;
     }
 
     // UUID ごとに直列実行するためのキュー
@@ -25,7 +27,8 @@ public class BankService
         if (!ok) return Result<decimal>.Fail(ResultCode.InvalidArgument, err);
         try
         {
-            var bal = await _repo.GetBalanceAsync(uuid);
+            var repo = new BankRepository(_dbFactory);
+            var bal = await repo.GetBalanceAsync(uuid);
             return Result<decimal>.Ok(bal);
         }
         catch (Exception ex)
@@ -45,7 +48,8 @@ public class BankService
             return Result<List<MoneyLog>>.Fail(ResultCode.InvalidArgument, "offset は 0 以上で指定してください。");
         try
         {
-            var logs = await _repo.GetMoneyLogsAsync(uuid, limit, offset);
+            var repo = new BankRepository(_dbFactory);
+            var logs = await repo.GetMoneyLogsAsync(uuid, limit, offset);
             return Result<List<MoneyLog>>.Ok(logs);
         }
         catch (Exception ex)
@@ -75,7 +79,8 @@ public class BankService
         {
             try
             {
-                var bal = await _repo.ChangeBalanceAsync(uuid, player, amount, pluginName, note, displayNote, server);
+                var repo = new BankRepository(_dbFactory);
+                var bal = await repo.ChangeBalanceAsync(uuid, player, amount, pluginName, note, displayNote, server);
                 return Result<decimal>.Ok(bal);
             }
             catch (ArgumentException ex)
@@ -111,11 +116,12 @@ public class BankService
             try
             {
                 // 直列実行キュー内で残高確認 → 不足なら即エラー
-                var current = await _repo.GetBalanceAsync(uuid);
+                var repo = new BankRepository(_dbFactory);
+                var current = await repo.GetBalanceAsync(uuid);
                 if (current < amount)
                     return Result<decimal>.Fail(ResultCode.InsufficientFunds, "残高不足のため出金できません。");
 
-                var bal = await _repo.ChangeBalanceAsync(uuid, player, -amount, pluginName, note, displayNote, server);
+                var bal = await repo.ChangeBalanceAsync(uuid, player, -amount, pluginName, note, displayNote, server);
                 return Result<decimal>.Ok(bal);
             }
             catch (ArgumentException ex)
