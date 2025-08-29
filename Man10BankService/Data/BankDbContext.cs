@@ -28,6 +28,8 @@ public class BankDbContext : DbContext
             e.ToTable("atm_log");
             e.HasKey(x => x.Id);
             e.Property(x => x.Amount).HasPrecision(20, 0);
+            e.Property(x => x.Deposit).HasDefaultValue(false);
+            e.Property(x => x.Date).HasDefaultValueSql("CURRENT_TIMESTAMP").ValueGeneratedOnAdd();
         });
 
         modelBuilder.Entity<Cheque>(e =>
@@ -38,6 +40,11 @@ public class BankDbContext : DbContext
             e.Property(x => x.Amount).HasPrecision(20, 0);
             e.Property(x => x.UseDate).HasColumnName("use_date");
             e.Property(x => x.UsePlayer).HasColumnName("use_player");
+            e.Property(x => x.Note).HasDefaultValue("");
+            e.Property(x => x.UsePlayer).HasDefaultValue("");
+            e.Property(x => x.Used).HasDefaultValue(false);
+            e.Property(x => x.Date).HasDefaultValueSql("CURRENT_TIMESTAMP").ValueGeneratedOnAdd();
+            e.Property(x => x.UseDate).HasDefaultValueSql("CURRENT_TIMESTAMP");
         });
 
         modelBuilder.Entity<Estate>(e =>
@@ -53,6 +60,8 @@ public class BankDbContext : DbContext
             e.Property(x => x.Shop).HasPrecision(20, 0);
             e.Property(x => x.Crypto).HasPrecision(20, 0);
             e.Property(x => x.Total).HasPrecision(20, 0);
+            e.Property(x => x.Player).HasDefaultValue("");
+            e.Property(x => x.Date).HasDefaultValueSql("CURRENT_TIMESTAMP").ValueGeneratedOnAdd();
         });
 
         modelBuilder.Entity<EstateHistory>(e =>
@@ -68,6 +77,8 @@ public class BankDbContext : DbContext
             e.Property(x => x.Shop).HasPrecision(20, 0);
             e.Property(x => x.Crypto).HasPrecision(20, 0);
             e.Property(x => x.Total).HasPrecision(20, 0);
+            e.Property(x => x.Player).HasDefaultValue("");
+            e.Property(x => x.Date).HasDefaultValueSql("CURRENT_TIMESTAMP").ValueGeneratedOnAdd();
         });
 
         modelBuilder.Entity<Loan>(e =>
@@ -83,6 +94,13 @@ public class BankDbContext : DbContext
             e.Property(x => x.BorrowDate).HasColumnName("borrow_date");
             e.Property(x => x.PaybackDate).HasColumnName("payback_date");
             e.Property(x => x.CollateralItem).HasColumnName("collateral_item");
+            e.Property(x => x.LendPlayer).HasDefaultValue("");
+            e.Property(x => x.LendUuid).HasDefaultValue("");
+            e.Property(x => x.BorrowPlayer).HasDefaultValue("");
+            e.Property(x => x.BorrowUuid).HasDefaultValue("");
+            e.Property(x => x.BorrowDate).HasDefaultValueSql("CURRENT_TIMESTAMP").ValueGeneratedOnAdd();
+            e.Property(x => x.PaybackDate).HasDefaultValueSql("CURRENT_TIMESTAMP");
+            e.Property(x => x.CollateralItem).HasDefaultValue("");
         });
 
         modelBuilder.Entity<MoneyLog>(e =>
@@ -93,6 +111,12 @@ public class BankDbContext : DbContext
             e.Property(x => x.Amount).HasPrecision(20, 0);
             e.Property(x => x.PluginName).HasColumnName("plugin_name");
             e.Property(x => x.DisplayNote).HasColumnName("display_note");
+            e.Property(x => x.PluginName).HasDefaultValue("");
+            e.Property(x => x.Note).HasDefaultValue("");
+            e.Property(x => x.DisplayNote).HasDefaultValue("");
+            e.Property(x => x.Server).HasDefaultValue("");
+            e.Property(x => x.Deposit).HasDefaultValue(true);
+            e.Property(x => x.Date).HasDefaultValueSql("CURRENT_TIMESTAMP").ValueGeneratedOnAdd();
         });
 
         modelBuilder.Entity<ServerEstateHistory>(e =>
@@ -108,6 +132,11 @@ public class BankDbContext : DbContext
             e.Property(x => x.Shop).HasPrecision(20, 0);
             e.Property(x => x.Crypto).HasPrecision(20, 0);
             e.Property(x => x.Total).HasPrecision(20, 0);
+            e.Property(x => x.Year).HasDefaultValue(0);
+            e.Property(x => x.Month).HasDefaultValue(0);
+            e.Property(x => x.Day).HasDefaultValue(0);
+            e.Property(x => x.Hour).HasDefaultValue(0);
+            e.Property(x => x.Date).HasDefaultValueSql("CURRENT_TIMESTAMP").ValueGeneratedOnAdd();
         });
 
         modelBuilder.Entity<ServerLoan>(e =>
@@ -122,6 +151,12 @@ public class BankDbContext : DbContext
             e.Property(x => x.FailedPayment).HasColumnName("failed_payment");
             e.Property(x => x.StopInterest).HasColumnName("stop_interest");
             e.Property(x => x.Uuid).HasColumnName("uuid");
+            e.Property(x => x.Player).HasDefaultValue("");
+            e.Property(x => x.Uuid).HasDefaultValue("");
+            e.Property(x => x.BorrowDate).HasDefaultValueSql("CURRENT_TIMESTAMP").ValueGeneratedOnAdd();
+            e.Property(x => x.LastPayDate).HasDefaultValueSql("CURRENT_TIMESTAMP");
+            e.Property(x => x.FailedPayment).HasDefaultValue(0);
+            e.Property(x => x.StopInterest).HasDefaultValue(false);
         });
 
         modelBuilder.Entity<UserBank>(e =>
