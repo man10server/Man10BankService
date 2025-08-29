@@ -1,0 +1,6 @@
+@Man10BankService_HostAddress = http://localhost:5035
+
+GET {{Man10BankService_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
