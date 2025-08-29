@@ -5,8 +5,8 @@ builder.Services.AddOpenApi();
 // DB 接続設定を起動時に一度だけ設定（IConfiguration を渡す）
 Man10BankService.Data.BankDbContext.Configure(builder.Configuration);
 
-// DI 登録（プールありの DbContextFactory と BankService）
-builder.Services.AddPooledDbContextFactory<Man10BankService.Data.BankDbContext>();
+// DI 登録
+builder.Services.AddPooledDbContextFactory<Man10BankService.Data.BankDbContext>(options => { /* OnConfiguring で解決するためここでは無指定 */ });
 builder.Services.AddSingleton<Man10BankService.Services.BankService>();
 
 var app = builder.Build();
