@@ -1,17 +1,8 @@
-using Man10BankService.Data;
-using Microsoft.EntityFrameworkCore;
-
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
-
-// EF Core + MySQL
-var connectionString = builder.Configuration.GetConnectionString("Default")
-                        ?? "Server=localhost;Port=3306;Database=man10bank;User Id=root;Password=;TreatTinyAsBoolean=true;";
-builder.Services.AddDbContext<BankDbContext>(options =>
-    options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString)));
 
 var app = builder.Build();
 
