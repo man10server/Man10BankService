@@ -4,18 +4,12 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Man10BankService.Repositories;
 
-public class BankRepository
+public class BankRepository(IDbContextFactory<BankDbContext> factory)
 {
-    private readonly BankDbContext _db;
-
-    public BankRepository(BankDbContext db)
-    {
-        _db = db;
-    }
-
     public async Task<decimal> GetBalanceAsync(string uuid)
     {
-        var bank = await _db.UserBanks
+        await using var db = await factory.CreateDbContextAsync();
+        var bank = await db.UserBanks
             .AsNoTracking()
             .FirstOrDefaultAsync(x => x.Uuid == uuid);
         return bank?.Balance ?? 0m;
@@ -30,10 +24,11 @@ public class BankRepository
         string displayNote,
         string server)
     {
-        await using var tx = await _db.Database.BeginTransactionAsync();
+        await using var db = await factory.CreateDbContextAsync();
+        await using var tx = await db.Database.BeginTransactionAsync();
 
         // 口座の取得/作成
-        var bank = await _db.UserBanks
+        var bank = await db.UserBanks
             .FirstOrDefaultAsync(x => x.Uuid == uuid);
 
         if (bank == null)
@@ -44,7 +39,7 @@ public class BankRepository
                 Uuid = uuid,
                 Balance = 0m
             };
-            await _db.UserBanks.AddAsync(bank);
+            await db.UserBanks.AddAsync(bank);
         }
         else
         {
@@ -55,7 +50,7 @@ public class BankRepository
 
         // 残高更新
         bank.Balance += delta;
-        await _db.SaveChangesAsync();
+        await db.SaveChangesAsync();
 
         // MoneyLog 追加
         await AddMoneyLogAsync(
@@ -75,8 +70,8 @@ public class BankRepository
     public async Task<List<MoneyLog>> GetMoneyLogsAsync(string uuid, int limit = 100, int offset = 0)
     {
         limit = Math.Clamp(limit, 1, 1000);
-        offset = Math.Max(0, offset);
-        return await _db.MoneyLogs
+        await using var db = await factory.CreateDbContextAsync();
+        return await db.MoneyLogs
             .AsNoTracking()
             .Where(x => x.Uuid == uuid)
             .OrderByDescending(x => x.Date).ThenByDescending(x => x.Id)
@@ -95,6 +90,7 @@ public class BankRepository
         string server,
         bool deposit)
     {
+        await using var db = await factory.CreateDbContextAsync();
         var log = new MoneyLog
         {
             Uuid = uuid,
@@ -108,7 +104,7 @@ public class BankRepository
             // Date は DB 既定値（CURRENT_TIMESTAMP）を使用
         };
 
-        await _db.MoneyLogs.AddAsync(log);
-        await _db.SaveChangesAsync();
+        await db.MoneyLogs.AddAsync(log);
+        await db.SaveChangesAsync();
     }
 }

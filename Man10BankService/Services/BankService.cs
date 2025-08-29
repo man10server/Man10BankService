@@ -2,20 +2,16 @@ using System.Collections.Concurrent;
 using System.Threading.Channels;
 using Man10BankService.Models;
 using Man10BankService.Repositories;
-using Man10BankService.Data;
-using Microsoft.EntityFrameworkCore;
 
 namespace Man10BankService.Services;
 
 public class BankService
 {
     private readonly BankRepository _repo;
-    private readonly IDbContextFactory<BankDbContext> _dbFactory;
 
-    public BankService(BankRepository repo, IDbContextFactory<BankDbContext> dbFactory)
+    public BankService(BankRepository repo)
     {
         _repo = repo;
-        _dbFactory = dbFactory;
     }
 
     // UUID ごとに直列実行するためのキュー
@@ -63,10 +59,10 @@ public class BankService
         string uuid,
         string player,
         decimal amount,
-        string pluginName = "api",
-        string note = "",
-        string displayNote = "",
-        string server = "")
+        string pluginName,
+        string note,
+        string displayNote,
+        string server)
     {
         var (ok, err) = ValidateUuid(uuid);
         if (!ok) return Task.FromResult(Result<decimal>.Fail(ResultCode.InvalidArgument, err));
@@ -79,9 +75,7 @@ public class BankService
         {
             try
             {
-                await using var db = await _dbFactory.CreateDbContextAsync();
-                var repo = new BankRepository(db);
-                var bal = await repo.ChangeBalanceAsync(uuid, player, amount, pluginName, note, displayNote, server);
+                var bal = await _repo.ChangeBalanceAsync(uuid, player, amount, pluginName, note, displayNote, server);
                 return Result<decimal>.Ok(bal);
             }
             catch (ArgumentException ex)
@@ -100,10 +94,10 @@ public class BankService
         string uuid,
         string player,
         decimal amount,
-        string pluginName = "api",
-        string note = "",
-        string displayNote = "",
-        string server = "")
+        string pluginName,
+        string note,
+        string displayNote,
+        string server)
     {
         var (ok, err) = ValidateUuid(uuid);
         if (!ok) return Task.FromResult(Result<decimal>.Fail(ResultCode.InvalidArgument, err));
@@ -121,9 +115,7 @@ public class BankService
                 if (current < amount)
                     return Result<decimal>.Fail(ResultCode.InsufficientFunds, "残高不足のため出金できません。");
 
-                await using var db = await _dbFactory.CreateDbContextAsync();
-                var repo = new BankRepository(db);
-                var bal = await repo.ChangeBalanceAsync(uuid, player, -amount, pluginName, note, displayNote, server);
+                var bal = await _repo.ChangeBalanceAsync(uuid, player, -amount, pluginName, note, displayNote, server);
                 return Result<decimal>.Ok(bal);
             }
             catch (ArgumentException ex)
