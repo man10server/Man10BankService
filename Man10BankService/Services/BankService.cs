@@ -1,9 +1,11 @@
 using System.Collections.Concurrent;
 using System.Threading.Channels;
 using Man10BankService.Models;
+using Man10BankService.Models.Database;
 using Man10BankService.Models.Requests;
 using Man10BankService.Repositories;
 using Man10BankService.Data;
+using Man10BankService.Models.Database;
 using Microsoft.EntityFrameworkCore;
 
 namespace Man10BankService.Services;
@@ -11,16 +13,15 @@ namespace Man10BankService.Services;
 public class BankService
 {
     private readonly IDbContextFactory<BankDbContext> _dbFactory;
-
-    // サービス全体で1本のトランザクションキュー（書き込み系のみが対象）
     private readonly Channel<TxWorkItem> _txChannel = Channel.CreateUnbounded<TxWorkItem>(
         new UnboundedChannelOptions { SingleReader = true, SingleWriter = false });
-    private readonly Task _txWorker;
+    
+    private readonly record struct TxWorkItem(Func<Task<ApiResult<decimal>>> Work, TaskCompletionSource<ApiResult<decimal>> Tcs);
 
     public BankService(IDbContextFactory<BankDbContext> dbFactory)
     {
         _dbFactory = dbFactory;
-        _txWorker = Task.Run(WorkerLoopAsync);
+        Task.Run(WorkerLoopAsync);
     }
 
     public async Task<ApiResult<decimal>> GetBalanceAsync(string uuid)
@@ -59,16 +60,8 @@ public class BankService
         }
     }
 
-    // 入金（サービス全体で直列化）
     public Task<ApiResult<decimal>> DepositAsync(DepositRequest req)
     {
-        var (ok, err) = ValidateUuid(req.Uuid);
-        if (!ok) return Task.FromResult(ApiResult<decimal>.BadRequest(err));
-        var (okP, errP) = ValidatePlayer(req.Player);
-        if (!okP) return Task.FromResult(ApiResult<decimal>.BadRequest(errP));
-        if (req.Amount <= 0m)
-            return Task.FromResult(ApiResult<decimal>.BadRequest("入金額は 0 より大きい必要があります。"));
-
         return EnqueueBalanceChange(async () =>
         {
             try
@@ -88,16 +81,8 @@ public class BankService
         });
     }
 
-    // 出金（サービス全体で直列化）
     public Task<ApiResult<decimal>> WithdrawAsync(WithdrawRequest req)
     {
-        var (ok, err) = ValidateUuid(req.Uuid);
-        if (!ok) return Task.FromResult(ApiResult<decimal>.BadRequest(err));
-        var (okP, errP) = ValidatePlayer(req.Player);
-        if (!okP) return Task.FromResult(ApiResult<decimal>.BadRequest(errP));
-        if (req.Amount <= 0m)
-            return Task.FromResult(ApiResult<decimal>.BadRequest("出金額は 0 より大きい必要があります。"));
-
         return EnqueueBalanceChange(async () =>
         {
             try
@@ -144,19 +129,6 @@ public class BankService
         }
     }
 
-    private static (bool ok, string error) ValidateUuid(string uuid)
-    {
-        if (string.IsNullOrWhiteSpace(uuid)) return (false, "UUID は必須です。");
-        if (uuid.Length > 36) return (false, "UUID は 36 文字以下で指定してください。");
-        return (true, "");
-    }
-
-    private static (bool ok, string error) ValidatePlayer(string player)
-    {
-        if (string.IsNullOrWhiteSpace(player)) return (false, "プレイヤー名は必須です。");
-        if (player.Length > 16) return (false, "プレイヤー名は 16 文字以下で指定してください。");
-        return (true, "");
-    }
-
-    private readonly record struct TxWorkItem(Func<Task<ApiResult<decimal>>> Work, TaskCompletionSource<ApiResult<decimal>> Tcs);
+    // 入出金リクエストの形式検証は Request DTO 側（DataAnnotations）で実施。
+    // Service はビジネスルール（残高不足など）のみで判定する。
 }
