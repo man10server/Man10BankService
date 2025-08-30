@@ -7,7 +7,7 @@ builder.Services.AddControllers();
 Man10BankService.Data.BankDbContext.Configure(builder.Configuration);
 
 // DI 登録
-builder.Services.AddPooledDbContextFactory<Man10BankService.Data.BankDbContext>(options => { /* OnConfiguring で解決するためここでは無指定 */ });
+builder.Services.AddPooledDbContextFactory<Man10BankService.Data.BankDbContext>(_ => {  });
 builder.Services.AddSingleton<Man10BankService.Services.BankService>();
 
 var app = builder.Build();

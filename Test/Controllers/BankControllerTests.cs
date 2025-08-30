@@ -1,6 +1,5 @@
 using FluentAssertions;
 using Man10BankService.Controllers;
-using Man10BankService.Data;
 using Man10BankService.Models.Database;
 using Man10BankService.Models.Requests;
 using Man10BankService.Services;
@@ -8,34 +7,23 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.AspNetCore.Mvc.ModelBinding.Validation;
-using Microsoft.Data.Sqlite;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Test.Infrastructure;
 
 namespace Test.Controllers;
 
 public class BankControllerTests
 {
-    private static BankController BuildController(string dbName)
+    private static ControllerHost BuildController()
     {
+        var db = TestDbFactory.Create();
+
         var services = new ServiceCollection();
         services.AddLogging();
-        // InMemory はトランザクション未対応のため SQLite(:memory:) を使用
-        var connection = new SqliteConnection("DataSource=:memory:;Cache=Shared");
-        connection.Open();
-        services.AddSingleton(connection);
-        services.AddPooledDbContextFactory<BankDbContext>(o => o.UseSqlite(connection));
         services.AddControllers().AddApplicationPart(typeof(BankController).Assembly);
         var sp = services.BuildServiceProvider();
-        // スキーマ作成
-        using (var scope = sp.CreateScope())
-        {
-            var f = scope.ServiceProvider.GetRequiredService<IDbContextFactory<BankDbContext>>();
-            using var db = f.CreateDbContext();
-            db.Database.EnsureCreated();
-        }
-        var factory = sp.GetRequiredService<IDbContextFactory<BankDbContext>>();
-        var service = new BankService(factory);
+
+        var service = new BankService(db.Factory);
         var ctrl = new BankController(service)
         {
             ControllerContext = new ControllerContext
@@ -45,13 +33,18 @@ public class BankControllerTests
             ObjectValidator = sp.GetRequiredService<IObjectModelValidator>(),
             MetadataProvider = sp.GetRequiredService<IModelMetadataProvider>()
         };
-        return ctrl;
+        return new ControllerHost
+        {
+            Controller = ctrl,
+            Resources = [db, sp]
+        };
     }
 
     [Fact]
     public async Task Deposit_Success_ShouldIncreaseBalance_AndWriteLog()
     {
-        var ctrl = BuildController("deposit-success");
+        using var host = BuildController();
+        var ctrl = host.Controller;
         var req = new DepositRequest
         {
             Uuid = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
@@ -81,7 +74,8 @@ public class BankControllerTests
     [Fact]
     public async Task Deposit_Invalid_ShouldNotChangeBalance_AndReturn400()
     {
-        var ctrl = BuildController("deposit-invalid");
+        using var host = BuildController();
+        var ctrl = host.Controller;
         var req = new DepositRequest
         {
             Uuid = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
@@ -92,10 +86,8 @@ public class BankControllerTests
             DisplayNote = "入金テスト",
             Server = "dev"
         };
-        // Amount が不正のため検証は失敗する
         ctrl.TryValidateModel(req).Should().BeFalse();
         var result = await ctrl.Deposit(req) as ObjectResult;
-        // パイプライン未実行のため StatusCode は null のことがある。型のみ確認。
         result.Should().NotBeNull();
         result!.Value.Should().BeOfType<ValidationProblemDetails>();
 
@@ -109,7 +101,8 @@ public class BankControllerTests
     [Fact]
     public async Task Withdraw_Success_Then_Insufficient_Should409_And_NoChange()
     {
-        var ctrl = BuildController("withdraw-mix");
+        using var host = BuildController();
+        var ctrl = host.Controller;
         var uuid = "cccccccc-cccc-cccc-cccc-cccccccccccc";
 
         await ctrl.Deposit(new DepositRequest
