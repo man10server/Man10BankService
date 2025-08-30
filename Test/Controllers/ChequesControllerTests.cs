@@ -24,7 +24,8 @@ public class ChequesControllerTests
         services.AddControllers().AddApplicationPart(typeof(ChequesController).Assembly);
         var sp = services.BuildServiceProvider();
 
-        var service = new ChequeService(db.Factory);
+        var bank = new BankService(db.Factory);
+        var service = new ChequeService(db.Factory, bank);
         var ctrl = new ChequesController(service)
         {
             ControllerContext = new ControllerContext
@@ -55,6 +56,19 @@ public class ChequesControllerTests
             Note = "gift"
         };
         ctrl.TryValidateModel(create).Should().BeTrue();
+        // 残高を用意
+        var db = host.Resources.OfType<TestDbFactory>().First();
+        var bank = new BankService(db.Factory);
+        (await bank.DepositAsync(new DepositRequest
+        {
+            Uuid = create.Uuid,
+            Player = create.Player,
+            Amount = create.Amount,
+            PluginName = "test",
+            Note = "seed",
+            DisplayNote = "初期入金",
+            Server = "dev"
+        })).StatusCode.Should().Be(200);
 
         var post = await ctrl.Create(create) as ObjectResult;
         post!.StatusCode.Should().Be(200);
@@ -86,18 +100,33 @@ public class ChequesControllerTests
             Amount = 300,
             Note = "gift"
         };
-        (await ctrl.Create(create) as ObjectResult)!.StatusCode.Should().Be(200);
-        var id = ((await ctrl.Create(create) as ObjectResult)!.Value as ApiResult<Cheque>)!.Data!.Id; // 別チケットでも良いがID取得のため作成
+        // 残高を用意
+        var db2 = host.Resources.OfType<TestDbFactory>().First();
+        var bank2 = new BankService(db2.Factory);
+        (await bank2.DepositAsync(new DepositRequest
+        {
+            Uuid = create.Uuid,
+            Player = create.Player,
+            Amount = create.Amount,
+            PluginName = "test",
+            Note = "seed",
+            DisplayNote = "初期入金",
+            Server = "dev"
+        })).StatusCode.Should().Be(200);
+
+        var createdRes = await ctrl.Create(create) as ObjectResult;
+        createdRes!.StatusCode.Should().Be(200);
+        var id = (createdRes.Value as ApiResult<Cheque>)!.Data!.Id;
 
         // 1回目使用
-        var ok = await ctrl.Use(id, new ChequeUseRequest { Player = "alex" }) as ObjectResult;
+        var ok = await ctrl.Use(id, new ChequeUseRequest { Uuid = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee", Player = "alex" }) as ObjectResult;
         ok!.StatusCode.Should().Be(200);
         var used = (ok.Value as ApiResult<Cheque>)!.Data!;
         used.Used.Should().BeTrue();
         used.UsePlayer.Should().Be("alex");
 
         // 2回目（別プレイヤー）→ 409
-        var ng = await ctrl.Use(id, new ChequeUseRequest { Player = "steve" }) as ObjectResult;
+        var ng = await ctrl.Use(id, new ChequeUseRequest { Uuid = "ffffffff-ffff-ffff-ffff-ffffffffffff", Player = "steve" }) as ObjectResult;
         ng!.StatusCode.Should().Be(409);
 
         // 参照
@@ -114,7 +143,7 @@ public class ChequesControllerTests
         var ctrl = (ChequesController)host.Controller;
 
         (await ctrl.Get(999999) as ObjectResult)!.StatusCode.Should().Be(404);
-        (await ctrl.Use(999999, new ChequeUseRequest { Player = "alex" }) as ObjectResult)!.StatusCode.Should().Be(404);
+        (await ctrl.Use(999999, new ChequeUseRequest { Uuid = "11111111-1111-1111-1111-111111111111", Player = "alex" }) as ObjectResult)!.StatusCode.Should().Be(404);
     }
 
     [Fact(DisplayName = "小切手作成: 金額0は400で拒否")]
@@ -148,14 +177,27 @@ public class ChequesControllerTests
             Amount = 1000,
             Note = "race"
         };
+        // 残高を用意
+        var db3 = host.Resources.OfType<TestDbFactory>().First();
+        var bank3 = new BankService(db3.Factory);
+        (await bank3.DepositAsync(new DepositRequest
+        {
+            Uuid = create.Uuid,
+            Player = create.Player,
+            Amount = create.Amount,
+            PluginName = "test",
+            Note = "seed",
+            DisplayNote = "初期入金",
+            Server = "dev"
+        })).StatusCode.Should().Be(200);
         var created = ((await ctrl.Create(create) as ObjectResult)!.Value as ApiResult<Cheque>)!.Data!;
         var id = created.Id;
 
-        var players = Enumerable.Range(1, 10).Select(i => $"p{i}").ToArray();
+        var players = Enumerable.Range(1, 10).Select(i => (uuid: $"00000000-0000-0000-0000-0000000000{i % 10}", player: $"p{i}" )).ToArray();
         var statuses = new ConcurrentBag<int?>();
         var tasks = players.Select(async p =>
         {
-            var res = await ctrl.Use(id, new ChequeUseRequest { Player = p }) as ObjectResult;
+            var res = await ctrl.Use(id, new ChequeUseRequest { Uuid = p.uuid, Player = p.player }) as ObjectResult;
             statuses.Add(res!.StatusCode);
         }).ToArray();
 
@@ -167,7 +209,6 @@ public class ChequesControllerTests
 
         var state = ((await ctrl.Get(id) as ObjectResult)!.Value as ApiResult<Cheque>)!.Data!;
         state.Used.Should().BeTrue();
-        players.Should().Contain(state.UsePlayer);
+        players.Select(p => p.player).Should().Contain(state.UsePlayer);
     }
 }
-

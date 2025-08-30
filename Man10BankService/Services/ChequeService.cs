@@ -10,12 +10,16 @@ namespace Man10BankService.Services;
 public class ChequeService
 {
     private readonly IDbContextFactory<BankDbContext> _dbFactory;
+    private readonly BankService _bank;
     private readonly Channel<Func<Task>> _queue = Channel.CreateUnbounded<Func<Task>>(
         new UnboundedChannelOptions { SingleReader = true, SingleWriter = false });
+    
+    private const string PluginName = "Man10Bank";
 
-    public ChequeService(IDbContextFactory<BankDbContext> dbFactory)
+    public ChequeService(IDbContextFactory<BankDbContext> dbFactory, BankService bank)
     {
         _dbFactory = dbFactory;
+        _bank = bank;
         _ = Task.Run(WorkerAsync);
     }
 
@@ -25,8 +29,41 @@ public class ChequeService
         {
             try
             {
+                // 先に残高を引き落とし
+                var wres = await _bank.WithdrawAsync(new WithdrawRequest
+                {
+                    Uuid = req.Uuid,
+                    Player = req.Player,
+                    Amount = req.Amount,
+                    PluginName = PluginName,
+                    Note = $"create_cheque: {req.Note}",
+                    DisplayNote = $"小切手作成: {req.Note}",
+                    Server = "system"
+                });
+                if (wres.StatusCode != 200)
+                    return new ApiResult<Cheque>(wres.StatusCode, wres.Message);
+
                 var repo = new ChequeRepository(_dbFactory);
-                var cheque = await repo.CreateChequeAsync(req.Uuid, req.Player, req.Amount, req.Note);
+                Cheque cheque;
+                try
+                {
+                    cheque = await repo.CreateChequeAsync(req.Uuid, req.Player, req.Amount, req.Note);
+                }
+                catch (Exception ex)
+                {
+                    // 失敗時は補償で返金
+                    await _bank.DepositAsync(new DepositRequest
+                    {
+                        Uuid = req.Uuid,
+                        Player = req.Player,
+                        Amount = req.Amount,
+                        PluginName = PluginName,
+                        Note = "cheque_refund",
+                        DisplayNote = "小切手作成失敗の返金",
+                        Server = "system"
+                    });
+                    throw new Exception($"小切手作成に失敗しました: {ex.Message}");
+                }
                 return ApiResult<Cheque>.Ok(cheque);
             }
             catch (ArgumentException ex)
@@ -47,11 +84,29 @@ public class ChequeService
             try
             {
                 var repo = new ChequeRepository(_dbFactory);
-                var cheque = await repo.UseChequeAsync(id, req.Player);
+                var cheque = await repo.GetChequeAsync(id);
                 if (cheque == null)
                     return ApiResult<Cheque>.NotFound("小切手が見つかりません。");
-                if (cheque.Used && cheque.UsePlayer != req.Player)
+                if (cheque.Used)
                     return ApiResult<Cheque>.Conflict("既に使用済みの小切手です。");
+
+                // 先に使用済みへ更新（更新失敗時はここで終了し入金しない）
+                cheque = await repo.UseChequeAsync(id, req.Player) ?? cheque;
+
+                // 次に入金
+                var dres = await _bank.DepositAsync(new DepositRequest
+                {
+                    Uuid = req.Uuid,
+                    Player = req.Player,
+                    Amount = cheque.Amount,
+                    PluginName = PluginName,
+                    Note = $"cheque_use:{id}",
+                    DisplayNote = "小切手使用",
+                    Server = "system"
+                });
+                if (dres.StatusCode != 200)
+                    return new ApiResult<Cheque>(dres.StatusCode, dres.Message);
+
                 return ApiResult<Cheque>.Ok(cheque);
             }
             catch (ArgumentException ex)
