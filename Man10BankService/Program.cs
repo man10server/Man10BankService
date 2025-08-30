@@ -9,6 +9,7 @@ Man10BankService.Data.BankDbContext.Configure(builder.Configuration);
 // DI 登録
 builder.Services.AddPooledDbContextFactory<Man10BankService.Data.BankDbContext>(_ => {  });
 builder.Services.AddSingleton<Man10BankService.Services.BankService>();
+builder.Services.AddSingleton<Man10BankService.Services.AtmService>();
 
 var app = builder.Build();
 
