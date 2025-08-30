@@ -191,7 +191,6 @@ public class BankDbContext : DbContext
             e.HasKey(x => x.Id);
             e.HasIndex(x => new { x.Uuid, x.Date });
             e.Property(x => x.Amount).HasPrecision(20, 0);
-            e.Property(x => x.Note).HasDefaultValue("");
             e.Property(x => x.Player).HasDefaultValue("");
             e.Property(x => x.Uuid).HasDefaultValue("");
             e.Property(x => x.Date).HasDefaultValueSql("CURRENT_TIMESTAMP").ValueGeneratedOnAdd();

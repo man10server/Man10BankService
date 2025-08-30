@@ -138,7 +138,6 @@ CREATE TABLE server_loan_log
     uuid    VARCHAR(36)                    NOT NULL,
     action  VARCHAR(16)                    NOT NULL COMMENT 'borrow/repay/interest',
     amount  DECIMAL(20,0)                  NOT NULL,
-    note    VARCHAR(64)  DEFAULT ''        NOT NULL,
     date    DATETIME     DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 

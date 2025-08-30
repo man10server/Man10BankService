@@ -7,6 +7,5 @@ public class ServerLoanLog
     public string Uuid { get; set; } = string.Empty;
     public string Action { get; set; } = string.Empty; // borrow/repay/interest
     public decimal Amount { get; set; }
-    public string Note { get; set; } = string.Empty;
     public DateTime Date { get; set; }
 }
