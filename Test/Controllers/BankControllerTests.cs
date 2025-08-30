@@ -274,4 +274,41 @@ public class BankControllerTests
         var body = res.Value as ApiResult<decimal>;
         body!.Message.Should().StartWith("出金に失敗しました");
     }
+
+    [Fact(DisplayName = "MoneyLog取得: 100件の入金後に limit/offset で中間10件を取得")]
+    public async Task GetLogs_Pagination_ShouldReturnMiddleSlice()
+    {
+        using var host = BuildController();
+        var ctrl = (BankController)host.Controller;
+        const string uuid = "12345678-1234-1234-1234-1234567890ab";
+
+        for (var i = 1; i <= 100; i++)
+        {
+            var req = new DepositRequest
+            {
+                Uuid = uuid,
+                Player = "alex",
+                Amount = i,
+                PluginName = "test",
+                Note = $"dep{i}",
+                DisplayNote = $"入金{i}",
+                Server = "dev"
+            };
+            ctrl.TryValidateModel(req).Should().BeTrue();
+            var res = await ctrl.Deposit(req) as ObjectResult;
+            res!.StatusCode.Should().Be(200);
+        }
+
+        var get = await ctrl.GetLogs(uuid, limit: 10) as ObjectResult;
+        get!.StatusCode.Should().Be(200);
+        var top = (get.Value as ApiResult<List<MoneyLog>>)!.Data!;
+        top.First().Amount.Should().Be(100);
+
+        var midRes = await ctrl.GetLogs(uuid, limit: 10, offset: 30) as ObjectResult;
+        midRes!.StatusCode.Should().Be(200);
+        var logs = (midRes.Value as ApiResult<List<MoneyLog>>)!.Data!;
+        logs.Should().HaveCount(10);
+        var amounts = logs.Select(x => x.Amount).ToArray();
+        amounts.Should().BeEquivalentTo(new decimal[] { 70, 69, 68, 67, 66, 65, 64, 63, 62, 61 }, opt => opt.WithStrictOrdering());
+    }
 }

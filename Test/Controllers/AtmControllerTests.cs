@@ -142,4 +142,27 @@ public class AtmControllerTests
         var body = (res.Value as ApiResult<AtmLog>)!;
         body.Message.Should().StartWith("ATMログの追加に失敗しました");
     }
+
+    [Fact(DisplayName = "ATMログ取得: 100件投入し limit/offset で中間10件を取得")]
+    public async Task GetLogs_Pagination_ShouldReturnMiddleSlice()
+    {
+        using var host = BuildController();
+        var ctrl = (AtmController)host.Controller;
+        const string uuid = "55555555-5555-5555-5555-555555555555";
+
+        for (var i = 1; i <= 100; i++)
+        {
+            var req = new AtmLogRequest { Uuid = uuid, Player = "alex", Amount = i, Deposit = true };
+            ctrl.TryValidateModel(req).Should().BeTrue();
+            var res = await ctrl.AddLog(req) as ObjectResult;
+            res!.StatusCode.Should().Be(200);
+        }
+
+        var get = await ctrl.GetLogs(uuid, limit: 10, offset: 30) as ObjectResult;
+        get!.StatusCode.Should().Be(200);
+        var logs = (get.Value as ApiResult<List<AtmLog>>)!.Data!;
+        logs.Should().HaveCount(10);
+        var amounts = logs.Select(x => x.Amount).ToArray();
+        amounts.Should().BeEquivalentTo(new decimal[] { 70, 69, 68, 67, 66, 65, 64, 63, 62, 61 }, opt => opt.WithStrictOrdering());
+    }
 }
