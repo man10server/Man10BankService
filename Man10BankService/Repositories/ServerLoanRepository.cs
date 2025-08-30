@@ -84,6 +84,23 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory)
             .Take(limit)
             .ToListAsync();
     }
+
+    // 週次等の支払額を設定する
+    public async Task<ServerLoan?> SetPaymentAmountAsync(string uuid, decimal paymentAmount)
+    {
+        if (paymentAmount < 0m) throw new ArgumentException("支払額は 0 以上で指定してください。", nameof(paymentAmount));
+
+        await using var db = await factory.CreateDbContextAsync();
+        await using var tx = await db.Database.BeginTransactionAsync();
+
+        var loan = await db.ServerLoans.FirstOrDefaultAsync(x => x.Uuid == uuid);
+        if (loan == null) return null;
+
+        loan.PaymentAmount = paymentAmount;
+        await db.SaveChangesAsync();
+        await tx.CommitAsync();
+        return loan;
+    }
     
     private static async Task AddLogAsync(BankDbContext db, string uuid, string player, ServerLoanLogAction action, decimal amount)
     {
