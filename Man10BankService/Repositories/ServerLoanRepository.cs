@@ -20,7 +20,7 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory)
         await using var db = await factory.CreateDbContextAsync();
         return await db.ServerLoans.AsNoTracking().FirstOrDefaultAsync(x => x.Uuid == uuid);
     }
-
+    
     public async Task<ServerLoan?> AdjustLoanAsync(string uuid, string player, decimal amount, ServerLoanLogAction action)
     {
         if (amount <= 0m) throw new ArgumentException("金額は 0 より大きい必要があります。", nameof(amount));
@@ -58,8 +58,9 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory)
                 await AddLogAsync(db, loan.Uuid, loan.Player, ServerLoanLogAction.RepaySuccess, amount);
                 break;
             case ServerLoanLogAction.RepayFailure:
-                await AddLogAsync(db, loan.Uuid, string.IsNullOrWhiteSpace(player) ? loan.Player : player, ServerLoanLogAction.RepayFailure, amount);
+                loan.FailedPayment += 1;
                 await db.SaveChangesAsync();
+                await AddLogAsync(db, loan.Uuid, string.IsNullOrWhiteSpace(player) ? loan.Player : player, ServerLoanLogAction.RepayFailure, amount);
                 return loan;
             default:
                 throw new ArgumentOutOfRangeException(nameof(action), action, null);
@@ -67,7 +68,23 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory)
         await tx.CommitAsync();
         return loan;
     }
+    
+    public async Task<List<ServerLoanLog>> GetLogsAsync(string uuid, int limit = 100, int offset = 0)
+    {
+        if (limit < 1) limit = 1;
+        if (limit > 1000) limit = 1000;
+        if (offset < 0) offset = 0;
 
+        await using var db = await factory.CreateDbContextAsync();
+        return await db.ServerLoanLogs
+            .AsNoTracking()
+            .Where(x => x.Uuid == uuid)
+            .OrderByDescending(x => x.Date).ThenByDescending(x => x.Id)
+            .Skip(offset)
+            .Take(limit)
+            .ToListAsync();
+    }
+    
     private static async Task AddLogAsync(BankDbContext db, string uuid, string player, ServerLoanLogAction action, decimal amount)
     {
         var log = new ServerLoanLog
