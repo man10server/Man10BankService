@@ -1,0 +1,17 @@
+using System.ComponentModel.DataAnnotations;
+
+namespace Man10BankService.Models.Requests;
+
+public class ServerLoanRepayRequest
+{
+    [Required]
+    [StringLength(36)]
+    [RegularExpression(@"^[0-9a-fA-F-]{36}$", ErrorMessage = "UUID の形式が不正です。")]
+    public required string Uuid { get; set; }
+
+    [Required]
+    [StringLength(16)]
+    public required string Player { get; set; }
+
+    public decimal? Amount { get; set; }
+}
