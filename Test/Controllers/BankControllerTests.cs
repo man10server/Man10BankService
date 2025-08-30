@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Mvc.ModelBinding.Validation;
 using Microsoft.Extensions.DependencyInjection;
 using Test.Infrastructure;
 using System.Linq;
+using System.Collections.Concurrent;
 
 namespace Test.Controllers;
 
@@ -310,5 +311,51 @@ public class BankControllerTests
         logs.Should().HaveCount(10);
         var amounts = logs.Select(x => x.Amount).ToArray();
         amounts.Should().BeEquivalentTo(new decimal[] { 70, 69, 68, 67, 66, 65, 64, 63, 62, 61 }, opt => opt.WithStrictOrdering());
+    }
+
+    [Fact(DisplayName = "並列入金: FIFO順でログが記録される")]
+    public async Task Concurrent_Deposits_ShouldRecordLogsInFifoOrder()
+    {
+        using var host = BuildController();
+        var ctrl = (BankController)host.Controller;
+        const string uuid = "feedface-feed-face-feed-feedfaceface";
+
+        var amounts = Enumerable.Range(1, 20).ToArray();
+        var doneOrder = new ConcurrentQueue<int>();
+
+        var tasks = amounts.Select(async a =>
+        {
+            var res = await ctrl.Deposit(new DepositRequest
+            {
+                Uuid = uuid,
+                Player = "alex",
+                Amount = a,
+                PluginName = "test",
+                Note = $"dep{a}",
+                DisplayNote = $"入金{a}",
+                Server = "dev"
+            }) as ObjectResult;
+            res!.StatusCode.Should().Be(200);
+            doneOrder.Enqueue(a);
+        }).ToArray();
+
+        await Task.WhenAll(tasks);
+
+        var get = await ctrl.GetLogs(uuid, limit: 20) as ObjectResult;
+        get!.StatusCode.Should().Be(200);
+        var logs = (get.Value as ApiResult<List<MoneyLog>>)!.Data!;
+        logs.Should().HaveCount(20);
+
+        var completed = doneOrder.ToArray();
+        completed.Length.Should().Be(20);
+
+        // ログは新しい順（処理完了順の逆順）で並ぶため比較は反転
+        var expected = completed.Reverse().Select(i => (decimal)i).ToArray();
+        var actual = logs.Select(x => x.Amount).ToArray();
+        actual.Should().BeEquivalentTo(expected, opt => opt.WithStrictOrdering());
+
+        // 残高は合計値
+        var balRes = await ctrl.GetBalance(uuid) as ObjectResult;
+        (balRes!.Value as ApiResult<decimal>)!.Data.Should().Be(amounts.Sum());
     }
 }
