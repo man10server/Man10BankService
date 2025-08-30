@@ -10,6 +10,7 @@ Man10BankService.Data.BankDbContext.Configure(builder.Configuration);
 builder.Services.AddPooledDbContextFactory<Man10BankService.Data.BankDbContext>(_ => {  });
 builder.Services.AddSingleton<Man10BankService.Services.BankService>();
 builder.Services.AddSingleton<Man10BankService.Services.AtmService>();
+builder.Services.AddSingleton<Man10BankService.Services.ChequeService>();
 
 var app = builder.Build();
 
