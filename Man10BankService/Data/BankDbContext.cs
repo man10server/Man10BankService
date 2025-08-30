@@ -30,6 +30,9 @@ public class BankDbContext : DbContext
     public DbSet<ServerLoan> ServerLoans => Set<ServerLoan>();
     public DbSet<UserBank> UserBanks => Set<UserBank>();
     
+    public BankDbContext() {}
+    public BankDbContext(DbContextOptions<BankDbContext> options) : base(options) {}
+    
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
         if (optionsBuilder.IsConfigured)

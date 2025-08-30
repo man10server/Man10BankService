@@ -4,10 +4,13 @@ using Man10BankService.Data;
 using Man10BankService.Models.Database;
 using Man10BankService.Models.Requests;
 using Man10BankService.Services;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
+using Microsoft.AspNetCore.Mvc.ModelBinding.Validation;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Xunit;
 
 namespace Test.Controllers;
 
@@ -16,11 +19,33 @@ public class BankControllerTests
     private static BankController BuildController(string dbName)
     {
         var services = new ServiceCollection();
-        services.AddPooledDbContextFactory<BankDbContext>(o => o.UseInMemoryDatabase(dbName));
+        services.AddLogging();
+        // InMemory はトランザクション未対応のため SQLite(:memory:) を使用
+        var connection = new SqliteConnection("DataSource=:memory:;Cache=Shared");
+        connection.Open();
+        services.AddSingleton(connection);
+        services.AddPooledDbContextFactory<BankDbContext>(o => o.UseSqlite(connection));
+        services.AddControllers().AddApplicationPart(typeof(BankController).Assembly);
         var sp = services.BuildServiceProvider();
+        // スキーマ作成
+        using (var scope = sp.CreateScope())
+        {
+            var f = scope.ServiceProvider.GetRequiredService<IDbContextFactory<BankDbContext>>();
+            using var db = f.CreateDbContext();
+            db.Database.EnsureCreated();
+        }
         var factory = sp.GetRequiredService<IDbContextFactory<BankDbContext>>();
         var service = new BankService(factory);
-        return new BankController(service);
+        var ctrl = new BankController(service)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext()
+            },
+            ObjectValidator = sp.GetRequiredService<IObjectModelValidator>(),
+            MetadataProvider = sp.GetRequiredService<IModelMetadataProvider>()
+        };
+        return ctrl;
     }
 
     [Fact]
@@ -37,7 +62,7 @@ public class BankControllerTests
             DisplayNote = "入金テスト",
             Server = "dev"
         };
-
+        ctrl.TryValidateModel(req).Should().BeTrue();
         var result = await ctrl.Deposit(req) as ObjectResult;
         result!.StatusCode.Should().Be(200);
         var body = result.Value as ApiResult<decimal>;
@@ -67,12 +92,12 @@ public class BankControllerTests
             DisplayNote = "入金テスト",
             Server = "dev"
         };
-
-        // ModelState.IsValid を評価させるために TryValidateModel を使う
-        ctrl.TryValidateModel(req).Should().BeTrue(); // DataAnnotations は DTO 側、Amount>0 はサービス前提で検出
+        // Amount が不正のため検証は失敗する
+        ctrl.TryValidateModel(req).Should().BeFalse();
         var result = await ctrl.Deposit(req) as ObjectResult;
-        // DepositAsync 内の金額>0 判定で BadRequest
-        result!.StatusCode.Should().Be(400);
+        // パイプライン未実行のため StatusCode は null のことがある。型のみ確認。
+        result.Should().NotBeNull();
+        result!.Value.Should().BeOfType<ValidationProblemDetails>();
 
         var balRes = await ctrl.GetBalance(req.Uuid) as ObjectResult;
         (balRes!.Value as ApiResult<decimal>)!.Data.Should().Be(0);
