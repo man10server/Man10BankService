@@ -313,42 +313,46 @@ public class BankControllerTests
         amounts.Should().BeEquivalentTo(new decimal[] { 70, 69, 68, 67, 66, 65, 64, 63, 62, 61 }, opt => opt.WithStrictOrdering());
     }
 
-    [Fact(DisplayName = "並列入出金: ログ整合性と最終残高が一致する")]
-    public async Task Concurrent_DepositWithdraw_ShouldKeepConsistency()
+    [Fact(DisplayName = "並列ランダム入出金: 最終残高がログ合計と一致し、409はログに出ない")]
+    public async Task Concurrent_RandomOps_ShouldBalanceEqualLogSum_And409NoLog()
     {
         using var host = BuildController();
         var ctrl = (BankController)host.Controller;
-        const string uuid = "feedface-feed-face-feed-feedfaceface";
+        const string uuid = "a1b2c3d4-e5f6-7a8b-9c0d-a1b2c3d4e5f6";
 
-        // 事前残高を確保
-        var seed = new DepositRequest
+        // 初期残高を作って過剰な409を減らす
+        (await ctrl.Deposit(new DepositRequest
         {
             Uuid = uuid,
             Player = "alex",
-            Amount = 1000,
+            Amount = 2000,
             PluginName = "test",
             Note = "seed",
             DisplayNote = "初期入金",
             Server = "dev"
-        };
-        (await ctrl.Deposit(seed) as ObjectResult)!.StatusCode.Should().Be(200);
+        }) as ObjectResult)!.StatusCode.Should().Be(200);
 
-        var ops = new decimal[] { +100, -50, +200, -150, +500, -300, +50, -25, +75, -10 };
-        var tasks = ops.Select(async o =>
+        var rnd = new Random(12345);
+        var operations = Enumerable.Range(0, 100)
+            .Select(_ => (amount: (decimal)rnd.Next(1, 501), deposit: rnd.Next(0, 2) == 0))
+            .ToArray();
+
+        var statuses = new ConcurrentBag<int?>();
+        var tasks = operations.Select(async op =>
         {
-            if (o >= 0)
+            if (op.deposit)
             {
                 var res = await ctrl.Deposit(new DepositRequest
                 {
                     Uuid = uuid,
                     Player = "alex",
-                    Amount = o,
+                    Amount = op.amount,
                     PluginName = "test",
-                    Note = $"dep{o}",
-                    DisplayNote = $"入金{o}",
+                    Note = $"dep{op.amount}",
+                    DisplayNote = $"入金{op.amount}",
                     Server = "dev"
                 }) as ObjectResult;
-                res!.StatusCode.Should().Be(200);
+                statuses.Add(res!.StatusCode);
             }
             else
             {
@@ -356,32 +360,32 @@ public class BankControllerTests
                 {
                     Uuid = uuid,
                     Player = "alex",
-                    Amount = -o,
+                    Amount = op.amount,
                     PluginName = "test",
-                    Note = $"wd{-o}",
-                    DisplayNote = $"出金{-o}",
+                    Note = $"wd{op.amount}",
+                    DisplayNote = $"出金{op.amount}",
                     Server = "dev"
                 }) as ObjectResult;
-                res!.StatusCode.Should().Be(200);
+                statuses.Add(res!.StatusCode);
             }
         }).ToArray();
 
         await Task.WhenAll(tasks);
 
-        var get = await ctrl.GetLogs(uuid, limit: 100) as ObjectResult;
+        var get = await ctrl.GetLogs(uuid, limit: 1000) as ObjectResult;
         get!.StatusCode.Should().Be(200);
         var logs = (get.Value as ApiResult<List<MoneyLog>>)!.Data!;
-
-        logs.Count.Should().Be(1 + ops.Length);
-
-        var expectedAmounts = new[] { seed.Amount }.Concat(ops).ToArray();
-        logs.Select(x => x.Amount).Should().BeEquivalentTo(expectedAmounts);
-
-        logs.All(l => (l.Amount >= 0m) == l.Deposit).Should().BeTrue();
+        var sum = logs.Sum(l => l.Amount);
 
         var balRes = await ctrl.GetBalance(uuid) as ObjectResult;
-        var finalBalance = (balRes!.Value as ApiResult<decimal>)!.Data;
-        finalBalance.Should().Be(expectedAmounts.Sum());
-        logs.Sum(l => l.Amount).Should().Be(finalBalance);
+        var balance = (balRes!.Value as ApiResult<decimal>)!.Data;
+        balance.Should().Be(sum);
+
+        logs.All(l => l.Amount >= 0m == l.Deposit).Should().BeTrue();
+
+        var withdrawAttempts = operations.Count(o => !o.deposit);
+        var negativeLogs = logs.Count(l => !l.Deposit);
+        var conflicts = statuses.Count(s => s == 409);
+        (withdrawAttempts - negativeLogs).Should().Be(conflicts);
     }
 }
