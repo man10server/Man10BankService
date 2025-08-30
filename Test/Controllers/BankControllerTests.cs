@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.AspNetCore.Mvc.ModelBinding.Validation;
 using Microsoft.Extensions.DependencyInjection;
 using Test.Infrastructure;
+using System.Linq;
 
 namespace Test.Controllers;
 
@@ -64,11 +65,35 @@ public class BankControllerTests
         var balRes = await ctrl.GetBalance(req.Uuid) as ObjectResult;
         (balRes!.Value as ApiResult<decimal>)!.Data.Should().Be(500);
 
-        var logsRes = await ctrl.GetLogs(req.Uuid, 10, 0) as ObjectResult;
+        var logsRes = await ctrl.GetLogs(req.Uuid, 10) as ObjectResult;
         var logs = (logsRes!.Value as ApiResult<List<MoneyLog>>)!.Data!;
-        logs.Count.Should().BeGreaterOrEqualTo(1);
-        logs[0].Amount.Should().Be(500);
-        logs[0].Deposit.Should().BeTrue();
+        logs[0].Should().BeEquivalentTo(new
+        {
+            Amount = 500m,
+            Deposit = true,
+            Uuid = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            Player = "steve",
+            PluginName = "test",
+            Note = "deposit",
+            DisplayNote = "入金テスト",
+            Server = "dev"
+        });
+    }
+
+    [Fact]
+    public async Task GetBalance_DbDown_ShouldReturn500()
+    {
+        using var host = BuildController();
+        var ctrl = host.Controller;
+
+        // DB をダウンさせる（:memory: は接続クローズでスキーマが揮発）
+        var db = host.Resources.OfType<TestDbFactory>().First();
+        db.Connection.Close();
+
+        var res = await ctrl.GetBalance("deadbeef-dead-beef-dead-beefdeadbeef") as ObjectResult;
+        res!.StatusCode.Should().Be(500);
+        var body = res.Value as ApiResult<decimal>;
+        body!.Message.Should().StartWith("残高取得に失敗しました");
     }
 
     [Fact]
@@ -80,7 +105,7 @@ public class BankControllerTests
         {
             Uuid = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
             Player = "alex",
-            Amount = 0, // invalid
+            Amount = 0,
             PluginName = "test",
             Note = "deposit",
             DisplayNote = "入金テスト",
@@ -103,7 +128,7 @@ public class BankControllerTests
     {
         using var host = BuildController();
         var ctrl = host.Controller;
-        var uuid = "cccccccc-cccc-cccc-cccc-cccccccccccc";
+        const string uuid = "cccccccc-cccc-cccc-cccc-cccccccccccc";
 
         await ctrl.Deposit(new DepositRequest
         {
