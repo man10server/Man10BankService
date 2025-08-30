@@ -1,12 +1,12 @@
 using System;
 using System.Collections.Generic;
-using Man10BankService.Controllers;
+using Microsoft.AspNetCore.Mvc;
 
 namespace Test.Infrastructure;
 
 public sealed class ControllerHost : IDisposable
 {
-    public required BankController Controller { get; init; }
+    public required ControllerBase Controller { get; init; }
     public required List<IDisposable> Resources { get; init; } = [];
 
     public void Dispose()

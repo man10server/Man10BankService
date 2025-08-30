@@ -45,7 +45,7 @@ public class BankControllerTests
     public async Task GetBalance_DbDown_ShouldReturn500()
     {
         using var host = BuildController();
-        var ctrl = host.Controller;
+        var ctrl = (BankController)host.Controller;
 
         var db = host.Resources.OfType<TestDbFactory>().First();
         db.Connection.Close();
@@ -60,7 +60,7 @@ public class BankControllerTests
     public async Task Deposit_Success_ShouldIncreaseBalance_AndWriteLog()
     {
         using var host = BuildController();
-        var ctrl = host.Controller;
+        var ctrl = (BankController)host.Controller;
         var req = new DepositRequest
         {
             Uuid = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
@@ -99,7 +99,7 @@ public class BankControllerTests
     public async Task Deposit_Invalid_ShouldNotChangeBalance_AndReturn400()
     {
         using var host = BuildController();
-        var ctrl = host.Controller;
+        var ctrl = (BankController)host.Controller;
         var req = new DepositRequest
         {
             Uuid = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
@@ -126,7 +126,7 @@ public class BankControllerTests
     public async Task Deposit_DbDown_ShouldReturn500()
     {
         using var host = BuildController();
-        var ctrl = host.Controller;
+        var ctrl = (BankController)host.Controller;
 
         var req = new DepositRequest
         {
@@ -154,7 +154,7 @@ public class BankControllerTests
     public async Task Withdraw_Success_ShouldDecreaseBalance_AndWriteLog()
     {
         using var host = BuildController();
-        var ctrl = host.Controller;
+        var ctrl = (BankController)host.Controller;
         const string uuid = "ffffffff-ffff-ffff-ffff-ffffffffffff";
 
         await ctrl.Deposit(new DepositRequest
@@ -202,7 +202,7 @@ public class BankControllerTests
     public async Task Withdraw_Success_Then_Insufficient_Should409_And_NoChange()
     {
         using var host = BuildController();
-        var ctrl = host.Controller;
+        var ctrl = (BankController)host.Controller;
         const string uuid = "cccccccc-cccc-cccc-cccc-cccccccccccc";
 
         await ctrl.Deposit(new DepositRequest
@@ -251,7 +251,7 @@ public class BankControllerTests
     public async Task Withdraw_DbDown_ShouldReturn500()
     {
         using var host = BuildController();
-        var ctrl = host.Controller;
+        var ctrl = (BankController)host.Controller;
 
         var req = new WithdrawRequest
         {
