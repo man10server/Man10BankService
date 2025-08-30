@@ -130,6 +130,20 @@ CREATE TABLE server_loan_tbl
 CREATE INDEX server_loan_tbl_uuid_borrow_amount_index ON server_loan_tbl (uuid, borrow_amount);
 CREATE INDEX server_loan_tbl_player_index ON server_loan_tbl (player);
 
+-- ローン操作ログ（借入/返済/金利付与）
+CREATE TABLE server_loan_log
+(
+    id      INT AUTO_INCREMENT PRIMARY KEY,
+    player  VARCHAR(16)                    NOT NULL,
+    uuid    VARCHAR(36)                    NOT NULL,
+    action  VARCHAR(16)                    NOT NULL COMMENT 'borrow/repay/interest',
+    amount  DECIMAL(20,0)                  NOT NULL,
+    note    VARCHAR(64)  DEFAULT ''        NOT NULL,
+    date    DATETIME     DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+
+CREATE INDEX server_loan_log_uuid_date_index ON server_loan_log (uuid, date);
+
 CREATE TABLE user_bank
 (
     id      INT AUTO_INCREMENT PRIMARY KEY,

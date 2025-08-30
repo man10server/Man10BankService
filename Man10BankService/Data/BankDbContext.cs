@@ -28,6 +28,7 @@ public class BankDbContext : DbContext
     public DbSet<MoneyLog> MoneyLogs => Set<MoneyLog>();
     public DbSet<ServerEstateHistory> ServerEstateHistories => Set<ServerEstateHistory>();
     public DbSet<ServerLoan> ServerLoans => Set<ServerLoan>();
+    public DbSet<ServerLoanLog> ServerLoanLogs => Set<ServerLoanLog>();
     public DbSet<UserBank> UserBanks => Set<UserBank>();
     
     public BankDbContext() {}
@@ -182,6 +183,18 @@ public class BankDbContext : DbContext
             e.Property(x => x.LastPayDate).HasDefaultValueSql("CURRENT_TIMESTAMP");
             e.Property(x => x.FailedPayment).HasDefaultValue(0);
             e.Property(x => x.StopInterest).HasDefaultValue(false);
+        });
+
+        modelBuilder.Entity<ServerLoanLog>(e =>
+        {
+            e.ToTable("server_loan_log");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.Uuid, x.Date });
+            e.Property(x => x.Amount).HasPrecision(20, 0);
+            e.Property(x => x.Note).HasDefaultValue("");
+            e.Property(x => x.Player).HasDefaultValue("");
+            e.Property(x => x.Uuid).HasDefaultValue("");
+            e.Property(x => x.Date).HasDefaultValueSql("CURRENT_TIMESTAMP").ValueGeneratedOnAdd();
         });
 
         modelBuilder.Entity<UserBank>(e =>
