@@ -1,52 +1,83 @@
 using Man10BankService.Data;
 using Man10BankService.Models;
+using Man10BankService.Models.Database;
 using Microsoft.EntityFrameworkCore;
 
 namespace Man10BankService.Repositories;
 
 public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory)
 {
+    public enum ServerLoanLogAction
+    {
+        Borrow,
+        RepaySuccess,
+        RepayFailure,
+        Interest,
+    }
+
     public async Task<ServerLoan?> GetByUuidAsync(string uuid)
     {
         await using var db = await factory.CreateDbContextAsync();
         return await db.ServerLoans.AsNoTracking().FirstOrDefaultAsync(x => x.Uuid == uuid);
     }
 
-    public async Task<ServerLoan?> RepayAsync(string uuid, decimal amount)
+    public async Task<ServerLoan?> AdjustLoanAsync(string uuid, string player, decimal amount, ServerLoanLogAction action)
     {
-        if (amount <= 0m) throw new ArgumentException("返済額は 0 より大きい必要があります。", nameof(amount));
+        if (amount <= 0m) throw new ArgumentException("金額は 0 より大きい必要があります。", nameof(amount));
 
         await using var db = await factory.CreateDbContextAsync();
-        await using var tx = await db.Database.BeginTransactionAsync();
 
         var loan = await db.ServerLoans.FirstOrDefaultAsync(x => x.Uuid == uuid);
-        if (loan == null) return null;
+        if (loan == null)
+        {
+            return null;
+        }
 
-        loan.PaymentAmount += amount;
-        loan.LastPayDate = DateTime.UtcNow;
-
-        await db.SaveChangesAsync();
+        await using var tx = await db.Database.BeginTransactionAsync();
+        switch (action)
+        {
+            case ServerLoanLogAction.Borrow:
+                loan.BorrowAmount += amount;
+                loan.LastPayDate = DateTime.UtcNow;
+                await db.SaveChangesAsync();
+                await AddLogAsync(db, loan.Uuid, loan.Player, ServerLoanLogAction.Borrow, amount);
+                break;
+            case ServerLoanLogAction.Interest:
+                if (!loan.StopInterest)
+                {
+                    loan.BorrowAmount += amount;
+                    loan.LastPayDate = DateTime.UtcNow;
+                    await db.SaveChangesAsync();
+                    await AddLogAsync(db, loan.Uuid, loan.Player, ServerLoanLogAction.Interest, amount);
+                }
+                break;
+            case ServerLoanLogAction.RepaySuccess:
+                loan.PaymentAmount += amount;
+                loan.LastPayDate = DateTime.UtcNow;
+                await db.SaveChangesAsync();
+                await AddLogAsync(db, loan.Uuid, loan.Player, ServerLoanLogAction.RepaySuccess, amount);
+                break;
+            case ServerLoanLogAction.RepayFailure:
+                await AddLogAsync(db, loan.Uuid, string.IsNullOrWhiteSpace(player) ? loan.Player : player, ServerLoanLogAction.RepayFailure, amount);
+                await db.SaveChangesAsync();
+                return loan;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(action), action, null);
+        }
         await tx.CommitAsync();
         return loan;
     }
 
-    public async Task<ServerLoan?> AddInterestAsync(string uuid, decimal interestAmount)
+    private static async Task AddLogAsync(BankDbContext db, string uuid, string player, ServerLoanLogAction action, decimal amount)
     {
-        if (interestAmount <= 0m) throw new ArgumentException("金利額は 0 より大きい必要があります。", nameof(interestAmount));
-
-        await using var db = await factory.CreateDbContextAsync();
-        await using var tx = await db.Database.BeginTransactionAsync();
-
-        var loan = await db.ServerLoans.FirstOrDefaultAsync(x => x.Uuid == uuid);
-        if (loan == null) return null;
-        if (loan.StopInterest) return loan;
-
-        loan.BorrowAmount += interestAmount;
-        loan.LastPayDate = DateTime.UtcNow;
-
-        await db.SaveChangesAsync();
-        await tx.CommitAsync();
-        return loan;
+        var log = new ServerLoanLog
+        {
+            Uuid = uuid,
+            Player = player,
+            Action = action.ToString(),
+            Amount = amount,
+            // Date は DB 既定値
+        };
+        await db.ServerLoanLogs.AddAsync(log);
     }
 }
-
