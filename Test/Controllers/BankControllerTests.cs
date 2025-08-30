@@ -150,6 +150,54 @@ public class BankControllerTests
         body!.Message.Should().StartWith("入金に失敗しました");
     }
     
+    [Fact(DisplayName = "出金成功: 残高が減少しログが記録される")]
+    public async Task Withdraw_Success_ShouldDecreaseBalance_AndWriteLog()
+    {
+        using var host = BuildController();
+        var ctrl = host.Controller;
+        const string uuid = "ffffffff-ffff-ffff-ffff-ffffffffffff";
+
+        await ctrl.Deposit(new DepositRequest
+        {
+            Uuid = uuid,
+            Player = "alex",
+            Amount = 1000,
+            PluginName = "test",
+            Note = "seed",
+            DisplayNote = "初期入金",
+            Server = "dev"
+        });
+
+        var ok = await ctrl.Withdraw(new WithdrawRequest
+        {
+            Uuid = uuid,
+            Player = "alex",
+            Amount = 600,
+            PluginName = "test",
+            Note = "w1",
+            DisplayNote = "出金1",
+            Server = "dev"
+        }) as ObjectResult;
+        ok!.StatusCode.Should().Be(200);
+
+        var balRes = await ctrl.GetBalance(uuid) as ObjectResult;
+        (balRes!.Value as ApiResult<decimal>)!.Data.Should().Be(400);
+
+        var logsRes = await ctrl.GetLogs(uuid, 10) as ObjectResult;
+        var logs = (logsRes!.Value as ApiResult<List<MoneyLog>>)!.Data!;
+        logs[0].Should().BeEquivalentTo(new
+        {
+            Amount = -600m,
+            Deposit = false,
+            Uuid = uuid,
+            Player = "alex",
+            PluginName = "test",
+            Note = "w1",
+            DisplayNote = "出金1",
+            Server = "dev"
+        });
+    }
+
     [Fact(DisplayName = "出金成功後の残高不足: 2回目は409で残高不変")]
     public async Task Withdraw_Success_Then_Insufficient_Should409_And_NoChange()
     {
