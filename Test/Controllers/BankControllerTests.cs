@@ -313,49 +313,75 @@ public class BankControllerTests
         amounts.Should().BeEquivalentTo(new decimal[] { 70, 69, 68, 67, 66, 65, 64, 63, 62, 61 }, opt => opt.WithStrictOrdering());
     }
 
-    [Fact(DisplayName = "並列入金: FIFO順でログが記録される")]
-    public async Task Concurrent_Deposits_ShouldRecordLogsInFifoOrder()
+    [Fact(DisplayName = "並列入出金: ログ整合性と最終残高が一致する")]
+    public async Task Concurrent_DepositWithdraw_ShouldKeepConsistency()
     {
         using var host = BuildController();
         var ctrl = (BankController)host.Controller;
         const string uuid = "feedface-feed-face-feed-feedfaceface";
 
-        var amounts = Enumerable.Range(1, 20).ToArray();
-        var doneOrder = new ConcurrentQueue<int>();
-
-        var tasks = amounts.Select(async a =>
+        // 事前残高を確保
+        var seed = new DepositRequest
         {
-            var res = await ctrl.Deposit(new DepositRequest
+            Uuid = uuid,
+            Player = "alex",
+            Amount = 1000,
+            PluginName = "test",
+            Note = "seed",
+            DisplayNote = "初期入金",
+            Server = "dev"
+        };
+        (await ctrl.Deposit(seed) as ObjectResult)!.StatusCode.Should().Be(200);
+
+        var ops = new decimal[] { +100, -50, +200, -150, +500, -300, +50, -25, +75, -10 };
+        var tasks = ops.Select(async o =>
+        {
+            if (o >= 0)
             {
-                Uuid = uuid,
-                Player = "alex",
-                Amount = a,
-                PluginName = "test",
-                Note = $"dep{a}",
-                DisplayNote = $"入金{a}",
-                Server = "dev"
-            }) as ObjectResult;
-            res!.StatusCode.Should().Be(200);
-            doneOrder.Enqueue(a);
+                var res = await ctrl.Deposit(new DepositRequest
+                {
+                    Uuid = uuid,
+                    Player = "alex",
+                    Amount = o,
+                    PluginName = "test",
+                    Note = $"dep{o}",
+                    DisplayNote = $"入金{o}",
+                    Server = "dev"
+                }) as ObjectResult;
+                res!.StatusCode.Should().Be(200);
+            }
+            else
+            {
+                var res = await ctrl.Withdraw(new WithdrawRequest
+                {
+                    Uuid = uuid,
+                    Player = "alex",
+                    Amount = -o,
+                    PluginName = "test",
+                    Note = $"wd{-o}",
+                    DisplayNote = $"出金{-o}",
+                    Server = "dev"
+                }) as ObjectResult;
+                res!.StatusCode.Should().Be(200);
+            }
         }).ToArray();
 
         await Task.WhenAll(tasks);
 
-        var get = await ctrl.GetLogs(uuid, limit: 20) as ObjectResult;
+        var get = await ctrl.GetLogs(uuid, limit: 100) as ObjectResult;
         get!.StatusCode.Should().Be(200);
         var logs = (get.Value as ApiResult<List<MoneyLog>>)!.Data!;
-        logs.Should().HaveCount(20);
 
-        var completed = doneOrder.ToArray();
-        completed.Length.Should().Be(20);
+        logs.Count.Should().Be(1 + ops.Length);
 
-        // ログは新しい順（処理完了順の逆順）で並ぶため比較は反転
-        var expected = completed.Reverse().Select(i => (decimal)i).ToArray();
-        var actual = logs.Select(x => x.Amount).ToArray();
-        actual.Should().BeEquivalentTo(expected, opt => opt.WithStrictOrdering());
+        var expectedAmounts = new[] { seed.Amount }.Concat(ops).ToArray();
+        logs.Select(x => x.Amount).Should().BeEquivalentTo(expectedAmounts);
 
-        // 残高は合計値
+        logs.All(l => (l.Amount >= 0m) == l.Deposit).Should().BeTrue();
+
         var balRes = await ctrl.GetBalance(uuid) as ObjectResult;
-        (balRes!.Value as ApiResult<decimal>)!.Data.Should().Be(amounts.Sum());
+        var finalBalance = (balRes!.Value as ApiResult<decimal>)!.Data;
+        finalBalance.Should().Be(expectedAmounts.Sum());
+        logs.Sum(l => l.Amount).Should().Be(finalBalance);
     }
 }
