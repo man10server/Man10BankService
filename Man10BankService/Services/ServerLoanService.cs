@@ -186,4 +186,46 @@ public class ServerLoanService(IDbContextFactory<BankDbContext> dbFactory, BankS
             return ApiResult<decimal>.Error($"借入可能額の計算に失敗しました: {ex.Message}");
         }
     }
+    
+    private async Task<ApiResult<ServerLoan?>> AddDailyInterestAsync(string uuid, string player)
+    {
+        try
+        {
+            var repo = new ServerLoanRepository(dbFactory);
+            var loan = await repo.GetByUuidAsync(uuid);
+            if (loan == null)
+                return ApiResult<ServerLoan?>.NotFound("借入データが見つかりません。");
+
+            if (loan.StopInterest)
+                return ApiResult<ServerLoan?>.Ok(loan, "利息計算は停止されています。");
+
+            if (loan.BorrowAmount <= 0m)
+                return ApiResult<ServerLoan?>.Ok(loan, "借入額が 0 円のため、利息は追加されません。");
+
+            // 複利: 元本に対する日利分を加算（BorrowAmount *= 1 + r と等価）
+            var interest = loan.BorrowAmount * DailyInterestRate;
+
+            // 金額は整数運用のため四捨五入（DB は DECIMAL(20,0)）
+            var rounded = Math.Round(interest, 0, MidpointRounding.AwayFromZero);
+            if (rounded <= 0m)
+                return ApiResult<ServerLoan?>.Ok(loan, "利息が 0 円のため、追加は行いません。");
+
+            var updated = await repo.AdjustLoanAsync(uuid,
+                string.IsNullOrWhiteSpace(player) ? loan.Player : player,
+                rounded,
+                ServerLoanRepository.ServerLoanLogAction.Interest);
+
+            return ApiResult<ServerLoan?>.Ok(updated);
+        }
+        catch (ArgumentException ex)
+        {
+            return ApiResult<ServerLoan?>.BadRequest(ex.Message);
+        }
+        catch (Exception ex)
+        {
+            return ApiResult<ServerLoan?>.Error($"利息追加に失敗しました: {ex.Message}");
+        }
+    }
+
 }
+
