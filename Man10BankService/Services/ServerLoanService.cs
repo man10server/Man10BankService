@@ -37,6 +37,61 @@ public class ServerLoanService(IDbContextFactory<BankDbContext> dbFactory, BankS
             return ApiResult<ServerLoan>.Error($"借入データの取得に失敗しました: {ex.Message}");
         }
     }
+    
+    public async Task<ApiResult<ServerLoan?>> RepayAsync(ServerLoanRepayRequest req)
+    {
+        try
+        {
+            var repo = new ServerLoanRepository(dbFactory);
+            var loan = await repo.GetByUuidAsync(req.Uuid);
+            if (loan == null)
+                return ApiResult<ServerLoan?>.NotFound("借入データが見つかりません。");
+
+            // 借入残高を算出（BorrowAmount - PaymentAmount）
+            var remain = loan.BorrowAmount - loan.PaymentAmount;
+            if (remain <= 0m)
+                return ApiResult<ServerLoan?>.BadRequest("返済は不要です。すでに完済しています。");
+
+            // リクエストの支払額（未指定または 0 以下なら既定の PaymentAmount）
+            var requested = req.Amount is > 0m ? req.Amount.Value : loan.PaymentAmount;
+            if (requested <= 0m)
+                return ApiResult<ServerLoan?>.BadRequest("支払額が設定されていません。支払額を指定するか、PaymentAmount を設定してください。");
+
+            // 過払い防止のため、残高を上限にクリップ
+            var amount = Math.Min(requested, remain);
+            if (amount <= 0m)
+                return ApiResult<ServerLoan?>.BadRequest("支払額が 0 円のため処理を実行できません。");
+
+            var wd = await bank.WithdrawAsync(new WithdrawRequest
+            {
+                Uuid = req.Uuid,
+                Player = req.Player,
+                Amount = amount,
+                PluginName = "server_loan",
+                Note = "loan_repay",
+                DisplayNote = "サーバーローン返済",
+                Server = "system"
+            });
+
+            if (wd.StatusCode == 200)
+            {
+                var updated = await repo.AdjustLoanAsync(req.Uuid, req.Player, amount, ServerLoanRepository.ServerLoanLogAction.RepaySuccess);
+                return ApiResult<ServerLoan?>.Ok(updated);
+            }
+
+            await repo.AdjustLoanAsync(req.Uuid, req.Player, amount, ServerLoanRepository.ServerLoanLogAction.RepayFailure);
+            return new ApiResult<ServerLoan?>(wd.StatusCode, wd.Message);
+        }
+        catch (ArgumentException ex)
+        {
+            return ApiResult<ServerLoan?>.BadRequest(ex.Message);
+        }
+        catch (Exception ex)
+        {
+            return ApiResult<ServerLoan?>.Error($"返済処理に失敗しました: {ex.Message}");
+        }
+    }
+    
     public async Task<ApiResult<decimal>> CalculateBorrowLimitAsync(string uuid, int? window = null)
     {
         var borrowable = 0m;
@@ -87,49 +142,6 @@ public class ServerLoanService(IDbContextFactory<BankDbContext> dbFactory, BankS
         catch (Exception ex)
         {
             return ApiResult<decimal>.Error($"借入可能額の計算に失敗しました: {ex.Message}");
-        }
-    }
-
-    public async Task<ApiResult<ServerLoan?>> RepayAsync(ServerLoanRepayRequest req)
-    {
-        try
-        {
-            var repo = new ServerLoanRepository(dbFactory);
-            var loan = await repo.GetByUuidAsync(req.Uuid);
-            if (loan == null)
-                return ApiResult<ServerLoan?>.NotFound("借入データが見つかりません。");
-
-            var amount = req.Amount is > 0m ? req.Amount.Value : loan.PaymentAmount;
-            if (amount <= 0m)
-                return ApiResult<ServerLoan?>.BadRequest("支払額が設定されていません。支払額を指定するか、PaymentAmount を設定してください。");
-
-            var wd = await bank.WithdrawAsync(new WithdrawRequest
-            {
-                Uuid = req.Uuid,
-                Player = req.Player,
-                Amount = amount,
-                PluginName = "server_loan",
-                Note = "loan_repay",
-                DisplayNote = "サーバーローン返済",
-                Server = "system"
-            });
-
-            if (wd.StatusCode == 200)
-            {
-                var updated = await repo.AdjustLoanAsync(req.Uuid, req.Player, amount, ServerLoanRepository.ServerLoanLogAction.RepaySuccess);
-                return ApiResult<ServerLoan?>.Ok(updated);
-            }
-
-            await repo.AdjustLoanAsync(req.Uuid, req.Player, amount, ServerLoanRepository.ServerLoanLogAction.RepayFailure);
-            return new ApiResult<ServerLoan?>(wd.StatusCode, wd.Message);
-        }
-        catch (ArgumentException ex)
-        {
-            return ApiResult<ServerLoan?>.BadRequest(ex.Message);
-        }
-        catch (Exception ex)
-        {
-            return ApiResult<ServerLoan?>.Error($"返済処理に失敗しました: {ex.Message}");
         }
     }
 }
