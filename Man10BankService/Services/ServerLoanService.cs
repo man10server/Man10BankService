@@ -38,6 +38,48 @@ public class ServerLoanService(IDbContextFactory<BankDbContext> dbFactory, BankS
         }
     }
     
+    public async Task<ApiResult<ServerLoan?>> BorrowAsync(ServerLoanBorrowRequest req)
+    {
+        try
+        {
+            if (req.Amount <= 0m)
+                return ApiResult<ServerLoan?>.BadRequest("借入金額は 0 より大きい必要があります。");
+
+            var repo = new ServerLoanRepository(dbFactory);
+            var loan = await repo.GetByUuidAsync(req.Uuid);
+            if (loan == null)
+                return ApiResult<ServerLoan?>.NotFound("借入データが見つかりません。");
+
+            // 先に入金処理（入金失敗時は借入を記録しない）
+            var dp = await bank.DepositAsync(new DepositRequest
+            {
+                Uuid = req.Uuid,
+                Player = req.Player,
+                Amount = req.Amount,
+                PluginName = "server_loan",
+                Note = "loan_borrow",
+                DisplayNote = "サーバーローン借入",
+                Server = "system"
+            });
+
+            if (dp.StatusCode != 200)
+            {
+                return new ApiResult<ServerLoan?>(dp.StatusCode, dp.Message);
+            }
+
+            var updated = await repo.AdjustLoanAsync(req.Uuid, req.Player, req.Amount, ServerLoanRepository.ServerLoanLogAction.Borrow);
+            return ApiResult<ServerLoan?>.Ok(updated);
+        }
+        catch (ArgumentException ex)
+        {
+            return ApiResult<ServerLoan?>.BadRequest(ex.Message);
+        }
+        catch (Exception ex)
+        {
+            return ApiResult<ServerLoan?>.Error($"借入処理に失敗しました: {ex.Message}");
+        }
+    }
+    
     public async Task<ApiResult<ServerLoan?>> RepayAsync(ServerLoanRepayRequest req)
     {
         try
