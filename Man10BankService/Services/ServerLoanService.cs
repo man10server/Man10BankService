@@ -1,3 +1,4 @@
+using System;
 using Man10BankService.Data;
 using Man10BankService.Models;
 using Man10BankService.Models.Requests;
@@ -12,6 +13,11 @@ public class ServerLoanService(IDbContextFactory<BankDbContext> dbFactory, BankS
     private static decimal MinAmount { get; set; } = 100000m;
     private static decimal MaxAmount { get; set; } = 3000000m;
     private static int RepayWindow { get; set; } = 10;
+    private static TimeSpan DailyInterestTime { get; set; } = new(2, 0, 0); // 02:00
+    private static TimeSpan WeeklyRepayTime { get; set; } = new(3, 0, 0);   // 03:00
+    private static DayOfWeek WeeklyRepayDay { get; set; } = DayOfWeek.Monday;
+
+    private readonly CancellationTokenSource _cts = new();
 
     public static void Configure(IConfiguration configuration)
     {
@@ -20,6 +26,19 @@ public class ServerLoanService(IDbContextFactory<BankDbContext> dbFactory, BankS
         MinAmount = s.GetValue("MinAmount", 100000m);
         MaxAmount = s.GetValue("MaxAmount", 3000000m);
         RepayWindow = s.GetValue("RepayWindow", 10);
+        // スケジュール設定（省略時はデフォルト）
+        if (TimeSpan.TryParse(s["DailyInterestTime"], out var dit))
+            DailyInterestTime = dit;
+        if (TimeSpan.TryParse(s["WeeklyRepayTime"], out var wrt))
+            WeeklyRepayTime = wrt;
+        if (Enum.TryParse<DayOfWeek>(s["WeeklyRepayDay"], true, out var wrd))
+            WeeklyRepayDay = wrd;
+    }
+
+    // アプリ起動時に Program.cs から明示的に呼び出す
+    public void StartScheduler()
+    {
+        _ = Task.Run(() => SchedulerLoopAsync(_cts.Token));
     }
 
     public async Task<ApiResult<ServerLoan>> GetByUuidAsync(string uuid)
@@ -202,7 +221,6 @@ public class ServerLoanService(IDbContextFactory<BankDbContext> dbFactory, BankS
             if (loan.BorrowAmount <= 0m)
                 return ApiResult<ServerLoan?>.Ok(loan, "借入額が 0 円のため、利息は追加されません。");
 
-            // 複利: 元本に対する日利分を加算（BorrowAmount *= 1 + r と等価）
             var interest = loan.BorrowAmount * DailyInterestRate;
 
             // 金額は整数運用のため四捨五入（DB は DECIMAL(20,0)）
@@ -227,5 +245,69 @@ public class ServerLoanService(IDbContextFactory<BankDbContext> dbFactory, BankS
         }
     }
 
-}
+    // 全プレイヤーに対して日次利息を実行
+    private async Task RunDailyInterestForAllAsync()
+    {
+        var repo = new ServerLoanRepository(dbFactory);
+        var loans = await repo.GetAllAsync();
+        foreach (var loan in loans)
+        {
+            await AddDailyInterestAsync(loan.Uuid, loan.Player);
+        }
+    }
 
+    // 全プレイヤーに対して週次返済を実行（Amount 未指定＝既定の PaymentAmount）
+    private async Task RunWeeklyRepayForAllAsync()
+    {
+        var repo = new ServerLoanRepository(dbFactory);
+        var loans = await repo.GetAllAsync();
+        foreach (var loan in loans)
+        {
+            await RepayAsync(new ServerLoanRepayRequest
+            {
+                Uuid = loan.Uuid,
+                Player = loan.Player,
+                Amount = null,
+            });
+        }
+    }
+
+    // 単純なスケジューラループ（停止中の考慮は現状不要の要件）
+    private async Task SchedulerLoopAsync(CancellationToken ct)
+    {
+        DateOnly? lastDailyRun = null;
+        DateOnly? lastWeeklyRun = null;
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                var now = DateTime.Now;
+                var today = DateOnly.FromDateTime(now);
+
+                // 日次実行: 指定時刻を過ぎ、まだ当日未実行なら実行
+                var dailyDue = now.TimeOfDay >= DailyInterestTime;
+                if (dailyDue && lastDailyRun != today)
+                {
+                    await RunDailyInterestForAllAsync();
+                    lastDailyRun = today;
+                }
+
+                // 週次実行: 指定曜日・時刻を過ぎ、まだ当日未実行なら実行
+                var weeklyDue = now.DayOfWeek == WeeklyRepayDay && now.TimeOfDay >= WeeklyRepayTime;
+                if (weeklyDue && lastWeeklyRun != today)
+                {
+                    await RunWeeklyRepayForAllAsync();
+                    lastWeeklyRun = today;
+                }
+            }
+            catch
+            {
+                // ログ基盤未導入のため握りつぶし（要件により拡張）
+            }
+
+            try { await Task.Delay(TimeSpan.FromMinutes(1), ct); }
+            catch (TaskCanceledException) { break; }
+        }
+    }
+
+}

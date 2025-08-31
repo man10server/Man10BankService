@@ -20,7 +20,13 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory)
         await using var db = await factory.CreateDbContextAsync();
         return await db.ServerLoans.AsNoTracking().FirstOrDefaultAsync(x => x.Uuid == uuid);
     }
-    
+
+    public async Task<List<ServerLoan>> GetAllAsync()
+    {
+        await using var db = await factory.CreateDbContextAsync();
+        return await db.ServerLoans.AsNoTracking().ToListAsync();
+    }
+
     public async Task<ServerLoan?> AdjustLoanAsync(string uuid, string player, decimal amount, ServerLoanLogAction action)
     {
         if (amount <= 0m) throw new ArgumentException("金額は 0 より大きい必要があります。", nameof(amount));

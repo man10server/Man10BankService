@@ -27,4 +27,7 @@ app.UseHttpsRedirection();
 
 app.MapControllers();
 
+// サーバーローンの定期タスクを起動
+app.Services.GetRequiredService<Man10BankService.Services.ServerLoanService>().StartScheduler();
+
 app.Run();
