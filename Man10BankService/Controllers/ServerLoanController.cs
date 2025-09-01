@@ -20,13 +20,24 @@ public class ServerLoanController(ServerLoanService service) : ControllerBase
         return StatusCode(res.StatusCode, res);
     }
 
-    [HttpPost("borrow")]
-    public async Task<IActionResult> Borrow([FromBody] ServerLoanBorrowRequest request)
+public sealed class BorrowRequest
+{
+    public string Player { get; set; } = string.Empty;
+    public decimal Amount { get; set; }
+}
+
+[HttpPost("{uuid}/borrow")]
+public async Task<IActionResult> Borrow([FromRoute] string uuid, [FromBody] BorrowRequest request)
+{
+    if (!ModelState.IsValid) return ValidationProblem(ModelState);
+    var res = await service.BorrowAsync(new ServerLoanBorrowRequest
     {
-        if (!ModelState.IsValid) return ValidationProblem(ModelState);
-        var res = await service.BorrowAsync(request);
-        return StatusCode(res.StatusCode, res);
-    }
+        Uuid = uuid,
+        Player = request.Player,
+        Amount = request.Amount
+    });
+    return StatusCode(res.StatusCode, res);
+}
 
     [HttpPost("{uuid}/repay")]
     public async Task<IActionResult> Repay([FromRoute] string uuid, [FromQuery] decimal? amount)
@@ -49,4 +60,3 @@ public class ServerLoanController(ServerLoanService service) : ControllerBase
         return StatusCode(res.StatusCode, res);
     }
 }
-
