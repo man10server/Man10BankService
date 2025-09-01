@@ -1,3 +1,4 @@
+using Man10BankService.Models.Requests;
 using Man10BankService.Services;
 using Microsoft.AspNetCore.Mvc;
 using Man10BankService.Models.Requests;
@@ -20,13 +21,13 @@ public class ServerLoanController(ServerLoanService service) : ControllerBase
         return StatusCode(res.StatusCode, res);
     }
 
-    [HttpPost("borrow")]
-    public async Task<IActionResult> Borrow([FromRoute] string uuid, [FromBody] ServerLoanBorrowBodyRequest request)
-    {
-        if (!ModelState.IsValid) return ValidationProblem(ModelState);
-        var res = await service.BorrowAsync(uuid, request.Player, request.Amount);
-        return StatusCode(res.StatusCode, res);
-    }
+[HttpPost("borrow")]
+public async Task<IActionResult> Borrow([FromRoute] string uuid, [FromBody] ServerLoanBorrowBodyRequest request)
+{
+    if (!ModelState.IsValid) return ValidationProblem(ModelState);
+    var res = await service.BorrowAsync(uuid, request.Player, request.Amount);
+    return StatusCode(res.StatusCode, res);
+}
 
     [HttpPost("repay")]
     public async Task<IActionResult> Repay([FromRoute] string uuid, [FromQuery] decimal? amount)
