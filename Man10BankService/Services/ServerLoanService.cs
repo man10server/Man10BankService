@@ -49,44 +49,41 @@ public class ServerLoanService
         }
     }
     
-    public async Task<ApiResult<ServerLoan?>> BorrowAsync(ServerLoanBorrowRequest req)
+    public async Task<ApiResult<ServerLoan?>> BorrowAsync(string uuid, string player, decimal amount)
     {
         try
         {
-            if (req.Amount <= 0m)
+            if (amount <= 0m)
                 return ApiResult<ServerLoan?>.BadRequest("借入金額は 0 より大きい必要があります。");
 
             var repo = new ServerLoanRepository(_dbFactory);
-            var loan = await repo.GetByUuidAsync(req.Uuid);
+            var loan = await repo.GetByUuidAsync(uuid);
             if (loan == null)
                 return ApiResult<ServerLoan?>.NotFound("借入データが見つかりません。");
 
-            var updated = await repo.AdjustLoanAsync(req.Uuid, req.Player, req.Amount, ServerLoanRepository.ServerLoanLogAction.Borrow);
+            var updated = await repo.AdjustLoanAsync(uuid, player, amount, ServerLoanRepository.ServerLoanLogAction.Borrow);
 
             var dp = await _bank.DepositAsync(new DepositRequest
             {
-                Uuid = req.Uuid,
-                Player = req.Player,
-                Amount = req.Amount,
+                Uuid = uuid,
+                Player = player,
+                Amount = amount,
                 PluginName = "server_loan",
                 Note = "loan_borrow",
                 DisplayNote = "サーバーローン借入",
                 Server = "system"
             });
 
-            if (dp.StatusCode == 200)
-            {
-                var init = Math.Round(req.Amount * DailyInterestRate * 7m * 2m, 0, MidpointRounding.AwayFromZero);
-                if (init < 1m) init = 1m;
-                if (updated != null && updated.PaymentAmount <= 0m)
-                {
-                    var set = await repo.SetPaymentAmountAsync(req.Uuid, init);
-                    if (set != null) updated = set;
-                }
-                return ApiResult<ServerLoan?>.Ok(updated);
-            }
-
-            return new ApiResult<ServerLoan?>(dp.StatusCode, dp.Message);
+            if (dp.StatusCode != 200) return new ApiResult<ServerLoan?>(dp.StatusCode, dp.Message);
+            
+            var paymentAmount = Math.Round(amount * DailyInterestRate * 7m * 2m, 0, MidpointRounding.AwayFromZero);
+            if (paymentAmount < 1m) paymentAmount = 1m;
+            
+            if (updated == null || updated.PaymentAmount > 0m) return ApiResult<ServerLoan?>.Ok(updated);
+            
+            var set = await repo.SetPaymentAmountAsync(uuid, paymentAmount);
+            if (set != null) updated = set;
+            return ApiResult<ServerLoan?>.Ok(updated);
         }
         catch (ArgumentException ex)
         {

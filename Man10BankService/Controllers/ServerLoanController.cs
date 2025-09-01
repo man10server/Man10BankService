@@ -30,12 +30,7 @@ public sealed class BorrowRequest
 public async Task<IActionResult> Borrow([FromRoute] string uuid, [FromBody] BorrowRequest request)
 {
     if (!ModelState.IsValid) return ValidationProblem(ModelState);
-    var res = await service.BorrowAsync(new ServerLoanBorrowRequest
-    {
-        Uuid = uuid,
-        Player = request.Player,
-        Amount = request.Amount
-    });
+    var res = await service.BorrowAsync(uuid, request.Player, request.Amount);
     return StatusCode(res.StatusCode, res);
 }
 
