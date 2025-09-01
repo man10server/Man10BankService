@@ -146,7 +146,7 @@ public class ServerLoanService
         }
     }
     
-    public async Task<ApiResult<decimal>> CalculateBorrowLimitAsync(string uuid, int? window = null)
+    public async Task<ApiResult<decimal>> CalculateBorrowLimitAsync(string uuid)
     {
         var borrowable = 0m;
         try
@@ -156,21 +156,18 @@ public class ServerLoanService
             if (loan == null)
                 return ApiResult<decimal>.Ok(MinAmount);
 
-            var w = window.GetValueOrDefault(RepayWindow);
-            if (w < 1) w = 1; if (w > 1000) w = 1000;
-
-            var fetch = Math.Min(1000, w * 20);
+            var fetch = Math.Min(1000, RepayWindow * 20);
             var logs = await repo.GetLogsAsync(uuid, fetch);
 
             var success = logs
                 .Where(l => l.Action == ServerLoanRepository.ServerLoanLogAction.RepaySuccess.ToString())
-                .Take(w)
+                .Take(RepayWindow)
                 .Select(l => l.Amount)
                 .ToList();
 
             var failure = logs
                 .Where(l => l.Action == ServerLoanRepository.ServerLoanLogAction.RepayFailure.ToString())
-                .Take(w)
+                .Take(RepayWindow)
                 .Select(l => l.Amount)
                 .ToList();
 
