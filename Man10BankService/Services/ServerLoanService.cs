@@ -28,26 +28,6 @@ public class ServerLoanService
         _bank = bank;
     }
     
-    public async Task<ApiResult<ServerLoan?>> SetPaymentAmountAsync(string uuid, decimal paymentAmount)
-    {
-        try
-        {
-            var repo = new ServerLoanRepository(_dbFactory);
-            var loan = await repo.SetPaymentAmountAsync(uuid, paymentAmount);
-            if (loan == null)
-                return ApiResult<ServerLoan?>.NotFound("借入データが見つかりません。");
-            return ApiResult<ServerLoan?>.Ok(loan);
-        }
-        catch (ArgumentException ex)
-        {
-            return ApiResult<ServerLoan?>.BadRequest(ex.Message);
-        }
-        catch (Exception ex)
-        {
-            return ApiResult<ServerLoan?>.Error($"支払額の設定に失敗しました: {ex.Message}");
-        }
-    }
-    
     public void StartScheduler()
     {
         Task.Run(SchedulerLoopAsync);
@@ -95,7 +75,16 @@ public class ServerLoanService
             });
 
             if (dp.StatusCode == 200)
+            {
+                var init = Math.Round(req.Amount * DailyInterestRate * 7m * 2m, 0, MidpointRounding.AwayFromZero);
+                if (init < 1m) init = 1m;
+                if (updated != null && updated.PaymentAmount <= 0m)
+                {
+                    var set = await repo.SetPaymentAmountAsync(req.Uuid, init);
+                    if (set != null) updated = set;
+                }
                 return ApiResult<ServerLoan?>.Ok(updated);
+            }
 
             return new ApiResult<ServerLoan?>(dp.StatusCode, dp.Message);
         }
@@ -209,6 +198,26 @@ public class ServerLoanService
         catch (Exception ex)
         {
             return ApiResult<decimal>.Error($"借入可能額の計算に失敗しました: {ex.Message}");
+        }
+    }
+    
+    public async Task<ApiResult<ServerLoan?>> SetPaymentAmountAsync(string uuid, decimal paymentAmount)
+    {
+        try
+        {
+            var repo = new ServerLoanRepository(_dbFactory);
+            var loan = await repo.SetPaymentAmountAsync(uuid, paymentAmount);
+            if (loan == null)
+                return ApiResult<ServerLoan?>.NotFound("借入データが見つかりません。");
+            return ApiResult<ServerLoan?>.Ok(loan);
+        }
+        catch (ArgumentException ex)
+        {
+            return ApiResult<ServerLoan?>.BadRequest(ex.Message);
+        }
+        catch (Exception ex)
+        {
+            return ApiResult<ServerLoan?>.Error($"支払額の設定に失敗しました: {ex.Message}");
         }
     }
     
