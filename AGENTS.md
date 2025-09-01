@@ -20,6 +20,7 @@
 - 命名: 型/メソッドは PascalCase、ローカル変数/引数は camelCase、非同期メソッドは `Async` 接尾辞を付与。
 - Minimal API: ルート名は明確に（例: `.WithName("GetWeatherForecast")`）。小さなレコード/DTO は使用箇所近くに配置し、肥大化したら `Man10BankService/Models/` 配下へ。
 - フォーマット: 可能ならプッシュ前に `dotnet format` を実行。
+- コメント: 実装時はコード内にコメントを付けない（必要な説明は PR やコミットメッセージに記載）。
 
 ## テストガイドライン
 - フレームワーク: xUnit（推奨）。`tests/Man10BankService.Tests/` に並列実行可能なテストプロジェクトを作成。
