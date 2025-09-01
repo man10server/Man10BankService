@@ -91,12 +91,12 @@ public class ServerLoanService
         }
     }
     
-    public async Task<ApiResult<ServerLoan?>> RepayAsync(ServerLoanRepayRequest req)
+    public async Task<ApiResult<ServerLoan?>> RepayAsync(string uuid, decimal? payAmount)
     {
         try
         {
             var repo = new ServerLoanRepository(_dbFactory);
-            var loan = await repo.GetByUuidAsync(req.Uuid);
+            var loan = await repo.GetByUuidAsync(uuid);
             if (loan == null)
                 return ApiResult<ServerLoan?>.NotFound("借入データが見つかりません。");
 
@@ -104,7 +104,7 @@ public class ServerLoanService
             if (remain <= 0m)
                 return ApiResult<ServerLoan?>.BadRequest("返済は不要です。すでに完済しています。");
 
-            var requested = req.Amount is > 0m ? req.Amount.Value : loan.PaymentAmount;
+            var requested = payAmount is > 0m ? payAmount.Value : loan.PaymentAmount;
             if (requested <= 0m)
                 return ApiResult<ServerLoan?>.BadRequest("支払額が設定されていません。支払額を指定するか、PaymentAmount を設定してください。");
 
@@ -114,8 +114,8 @@ public class ServerLoanService
 
             var wd = await _bank.WithdrawAsync(new WithdrawRequest
             {
-                Uuid = req.Uuid,
-                Player = req.Player,
+                Uuid = uuid,
+                Player = loan.Player,
                 Amount = amount,
                 PluginName = "server_loan",
                 Note = "loan_repay",
@@ -125,11 +125,11 @@ public class ServerLoanService
 
             if (wd.StatusCode == 200)
             {
-                var updated = await repo.AdjustLoanAsync(req.Uuid, req.Player, amount, ServerLoanRepository.ServerLoanLogAction.RepaySuccess);
+                var updated = await repo.AdjustLoanAsync(uuid, loan.Player, amount, ServerLoanRepository.ServerLoanLogAction.RepaySuccess);
                 return ApiResult<ServerLoan?>.Ok(updated);
             }
 
-            await repo.AdjustLoanAsync(req.Uuid, req.Player, amount, ServerLoanRepository.ServerLoanLogAction.RepayFailure);
+            await repo.AdjustLoanAsync(uuid, loan.Player, amount, ServerLoanRepository.ServerLoanLogAction.RepayFailure);
             return new ApiResult<ServerLoan?>(wd.StatusCode, wd.Message);
         }
         catch (ArgumentException ex)
@@ -283,12 +283,7 @@ public class ServerLoanService
         var loans = await repo.GetAllAsync();
         foreach (var loan in loans)
         {
-            await RepayAsync(new ServerLoanRepayRequest
-            {
-                Uuid = loan.Uuid,
-                Player = loan.Player,
-                Amount = null,
-            });
+            await RepayAsync(loan.Uuid, null);
         }
     }
 
