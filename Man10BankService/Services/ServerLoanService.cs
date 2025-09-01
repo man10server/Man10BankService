@@ -16,8 +16,6 @@ public class ServerLoanService
     private static TimeSpan WeeklyRepayTime { get; set; } = new(3, 0, 0);   // 03:00
     private static DayOfWeek WeeklyRepayDay { get; set; } = DayOfWeek.Monday;
 
-    private readonly CancellationTokenSource _cts = new();
-    
     private readonly IDbContextFactory<BankDbContext> _dbFactory;
     private readonly BankService _bank;
 
@@ -30,9 +28,29 @@ public class ServerLoanService
         _bank = bank;
     }
     
+    public async Task<ApiResult<ServerLoan?>> SetPaymentAmountAsync(string uuid, decimal paymentAmount)
+    {
+        try
+        {
+            var repo = new ServerLoanRepository(_dbFactory);
+            var loan = await repo.SetPaymentAmountAsync(uuid, paymentAmount);
+            if (loan == null)
+                return ApiResult<ServerLoan?>.NotFound("借入データが見つかりません。");
+            return ApiResult<ServerLoan?>.Ok(loan);
+        }
+        catch (ArgumentException ex)
+        {
+            return ApiResult<ServerLoan?>.BadRequest(ex.Message);
+        }
+        catch (Exception ex)
+        {
+            return ApiResult<ServerLoan?>.Error($"支払額の設定に失敗しました: {ex.Message}");
+        }
+    }
+    
     public void StartScheduler()
     {
-        _ = Task.Run(() => SchedulerLoopAsync(_cts.Token));
+        Task.Run(SchedulerLoopAsync);
     }
 
     public async Task<ApiResult<ServerLoan>> GetByUuidAsync(string uuid)
@@ -232,11 +250,11 @@ public class ServerLoanService
         }
     }
     
-    private async Task SchedulerLoopAsync(CancellationToken ct)
+    private async Task SchedulerLoopAsync()
     {
         DateOnly? lastDailyRun = null;
         DateOnly? lastWeeklyRun = null;
-        while (!ct.IsCancellationRequested)
+        while (true)
         {
             try
             {
@@ -262,7 +280,7 @@ public class ServerLoanService
                 // ignored
             }
 
-            try { await Task.Delay(TimeSpan.FromMinutes(1), ct); }
+            try { await Task.Delay(TimeSpan.FromMinutes(1)); }
             catch (TaskCanceledException) { break; }
         }
     }
