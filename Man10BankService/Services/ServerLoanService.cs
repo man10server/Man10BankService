@@ -7,7 +7,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Man10BankService.Services;
 
-public class ServerLoanService(IDbContextFactory<BankDbContext> dbFactory, BankService bank)
+public class ServerLoanService
 {
     private static decimal DailyInterestRate { get; set; } = 0.001m;
     private static decimal MinAmount { get; set; } = 100000m;
@@ -18,24 +18,19 @@ public class ServerLoanService(IDbContextFactory<BankDbContext> dbFactory, BankS
     private static DayOfWeek WeeklyRepayDay { get; set; } = DayOfWeek.Monday;
 
     private readonly CancellationTokenSource _cts = new();
+    
+    private readonly IDbContextFactory<BankDbContext> _dbFactory;
+    private readonly BankService _bank;
 
-    public static void Configure(IConfiguration configuration)
+    public ServerLoanService(IDbContextFactory<BankDbContext> dbFactory, BankService bank,IConfiguration config)
     {
-        var s = configuration.GetSection("ServerLoan");
-        DailyInterestRate = s.GetValue("DailyInterestRate", 0.001m);
-        MinAmount = s.GetValue("MinAmount", 100000m);
-        MaxAmount = s.GetValue("MaxAmount", 3000000m);
-        RepayWindow = s.GetValue("RepayWindow", 10);
-        // スケジュール設定（省略時はデフォルト）
-        if (TimeSpan.TryParse(s["DailyInterestTime"], out var dit))
-            DailyInterestTime = dit;
-        if (TimeSpan.TryParse(s["WeeklyRepayTime"], out var wrt))
-            WeeklyRepayTime = wrt;
-        if (Enum.TryParse<DayOfWeek>(s["WeeklyRepayDay"], true, out var wrd))
-            WeeklyRepayDay = wrd;
+        StartScheduler();
+        Configure(config);
+        
+        _dbFactory = dbFactory;
+        _bank = bank;
     }
-
-    // アプリ起動時に Program.cs から明示的に呼び出す
+    
     public void StartScheduler()
     {
         _ = Task.Run(() => SchedulerLoopAsync(_cts.Token));
@@ -45,7 +40,7 @@ public class ServerLoanService(IDbContextFactory<BankDbContext> dbFactory, BankS
     {
         try
         {
-            var repo = new ServerLoanRepository(dbFactory);
+            var repo = new ServerLoanRepository(_dbFactory);
             var loan = await repo.GetByUuidAsync(uuid);
             if (loan == null)
                 return ApiResult<ServerLoan>.NotFound("借入データが見つかりません。");
@@ -64,13 +59,13 @@ public class ServerLoanService(IDbContextFactory<BankDbContext> dbFactory, BankS
             if (req.Amount <= 0m)
                 return ApiResult<ServerLoan?>.BadRequest("借入金額は 0 より大きい必要があります。");
 
-            var repo = new ServerLoanRepository(dbFactory);
+            var repo = new ServerLoanRepository(_dbFactory);
             var loan = await repo.GetByUuidAsync(req.Uuid);
             if (loan == null)
                 return ApiResult<ServerLoan?>.NotFound("借入データが見つかりません。");
 
             // 先に入金処理（入金失敗時は借入を記録しない）
-            var dp = await bank.DepositAsync(new DepositRequest
+            var dp = await _bank.DepositAsync(new DepositRequest
             {
                 Uuid = req.Uuid,
                 Player = req.Player,
@@ -103,7 +98,7 @@ public class ServerLoanService(IDbContextFactory<BankDbContext> dbFactory, BankS
     {
         try
         {
-            var repo = new ServerLoanRepository(dbFactory);
+            var repo = new ServerLoanRepository(_dbFactory);
             var loan = await repo.GetByUuidAsync(req.Uuid);
             if (loan == null)
                 return ApiResult<ServerLoan?>.NotFound("借入データが見つかりません。");
@@ -123,7 +118,7 @@ public class ServerLoanService(IDbContextFactory<BankDbContext> dbFactory, BankS
             if (amount <= 0m)
                 return ApiResult<ServerLoan?>.BadRequest("支払額が 0 円のため処理を実行できません。");
 
-            var wd = await bank.WithdrawAsync(new WithdrawRequest
+            var wd = await _bank.WithdrawAsync(new WithdrawRequest
             {
                 Uuid = req.Uuid,
                 Player = req.Player,
@@ -158,7 +153,7 @@ public class ServerLoanService(IDbContextFactory<BankDbContext> dbFactory, BankS
         var borrowable = 0m;
         try
         {
-            var repo = new ServerLoanRepository(dbFactory);
+            var repo = new ServerLoanRepository(_dbFactory);
             var loan = await repo.GetByUuidAsync(uuid);
             if (loan == null)
                 return ApiResult<decimal>.Ok(MinAmount);
@@ -210,7 +205,7 @@ public class ServerLoanService(IDbContextFactory<BankDbContext> dbFactory, BankS
     {
         try
         {
-            var repo = new ServerLoanRepository(dbFactory);
+            var repo = new ServerLoanRepository(_dbFactory);
             var loan = await repo.GetByUuidAsync(uuid);
             if (loan == null)
                 return ApiResult<ServerLoan?>.NotFound("借入データが見つかりません。");
@@ -244,35 +239,7 @@ public class ServerLoanService(IDbContextFactory<BankDbContext> dbFactory, BankS
             return ApiResult<ServerLoan?>.Error($"利息追加に失敗しました: {ex.Message}");
         }
     }
-
-    // 全プレイヤーに対して日次利息を実行
-    private async Task RunDailyInterestForAllAsync()
-    {
-        var repo = new ServerLoanRepository(dbFactory);
-        var loans = await repo.GetAllAsync();
-        foreach (var loan in loans)
-        {
-            await AddDailyInterestAsync(loan.Uuid, loan.Player);
-        }
-    }
-
-    // 全プレイヤーに対して週次返済を実行（Amount 未指定＝既定の PaymentAmount）
-    private async Task RunWeeklyRepayForAllAsync()
-    {
-        var repo = new ServerLoanRepository(dbFactory);
-        var loans = await repo.GetAllAsync();
-        foreach (var loan in loans)
-        {
-            await RepayAsync(new ServerLoanRepayRequest
-            {
-                Uuid = loan.Uuid,
-                Player = loan.Player,
-                Amount = null,
-            });
-        }
-    }
-
-    // 単純なスケジューラループ（停止中の考慮は現状不要の要件）
+    
     private async Task SchedulerLoopAsync(CancellationToken ct)
     {
         DateOnly? lastDailyRun = null;
@@ -302,12 +269,53 @@ public class ServerLoanService(IDbContextFactory<BankDbContext> dbFactory, BankS
             }
             catch
             {
-                // ログ基盤未導入のため握りつぶし（要件により拡張）
+                // ignored
             }
 
             try { await Task.Delay(TimeSpan.FromMinutes(1), ct); }
             catch (TaskCanceledException) { break; }
         }
+    }
+    
+    private async Task RunDailyInterestForAllAsync()
+    {
+        var repo = new ServerLoanRepository(_dbFactory);
+        var loans = await repo.GetAllAsync();
+        foreach (var loan in loans)
+        {
+            await AddDailyInterestAsync(loan.Uuid, loan.Player);
+        }
+    }
+
+    private async Task RunWeeklyRepayForAllAsync()
+    {
+        var repo = new ServerLoanRepository(_dbFactory);
+        var loans = await repo.GetAllAsync();
+        foreach (var loan in loans)
+        {
+            await RepayAsync(new ServerLoanRepayRequest
+            {
+                Uuid = loan.Uuid,
+                Player = loan.Player,
+                Amount = null,
+            });
+        }
+    }
+
+    private static void Configure(IConfiguration configuration)
+    {
+        var s = configuration.GetSection("ServerLoan");
+        DailyInterestRate = s.GetValue("DailyInterestRate", 0.001m);
+        MinAmount = s.GetValue("MinAmount", 100000m);
+        MaxAmount = s.GetValue("MaxAmount", 3000000m);
+        RepayWindow = s.GetValue("RepayWindow", 10);
+
+        if (TimeSpan.TryParse(s["DailyInterestTime"], out var dit))
+            DailyInterestTime = dit;
+        if (TimeSpan.TryParse(s["WeeklyRepayTime"], out var wrt))
+            WeeklyRepayTime = wrt;
+        if (Enum.TryParse<DayOfWeek>(s["WeeklyRepayDay"], true, out var wrd))
+            WeeklyRepayDay = wrd;
     }
 
 }
