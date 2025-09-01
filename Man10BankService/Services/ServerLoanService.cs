@@ -1,4 +1,3 @@
-using System;
 using Man10BankService.Data;
 using Man10BankService.Models;
 using Man10BankService.Models.Requests;
@@ -64,7 +63,8 @@ public class ServerLoanService
             if (loan == null)
                 return ApiResult<ServerLoan?>.NotFound("借入データが見つかりません。");
 
-            // 先に入金処理（入金失敗時は借入を記録しない）
+            var updated = await repo.AdjustLoanAsync(req.Uuid, req.Player, req.Amount, ServerLoanRepository.ServerLoanLogAction.Borrow);
+
             var dp = await _bank.DepositAsync(new DepositRequest
             {
                 Uuid = req.Uuid,
@@ -76,13 +76,10 @@ public class ServerLoanService
                 Server = "system"
             });
 
-            if (dp.StatusCode != 200)
-            {
-                return new ApiResult<ServerLoan?>(dp.StatusCode, dp.Message);
-            }
+            if (dp.StatusCode == 200)
+                return ApiResult<ServerLoan?>.Ok(updated);
 
-            var updated = await repo.AdjustLoanAsync(req.Uuid, req.Player, req.Amount, ServerLoanRepository.ServerLoanLogAction.Borrow);
-            return ApiResult<ServerLoan?>.Ok(updated);
+            return new ApiResult<ServerLoan?>(dp.StatusCode, dp.Message);
         }
         catch (ArgumentException ex)
         {
@@ -103,17 +100,14 @@ public class ServerLoanService
             if (loan == null)
                 return ApiResult<ServerLoan?>.NotFound("借入データが見つかりません。");
 
-            // 借入残高を算出（BorrowAmount - PaymentAmount）
             var remain = loan.BorrowAmount - loan.PaymentAmount;
             if (remain <= 0m)
                 return ApiResult<ServerLoan?>.BadRequest("返済は不要です。すでに完済しています。");
 
-            // リクエストの支払額（未指定または 0 以下なら既定の PaymentAmount）
             var requested = req.Amount is > 0m ? req.Amount.Value : loan.PaymentAmount;
             if (requested <= 0m)
                 return ApiResult<ServerLoan?>.BadRequest("支払額が設定されていません。支払額を指定するか、PaymentAmount を設定してください。");
 
-            // 過払い防止のため、残高を上限にクリップ
             var amount = Math.Min(requested, remain);
             if (amount <= 0m)
                 return ApiResult<ServerLoan?>.BadRequest("支払額が 0 円のため処理を実行できません。");
@@ -161,7 +155,6 @@ public class ServerLoanService
             var w = window.GetValueOrDefault(RepayWindow);
             if (w < 1) w = 1; if (w > 1000) w = 1000;
 
-            // ある程度多めに取得して、返済ログだけ抽出
             var fetch = Math.Min(1000, w * 20);
             var logs = await repo.GetLogsAsync(uuid, fetch);
 
@@ -218,7 +211,6 @@ public class ServerLoanService
 
             var interest = loan.BorrowAmount * DailyInterestRate;
 
-            // 金額は整数運用のため四捨五入（DB は DECIMAL(20,0)）
             var rounded = Math.Round(interest, 0, MidpointRounding.AwayFromZero);
             if (rounded <= 0m)
                 return ApiResult<ServerLoan?>.Ok(loan, "利息が 0 円のため、追加は行いません。");
@@ -251,7 +243,6 @@ public class ServerLoanService
                 var now = DateTime.Now;
                 var today = DateOnly.FromDateTime(now);
 
-                // 日次実行: 指定時刻を過ぎ、まだ当日未実行なら実行
                 var dailyDue = now.TimeOfDay >= DailyInterestTime;
                 if (dailyDue && lastDailyRun != today)
                 {
@@ -259,7 +250,6 @@ public class ServerLoanService
                     lastDailyRun = today;
                 }
 
-                // 週次実行: 指定曜日・時刻を過ぎ、まだ当日未実行なら実行
                 var weeklyDue = now.DayOfWeek == WeeklyRepayDay && now.TimeOfDay >= WeeklyRepayTime;
                 if (weeklyDue && lastWeeklyRun != today)
                 {
