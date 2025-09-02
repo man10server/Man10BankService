@@ -32,14 +32,28 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory)
         if (amount <= 0m) throw new ArgumentException("金額は 0 より大きい必要があります。", nameof(amount));
 
         await using var db = await factory.CreateDbContextAsync();
+        await using var tx = await db.Database.BeginTransactionAsync();
 
         var loan = await db.ServerLoans.FirstOrDefaultAsync(x => x.Uuid == uuid);
         if (loan == null)
         {
-            return null;
-        }
+            if (action != ServerLoanLogAction.Borrow)
+                return null;
 
-        await using var tx = await db.Database.BeginTransactionAsync();
+            loan = new ServerLoan
+            {
+                Uuid = uuid,
+                Player = string.IsNullOrWhiteSpace(player) ? string.Empty : player,
+                BorrowAmount = 0m,
+                PaymentAmount = 0m,
+                FailedPayment = 0,
+                StopInterest = false,
+                BorrowDate = DateTime.UtcNow,
+                LastPayDate = DateTime.UtcNow,
+            };
+            await db.ServerLoans.AddAsync(loan);
+            await db.SaveChangesAsync();
+        }
         switch (action)
         {
             case ServerLoanLogAction.Borrow:
