@@ -94,13 +94,99 @@ public class ServerLoanControllerTests
         var ctrl = (ServerLoanController)env.Host.Controller;
         const string uuid = "00000000-0000-0000-0000-000000000002";
         const string player = "alex";
+        
+        var limitRes = await ctrl.GetBorrowLimit(uuid) as ObjectResult;
+        limitRes!.StatusCode.Should().Be(200);
+        
+        var limit = (limitRes.Value as ApiResult<decimal>)!.Data;
+        var res = await ctrl.Borrow(uuid, new ServerLoanBorrowBodyRequest { Player = player, Amount = limit * 2 }) as ObjectResult;
+        res!.StatusCode.Should().Be(409);
+    }
+
+    [Fact(DisplayName = "borrow: 2回に分けて借入し、合計が反映されログも2件記録される")]
+    public async Task Borrow_Twice_ShouldAccumulate_AndLogTwice()
+    {
+        using var env = BuildController();
+        var ctrl = (ServerLoanController)env.Host.Controller;
+        const string uuid = "00000000-0000-0000-0000-000000000005";
+        const string player = "sam";
+
+        (await ctrl.Borrow(uuid, new ServerLoanBorrowBodyRequest { Player = player, Amount = 400m }) as ObjectResult)!.StatusCode.Should().Be(200);
+        (await ctrl.Borrow(uuid, new ServerLoanBorrowBodyRequest { Player = player, Amount = 500m }) as ObjectResult)!.StatusCode.Should().Be(200);
+
+        var loan = await GetLoanAsync(env.DbFactory, uuid);
+        loan!.BorrowAmount.Should().Be(900m);
+
+        var moneyLogs = await GetMoneyLogsAsync(env.DbFactory, uuid);
+        moneyLogs.Count(l => l.Note == "loan_borrow").Should().Be(2);
+        moneyLogs.Where(l => l.Note == "loan_borrow").Sum(l => l.Amount).Should().Be(900m);
+
+        var loanLogsRes = await ctrl.GetLogs(uuid, limit: 10) as ObjectResult;
+        loanLogsRes!.StatusCode.Should().Be(200);
+        var loanLogs = (loanLogsRes.Value as ApiResult<List<ServerLoanLog>>)!.Data!;
+        loanLogs.Count(l => l.Action == "Borrow").Should().Be(2);
+        loanLogs.Where(l => l.Action == "Borrow").Sum(l => l.Amount).Should().Be(900m);
+    }
+
+    [Fact(DisplayName = "borrow: 1回目=Limit/2, 2回目=Limit×2 は2回目で409になる")]
+    public async Task Borrow_Twice_FirstHalf_SecondDouble_ShouldConflict()
+    {
+        using var env = BuildController();
+        var ctrl = (ServerLoanController)env.Host.Controller;
+        const string uuid = "00000000-0000-0000-0000-000000000007";
+        const string player = "mike";
+
         var limitRes = await ctrl.GetBorrowLimit(uuid) as ObjectResult;
         limitRes!.StatusCode.Should().Be(200);
         var limit = (limitRes.Value as ApiResult<decimal>)!.Data;
-        var over = limit + 12345m;
 
-        var res = await ctrl.Borrow(uuid, new ServerLoanBorrowBodyRequest { Player = player, Amount = over }) as ObjectResult;
+        var first = limit / 2m;
+        var second = limit * 2m;
+
+        (await ctrl.Borrow(uuid, new ServerLoanBorrowBodyRequest { Player = player, Amount = first }) as ObjectResult)!
+            .StatusCode.Should().Be(200);
+
+        var afterFirst = await GetLoanAsync(env.DbFactory, uuid);
+        afterFirst!.BorrowAmount.Should().Be(first);
+
+        var secondRes = await ctrl.Borrow(uuid, new ServerLoanBorrowBodyRequest { Player = player, Amount = second }) as ObjectResult;
+        secondRes!.StatusCode.Should().Be(409);
+
+        var afterSecond = await GetLoanAsync(env.DbFactory, uuid);
+        afterSecond!.BorrowAmount.Should().Be(first);
+    }
+
+    [Fact(DisplayName = "repay: 所持金不足で409・借入ログは変化せず失敗ログが記録される")]
+    public async Task Repay_InsufficientBalance_Should409_And_LogFailure()
+    {
+        using var env = BuildController();
+        var ctrl = (ServerLoanController)env.Host.Controller;
+        const string uuid = "00000000-0000-0000-0000-000000000006";
+        const string player = "kat";
+
+        (await ctrl.Borrow(uuid, new ServerLoanBorrowBodyRequest { Player = player, Amount = 500m }) as ObjectResult)!.StatusCode.Should().Be(200);
+
+        await env.Bank.WithdrawAsync(new WithdrawRequest
+        {
+            Uuid = uuid,
+            Player = player,
+            Amount = 500m,
+            PluginName = "test",
+            Note = "spend_all",
+            DisplayNote = "支出",
+            Server = "dev"
+        });
+
+        var res = await ctrl.Repay(uuid, amount: 100m) as ObjectResult;
         res!.StatusCode.Should().Be(409);
+
+        var moneyLogs = await GetMoneyLogsAsync(env.DbFactory, uuid);
+        moneyLogs.First().Note.Should().NotBe("loan_repay");
+
+        var loanLogRes = await ctrl.GetLogs(uuid, limit: 10) as ObjectResult;
+        loanLogRes!.StatusCode.Should().Be(200);
+        var loanLogs = (loanLogRes.Value as ApiResult<List<ServerLoanLog>>)!.Data!;
+        loanLogs.Any(l => l.Action == "RepayFailure").Should().BeTrue();
     }
 
     [Fact(DisplayName = "repay: 出金・残債減少・ログ追記を検証する")]
