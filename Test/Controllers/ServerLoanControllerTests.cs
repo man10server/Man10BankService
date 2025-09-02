@@ -60,24 +60,11 @@ public class ServerLoanControllerTests
         };
         return new TestEnv(host, bank, db.Factory);
     }
-
-    private static async Task CreateLoanAsync(IDbContextFactory<BankDbContext> f, string uuid, string player)
-    {
-        await using var db = await f.CreateDbContextAsync();
-        await db.ServerLoans.AddAsync(new ServerLoan { Uuid = uuid, Player = player, BorrowAmount = 0m, PaymentAmount = 0m, FailedPayment = 0, StopInterest = false, BorrowDate = DateTime.UtcNow, LastPayDate = DateTime.UtcNow });
-        await db.SaveChangesAsync();
-    }
-
+    
     private static async Task<ServerLoan?> GetLoanAsync(IDbContextFactory<BankDbContext> f, string uuid)
     {
         await using var db = await f.CreateDbContextAsync();
         return await db.ServerLoans.AsNoTracking().FirstOrDefaultAsync(x => x.Uuid == uuid);
-    }
-
-    private static async Task<List<ServerLoanLog>> GetLoanLogsAsync(IDbContextFactory<BankDbContext> f, string uuid)
-    {
-        await using var db = await f.CreateDbContextAsync();
-        return await db.ServerLoanLogs.AsNoTracking().Where(x => x.Uuid == uuid).OrderByDescending(x => x.Date).ThenByDescending(x => x.Id).ToListAsync();
     }
 
     private static async Task<List<MoneyLog>> GetMoneyLogsAsync(IDbContextFactory<BankDbContext> f, string uuid)
@@ -95,8 +82,6 @@ public class ServerLoanControllerTests
         const string player = "steve";
         const decimal amount = 1000m;
 
-        await CreateLoanAsync(env.DbFactory, uuid, player);
-
         var res = await ctrl.Borrow(uuid, new ServerLoanBorrowBodyRequest { Player = player, Amount = amount }) as ObjectResult;
         res!.StatusCode.Should().Be(200);
 
@@ -112,7 +97,7 @@ public class ServerLoanControllerTests
         var sLogRes = await ctrl.GetLogs(uuid, limit: 10) as ObjectResult;
         sLogRes!.StatusCode.Should().Be(200);
         var sLogs = (sLogRes.Value as ApiResult<List<ServerLoanLog>>)!.Data!;
-        sLogs.Any(l => l.Action == "Borrow" && l.Amount == amount).Should().BeTrue();
+        sLogs.Any(l => l is { Action: "Borrow", Amount: amount }).Should().BeTrue();
     }
 
     [Fact(DisplayName = "borrow: 借入可能額を超えると409で失敗する")]
@@ -122,8 +107,6 @@ public class ServerLoanControllerTests
         var ctrl = (ServerLoanController)env.Host.Controller;
         const string uuid = "00000000-0000-0000-0000-000000000002";
         const string player = "alex";
-        await CreateLoanAsync(env.DbFactory, uuid, player);
-
         var limitRes = await ctrl.GetBorrowLimit(uuid) as ObjectResult;
         limitRes!.StatusCode.Should().Be(200);
         var limit = (limitRes.Value as ApiResult<decimal>)!.Data;
@@ -140,8 +123,6 @@ public class ServerLoanControllerTests
         var ctrl = (ServerLoanController)env.Host.Controller;
         const string uuid = "00000000-0000-0000-0000-000000000003";
         const string player = "notch";
-        await CreateLoanAsync(env.DbFactory, uuid, player);
-
         await env.Bank.DepositAsync(new DepositRequest { Uuid = uuid, Player = player, Amount = 100000m, PluginName = "test", Note = "seed", DisplayNote = "seed", Server = "dev" });
 
         await ctrl.Borrow(uuid, new ServerLoanBorrowBodyRequest { Player = player, Amount = 1000m });
@@ -172,8 +153,6 @@ public class ServerLoanControllerTests
         var ctrl = (ServerLoanController)env.Host.Controller;
         const string uuid = "00000000-0000-0000-0000-000000000004";
         const string player = "jeb";
-        await CreateLoanAsync(env.DbFactory, uuid, player);
-
         await env.Bank.DepositAsync(new DepositRequest { Uuid = uuid, Player = player, Amount = 100000m, PluginName = "test", Note = "seed", DisplayNote = "seed", Server = "dev" });
 
         await ctrl.Borrow(uuid, new ServerLoanBorrowBodyRequest { Player = player, Amount = 1000m });

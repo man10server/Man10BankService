@@ -81,8 +81,8 @@ public class ServerLoanService
                 return new ApiResult<ServerLoan?>(statusCode, message);
             
             var currentData = await repo.GetByUuidAsync(uuid);
-            var currentPayment = currentData?.BorrowAmount ?? 0m;
-            if (currentPayment > limit)
+            var outstanding = currentData != null ? (currentData.BorrowAmount - currentData.PaymentAmount) : 0m;
+            if (outstanding + amount > limit)
                 return ApiResult<ServerLoan?>.Conflict("借入可能額を超過しているため借入できません。");
 
             var updated = await repo.AdjustLoanAsync(uuid, player, amount, ServerLoanRepository.ServerLoanLogAction.Borrow);
