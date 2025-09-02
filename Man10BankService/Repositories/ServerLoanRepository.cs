@@ -27,24 +27,22 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory)
         return await db.ServerLoans.AsNoTracking().ToListAsync();
     }
 
-    public async Task<ServerLoan?> AdjustLoanAsync(string uuid, string player, decimal amount, ServerLoanLogAction action)
+    public async Task<ServerLoan?> AdjustLoanAsync(string uuid, string player, decimal delta, ServerLoanLogAction action)
     {
-        if (amount <= 0m) throw new ArgumentException("金額は 0 より大きい必要があります。", nameof(amount));
-
         await using var db = await factory.CreateDbContextAsync();
         await using var tx = await db.Database.BeginTransactionAsync();
 
         var loan = await db.ServerLoans.FirstOrDefaultAsync(x => x.Uuid == uuid);
         if (loan == null)
         {
-            if (action != ServerLoanLogAction.Borrow)
+            if (action != ServerLoanLogAction.Borrow || delta <= 0m)
                 return null;
 
             loan = new ServerLoan
             {
                 Uuid = uuid,
                 Player = string.IsNullOrWhiteSpace(player) ? string.Empty : player,
-                BorrowAmount = 0m,
+                BorrowAmount = delta,
                 PaymentAmount = 0m,
                 FailedPayment = 0,
                 StopInterest = false,
@@ -52,43 +50,36 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory)
                 LastPayDate = DateTime.UtcNow,
             };
             await db.ServerLoans.AddAsync(loan);
+            await AddLogAsync(db, loan.Uuid, loan.Player, action, delta);
             await db.SaveChangesAsync();
+            await tx.CommitAsync();
+            return loan;
         }
         switch (action)
         {
             case ServerLoanLogAction.Borrow:
-                loan.BorrowAmount += amount;
+                loan.BorrowAmount += delta;
                 loan.LastPayDate = DateTime.UtcNow;
-                await db.SaveChangesAsync();
-                await AddLogAsync(db, loan.Uuid, loan.Player, ServerLoanLogAction.Borrow, amount);
-                await db.SaveChangesAsync();
                 break;
             case ServerLoanLogAction.Interest:
                 if (!loan.StopInterest)
                 {
-                    loan.BorrowAmount += amount;
+                    loan.BorrowAmount += delta;
                     loan.LastPayDate = DateTime.UtcNow;
-                    await db.SaveChangesAsync();
-                    await AddLogAsync(db, loan.Uuid, loan.Player, ServerLoanLogAction.Interest, amount);
-                    await db.SaveChangesAsync();
                 }
                 break;
             case ServerLoanLogAction.RepaySuccess:
-                loan.PaymentAmount += amount;
+                loan.BorrowAmount += delta;
                 loan.LastPayDate = DateTime.UtcNow;
-                await db.SaveChangesAsync();
-                await AddLogAsync(db, loan.Uuid, loan.Player, ServerLoanLogAction.RepaySuccess, amount);
-                await db.SaveChangesAsync();
                 break;
             case ServerLoanLogAction.RepayFailure:
                 loan.FailedPayment += 1;
-                await db.SaveChangesAsync();
-                await AddLogAsync(db, loan.Uuid, string.IsNullOrWhiteSpace(player) ? loan.Player : player, ServerLoanLogAction.RepayFailure, amount);
-                await db.SaveChangesAsync();
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(action), action, null);
         }
+        await AddLogAsync(db, loan.Uuid, loan.Player, action, delta);
+        await db.SaveChangesAsync();
         await tx.CommitAsync();
         return loan;
     }

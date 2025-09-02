@@ -128,7 +128,7 @@ public class ServerLoanService
             if (loan == null)
                 return ApiResult<ServerLoan?>.NotFound("借入データが見つかりません。");
 
-            var remain = loan.BorrowAmount - loan.PaymentAmount;
+            var remain = loan.BorrowAmount;
             if (remain <= 0m)
                 return ApiResult<ServerLoan?>.BadRequest("返済は不要です。すでに完済しています。");
 
@@ -140,7 +140,7 @@ public class ServerLoanService
             if (amount <= 0m)
                 return ApiResult<ServerLoan?>.BadRequest("支払額が 0 円のため処理を実行できません。");
 
-            var wd = await _bank.WithdrawAsync(new WithdrawRequest
+            var withdrawResult = await _bank.WithdrawAsync(new WithdrawRequest
             {
                 Uuid = uuid,
                 Player = loan.Player,
@@ -151,14 +151,14 @@ public class ServerLoanService
                 Server = "system"
             });
 
-            if (wd.StatusCode == 200)
+            if (withdrawResult.StatusCode == 200)
             {
-                var updated = await repo.AdjustLoanAsync(uuid, loan.Player, amount, ServerLoanRepository.ServerLoanLogAction.RepaySuccess);
+                var updated = await repo.AdjustLoanAsync(uuid, loan.Player, -amount, ServerLoanRepository.ServerLoanLogAction.RepaySuccess);
                 return ApiResult<ServerLoan?>.Ok(updated);
             }
 
             await repo.AdjustLoanAsync(uuid, loan.Player, amount, ServerLoanRepository.ServerLoanLogAction.RepayFailure);
-            return new ApiResult<ServerLoan?>(wd.StatusCode, wd.Message);
+            return new ApiResult<ServerLoan?>(withdrawResult.StatusCode, withdrawResult.Message);
         }
         catch (ArgumentException ex)
         {

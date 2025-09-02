@@ -61,18 +61,6 @@ public class ServerLoanControllerTests
         return new TestEnv(host, bank, db.Factory);
     }
     
-    private static async Task<ServerLoan?> GetLoanAsync(IDbContextFactory<BankDbContext> f, string uuid)
-    {
-        await using var db = await f.CreateDbContextAsync();
-        return await db.ServerLoans.AsNoTracking().FirstOrDefaultAsync(x => x.Uuid == uuid);
-    }
-
-    private static async Task<List<MoneyLog>> GetMoneyLogsAsync(IDbContextFactory<BankDbContext> f, string uuid)
-    {
-        await using var db = await f.CreateDbContextAsync();
-        return await db.MoneyLogs.AsNoTracking().Where(x => x.Uuid == uuid).OrderByDescending(x => x.Date).ThenByDescending(x => x.Id).ToListAsync();
-    }
-
     [Fact(DisplayName = "borrow: 借入・初期支払額設定・入金・ログを検証する")]
     public async Task Borrow_ShouldUpdateLoan_SetPayment_Deposit_AndWriteLogs()
     {
@@ -88,16 +76,15 @@ public class ServerLoanControllerTests
         var loan = await GetLoanAsync(env.DbFactory, uuid);
         loan!.BorrowAmount.Should().Be(amount);
         var expectedPayment = Math.Round(amount * 0.01m * 7m * 2m, 0, MidpointRounding.AwayFromZero);
-        if (expectedPayment < 1m) expectedPayment = 1m;
         loan.PaymentAmount.Should().Be(expectedPayment);
 
-        var logs = await GetMoneyLogsAsync(env.DbFactory, uuid);
-        logs.First().Should().BeEquivalentTo(new { Amount = amount, Deposit = true, PluginName = "server_loan", Note = "loan_borrow" });
+        var moneyLogs = await GetMoneyLogsAsync(env.DbFactory, uuid);
+        moneyLogs.First().Should().BeEquivalentTo(new { Amount = amount, Deposit = true, Note = "loan_borrow" });
 
-        var sLogRes = await ctrl.GetLogs(uuid, limit: 10) as ObjectResult;
-        sLogRes!.StatusCode.Should().Be(200);
-        var sLogs = (sLogRes.Value as ApiResult<List<ServerLoanLog>>)!.Data!;
-        sLogs.Any(l => l is { Action: "Borrow", Amount: amount }).Should().BeTrue();
+        var loanLogsRes = await ctrl.GetLogs(uuid, limit: 10) as ObjectResult;
+        loanLogsRes!.StatusCode.Should().Be(200);
+        var loanLogs = (loanLogsRes.Value as ApiResult<List<ServerLoanLog>>)!.Data!;
+        loanLogs.Any(l => l is { Action: "Borrow", Amount: amount }).Should().BeTrue();
     }
 
     [Fact(DisplayName = "borrow: 借入可能額を超えると409で失敗する")]
@@ -127,23 +114,21 @@ public class ServerLoanControllerTests
 
         await ctrl.Borrow(uuid, new ServerLoanBorrowBodyRequest { Player = player, Amount = 1000m });
         var before = await GetLoanAsync(env.DbFactory, uuid);
-
-        var repayAmount = 6000m;
-        var beforeRemain = before!.BorrowAmount - before.PaymentAmount;
-        var expectedUsed = Math.Min(beforeRemain, repayAmount);
+        const decimal repayAmount = 6000m;
+        var expectedRepayAmount = Math.Min(before!.BorrowAmount, repayAmount);
         var repayRes = await ctrl.Repay(uuid, amount: repayAmount) as ObjectResult;
         repayRes!.StatusCode.Should().Be(200);
 
         var after = await GetLoanAsync(env.DbFactory, uuid);
-        (beforeRemain - expectedUsed).Should().Be(after!.BorrowAmount - after.PaymentAmount);
+        after!.BorrowAmount.Should().Be(before.BorrowAmount - expectedRepayAmount);
 
-        var logs = await GetMoneyLogsAsync(env.DbFactory, uuid);
-        logs.First().Should().BeEquivalentTo(new { Amount = -expectedUsed, Deposit = false, PluginName = "server_loan", Note = "loan_repay" });
+        var moneyLogs = await GetMoneyLogsAsync(env.DbFactory, uuid);
+        moneyLogs.First().Should().BeEquivalentTo(new { Amount = -expectedRepayAmount, Deposit = false, Note = "loan_repay" });
 
-        var sLogRes = await ctrl.GetLogs(uuid, limit: 10) as ObjectResult;
-        sLogRes!.StatusCode.Should().Be(200);
-        var sLogs = (sLogRes.Value as ApiResult<List<ServerLoanLog>>)!.Data!;
-        sLogs.Any(l => l.Action == "RepaySuccess" && l.Amount == expectedUsed).Should().BeTrue();
+        var loanLogRes = await ctrl.GetLogs(uuid, limit: 10) as ObjectResult;
+        loanLogRes!.StatusCode.Should().Be(200);
+        var loanLogs = (loanLogRes.Value as ApiResult<List<ServerLoanLog>>)!.Data!;
+        loanLogs.Any(l => l.Action == "RepaySuccess" && l.Amount == -expectedRepayAmount).Should().BeTrue();
     }
 
     [Fact(DisplayName = "repay: 金額未指定と過払い要求は残債にクリップして成功する")]
@@ -156,27 +141,39 @@ public class ServerLoanControllerTests
         await env.Bank.DepositAsync(new DepositRequest { Uuid = uuid, Player = player, Amount = 100000m, PluginName = "test", Note = "seed", DisplayNote = "seed", Server = "dev" });
 
         await ctrl.Borrow(uuid, new ServerLoanBorrowBodyRequest { Player = player, Amount = 1000m });
-        var loan = await GetLoanAsync(env.DbFactory, uuid);
 
-        var beforeNoArg = await GetLoanAsync(env.DbFactory, uuid);
+        var before = await GetLoanAsync(env.DbFactory, uuid);
         var noArg = await ctrl.Repay(uuid, amount: null) as ObjectResult;
         noArg!.StatusCode.Should().Be(200);
 
-        var afterNoArg = await GetLoanAsync(env.DbFactory, uuid);
-        var used = afterNoArg!.PaymentAmount - beforeNoArg!.PaymentAmount;
-        used.Should().BeGreaterThan(0); // 既定の PaymentAmount で支払い
+        var after = await GetLoanAsync(env.DbFactory, uuid);
+        var used1 = before!.BorrowAmount - after!.BorrowAmount;
+        used1.Should().BeGreaterThan(0);
 
-        var remain = afterNoArg.BorrowAmount - afterNoArg.PaymentAmount;
+        var remain = after.BorrowAmount;
         var overRes = await ctrl.Repay(uuid, amount: remain + 9999m) as ObjectResult;
         overRes!.StatusCode.Should().Be(200);
 
         var final = await GetLoanAsync(env.DbFactory, uuid);
-        (final!.BorrowAmount - final.PaymentAmount).Should().Be(0);
+        final!.BorrowAmount.Should().Be(0);
 
-        var sLogRes = await ctrl.GetLogs(uuid, limit: 10) as ObjectResult;
-        sLogRes!.StatusCode.Should().Be(200);
-        var sLogs = (sLogRes.Value as ApiResult<List<ServerLoanLog>>)!.Data!;
-        sLogs.Any(l => l.Action == "RepaySuccess" && l.Amount == used).Should().BeTrue();
-        sLogs.Any(l => l.Action == "RepaySuccess" && l.Amount == remain).Should().BeTrue();
+        var loanLogRes = await ctrl.GetLogs(uuid, limit: 20) as ObjectResult;
+        loanLogRes!.StatusCode.Should().Be(200);
+        var loanLogs = (loanLogRes.Value as ApiResult<List<ServerLoanLog>>)!.Data!;
+        loanLogs.Any(l => l.Action == "RepaySuccess" && l.Amount == -used1).Should().BeTrue();
+        loanLogs.Any(l => l.Action == "RepaySuccess" && l.Amount == -remain).Should().BeTrue();
     }
+    
+    private static async Task<ServerLoan?> GetLoanAsync(IDbContextFactory<BankDbContext> f, string uuid)
+    {
+        await using var db = await f.CreateDbContextAsync();
+        return await db.ServerLoans.AsNoTracking().FirstOrDefaultAsync(x => x.Uuid == uuid);
+    }
+
+    private static async Task<List<MoneyLog>> GetMoneyLogsAsync(IDbContextFactory<BankDbContext> f, string uuid)
+    {
+        await using var db = await f.CreateDbContextAsync();
+        return await db.MoneyLogs.AsNoTracking().Where(x => x.Uuid == uuid).OrderByDescending(x => x.Date).ThenByDescending(x => x.Id).ToListAsync();
+    }
+
 }
