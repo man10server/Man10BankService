@@ -61,6 +61,14 @@ public class ServerLoanService
             if (loan == null)
                 return ApiResult<ServerLoan?>.NotFound("借入データが見つかりません。");
 
+            var limitRes = await CalculateBorrowLimitAsync(uuid);
+            if (limitRes.StatusCode != 200)
+                return new ApiResult<ServerLoan?>(limitRes.StatusCode, limitRes.Message);
+            var limit = limitRes.Data;
+            var outstanding = loan.BorrowAmount - loan.PaymentAmount;
+            if (outstanding + amount > limit)
+                return ApiResult<ServerLoan?>.Conflict("借入可能額を超過しているため借入できません。");
+
             var updated = await repo.AdjustLoanAsync(uuid, player, amount, ServerLoanRepository.ServerLoanLogAction.Borrow);
 
             var dp = await _bank.DepositAsync(new DepositRequest

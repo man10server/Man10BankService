@@ -93,7 +93,7 @@ public class ServerLoanControllerTests
         var ctrl = (ServerLoanController)env.Host.Controller;
         const string uuid = "00000000-0000-0000-0000-000000000001";
         const string player = "steve";
-        const decimal amount = 10000m;
+        const decimal amount = 1000m;
 
         await CreateLoanAsync(env.DbFactory, uuid, player);
 
@@ -112,8 +112,8 @@ public class ServerLoanControllerTests
         // 仕様上のローンログ永続化は別途検証対象外とする（MoneyLog のみ確認）
     }
 
-    [Fact(DisplayName = "borrow: 借入可能額より多くても現仕様では成功する")]
-    public async Task Borrow_OverLimit_CurrentSpec_Allows()
+    [Fact(DisplayName = "borrow: 借入可能額を超えると409で失敗する")]
+    public async Task Borrow_OverLimit_ShouldFail409()
     {
         using var env = BuildController();
         var ctrl = (ServerLoanController)env.Host.Controller;
@@ -127,7 +127,7 @@ public class ServerLoanControllerTests
         var over = limit + 12345m;
 
         var res = await ctrl.Borrow(uuid, new ServerLoanBorrowBodyRequest { Player = player, Amount = over }) as ObjectResult;
-        res!.StatusCode.Should().Be(200);
+        res!.StatusCode.Should().Be(409);
     }
 
     [Fact(DisplayName = "repay: 出金・残債減少・ログ追記を検証する")]
@@ -141,17 +141,20 @@ public class ServerLoanControllerTests
 
         await env.Bank.DepositAsync(new DepositRequest { Uuid = uuid, Player = player, Amount = 100000m, PluginName = "test", Note = "seed", DisplayNote = "seed", Server = "dev" });
 
-        await ctrl.Borrow(uuid, new ServerLoanBorrowBodyRequest { Player = player, Amount = 20000m });
+        await ctrl.Borrow(uuid, new ServerLoanBorrowBodyRequest { Player = player, Amount = 1000m });
         var before = await GetLoanAsync(env.DbFactory, uuid);
 
-        var repayRes = await ctrl.Repay(uuid, amount: 6000m) as ObjectResult;
+        var repayAmount = 6000m;
+        var beforeRemain = before!.BorrowAmount - before.PaymentAmount;
+        var expectedUsed = Math.Min(beforeRemain, repayAmount);
+        var repayRes = await ctrl.Repay(uuid, amount: repayAmount) as ObjectResult;
         repayRes!.StatusCode.Should().Be(200);
 
         var after = await GetLoanAsync(env.DbFactory, uuid);
-        (before!.BorrowAmount - before.PaymentAmount - 6000m).Should().Be(after!.BorrowAmount - after.PaymentAmount);
+        (beforeRemain - expectedUsed).Should().Be(after!.BorrowAmount - after.PaymentAmount);
 
         var logs = await GetMoneyLogsAsync(env.DbFactory, uuid);
-        logs.First().Should().BeEquivalentTo(new { Amount = -6000m, Deposit = false, PluginName = "server_loan", Note = "loan_repay" });
+        logs.First().Should().BeEquivalentTo(new { Amount = -expectedUsed, Deposit = false, PluginName = "server_loan", Note = "loan_repay" });
 
         // ローンログはここでは確認しない
     }
@@ -167,11 +170,9 @@ public class ServerLoanControllerTests
 
         await env.Bank.DepositAsync(new DepositRequest { Uuid = uuid, Player = player, Amount = 100000m, PluginName = "test", Note = "seed", DisplayNote = "seed", Server = "dev" });
 
-        await ctrl.Borrow(uuid, new ServerLoanBorrowBodyRequest { Player = player, Amount = 15000m });
+        await ctrl.Borrow(uuid, new ServerLoanBorrowBodyRequest { Player = player, Amount = 1000m });
         var loan = await GetLoanAsync(env.DbFactory, uuid);
 
-        // 既定支払額を明示的に設定してから null 返済を実行
-        (await ctrl.SetPaymentAmount(uuid, paymentAmount: 1000m) as ObjectResult)!.StatusCode.Should().Be(200);
         var beforeNoArg = await GetLoanAsync(env.DbFactory, uuid);
         var noArg = await ctrl.Repay(uuid, amount: null) as ObjectResult;
         noArg!.StatusCode.Should().Be(200);
