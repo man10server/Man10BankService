@@ -1,5 +1,6 @@
 using Man10BankService.Data;
 using Man10BankService.Models;
+using Man10BankService.Models.Database;
 using Man10BankService.Models.Requests;
 using Man10BankService.Repositories;
 using Microsoft.EntityFrameworkCore;
@@ -49,6 +50,24 @@ public class ServerLoanService
         }
     }
     
+    public async Task<ApiResult<List<ServerLoanLog>>> GetLogsAsync(string uuid, int limit = 100, int offset = 0)
+    {
+        if (limit is < 1 or > 1000)
+            return ApiResult<List<ServerLoanLog>>.BadRequest("limit は 1..1000 の範囲で指定してください。");
+        if (offset < 0)
+            return ApiResult<List<ServerLoanLog>>.BadRequest("offset は 0 以上で指定してください。");
+        try
+        {
+            var repo = new ServerLoanRepository(_dbFactory);
+            var logs = await repo.GetLogsAsync(uuid, limit, offset);
+            return ApiResult<List<ServerLoanLog>>.Ok(logs);
+        }
+        catch (Exception ex)
+        {
+            return ApiResult<List<ServerLoanLog>>.Error($"ログ取得に失敗しました: {ex.Message}");
+        }
+    }
+    
     public async Task<ApiResult<ServerLoan?>> BorrowAsync(string uuid, string player, decimal amount)
     {
         try
@@ -61,12 +80,11 @@ public class ServerLoanService
             if (loan == null)
                 return ApiResult<ServerLoan?>.NotFound("借入データが見つかりません。");
 
-            var limitRes = await CalculateBorrowLimitAsync(uuid);
-            if (limitRes.StatusCode != 200)
-                return new ApiResult<ServerLoan?>(limitRes.StatusCode, limitRes.Message);
-            var limit = limitRes.Data;
-            var outstanding = loan.BorrowAmount - loan.PaymentAmount;
-            if (outstanding + amount > limit)
+            var (statusCode, message, limit) = await CalculateBorrowLimitAsync(uuid);
+            if (statusCode != 200)
+                return new ApiResult<ServerLoan?>(statusCode, message);
+            
+            if (loan.BorrowAmount + amount > limit)
                 return ApiResult<ServerLoan?>.Conflict("借入可能額を超過しているため借入できません。");
 
             var updated = await repo.AdjustLoanAsync(uuid, player, amount, ServerLoanRepository.ServerLoanLogAction.Borrow);

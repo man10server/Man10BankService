@@ -43,4 +43,11 @@ public class ServerLoanController(ServerLoanService service) : ControllerBase
         var res = await service.CalculateBorrowLimitAsync(uuid);
         return StatusCode(res.StatusCode, res);
     }
+
+    [HttpGet("logs")]
+    public async Task<IActionResult> GetLogs([FromRoute] string uuid, [FromQuery] int limit = 100, [FromQuery] int offset = 0)
+    {
+        var res = await service.GetLogsAsync(uuid, limit, offset);
+        return StatusCode(res.StatusCode, res);
+    }
 }
