@@ -109,7 +109,10 @@ public class ServerLoanControllerTests
         var logs = await GetMoneyLogsAsync(env.DbFactory, uuid);
         logs.First().Should().BeEquivalentTo(new { Amount = amount, Deposit = true, PluginName = "server_loan", Note = "loan_borrow" });
 
-        // 仕様上のローンログ永続化は別途検証対象外とする（MoneyLog のみ確認）
+        var sLogRes = await ctrl.GetLogs(uuid, limit: 10) as ObjectResult;
+        sLogRes!.StatusCode.Should().Be(200);
+        var sLogs = (sLogRes.Value as ApiResult<List<ServerLoanLog>>)!.Data!;
+        sLogs.Any(l => l.Action == "Borrow" && l.Amount == amount).Should().BeTrue();
     }
 
     [Fact(DisplayName = "borrow: 借入可能額を超えると409で失敗する")]
@@ -156,7 +159,10 @@ public class ServerLoanControllerTests
         var logs = await GetMoneyLogsAsync(env.DbFactory, uuid);
         logs.First().Should().BeEquivalentTo(new { Amount = -expectedUsed, Deposit = false, PluginName = "server_loan", Note = "loan_repay" });
 
-        // ローンログはここでは確認しない
+        var sLogRes = await ctrl.GetLogs(uuid, limit: 10) as ObjectResult;
+        sLogRes!.StatusCode.Should().Be(200);
+        var sLogs = (sLogRes.Value as ApiResult<List<ServerLoanLog>>)!.Data!;
+        sLogs.Any(l => l.Action == "RepaySuccess" && l.Amount == expectedUsed).Should().BeTrue();
     }
 
     [Fact(DisplayName = "repay: 金額未指定と過払い要求は残債にクリップして成功する")]
@@ -188,6 +194,10 @@ public class ServerLoanControllerTests
         var final = await GetLoanAsync(env.DbFactory, uuid);
         (final!.BorrowAmount - final.PaymentAmount).Should().Be(0);
 
-        // ローンログはここでは確認しない
+        var sLogRes = await ctrl.GetLogs(uuid, limit: 10) as ObjectResult;
+        sLogRes!.StatusCode.Should().Be(200);
+        var sLogs = (sLogRes.Value as ApiResult<List<ServerLoanLog>>)!.Data!;
+        sLogs.Any(l => l.Action == "RepaySuccess" && l.Amount == used).Should().BeTrue();
+        sLogs.Any(l => l.Action == "RepaySuccess" && l.Amount == remain).Should().BeTrue();
     }
 }

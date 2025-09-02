@@ -47,6 +47,7 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory)
                 loan.LastPayDate = DateTime.UtcNow;
                 await db.SaveChangesAsync();
                 await AddLogAsync(db, loan.Uuid, loan.Player, ServerLoanLogAction.Borrow, amount);
+                await db.SaveChangesAsync();
                 break;
             case ServerLoanLogAction.Interest:
                 if (!loan.StopInterest)
@@ -55,6 +56,7 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory)
                     loan.LastPayDate = DateTime.UtcNow;
                     await db.SaveChangesAsync();
                     await AddLogAsync(db, loan.Uuid, loan.Player, ServerLoanLogAction.Interest, amount);
+                    await db.SaveChangesAsync();
                 }
                 break;
             case ServerLoanLogAction.RepaySuccess:
@@ -62,12 +64,14 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory)
                 loan.LastPayDate = DateTime.UtcNow;
                 await db.SaveChangesAsync();
                 await AddLogAsync(db, loan.Uuid, loan.Player, ServerLoanLogAction.RepaySuccess, amount);
+                await db.SaveChangesAsync();
                 break;
             case ServerLoanLogAction.RepayFailure:
                 loan.FailedPayment += 1;
                 await db.SaveChangesAsync();
                 await AddLogAsync(db, loan.Uuid, string.IsNullOrWhiteSpace(player) ? loan.Player : player, ServerLoanLogAction.RepayFailure, amount);
-                return loan;
+                await db.SaveChangesAsync();
+                break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(action), action, null);
         }
