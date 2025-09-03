@@ -63,7 +63,6 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
             if (amount <= 0m)
                 return ApiResult<Loan?>.BadRequest("金額は 0 より大きい必要があります。");
 
-            // 1) 貸手から出金
             var w = await bank.WithdrawAsync(new WithdrawRequest
             {
                 Uuid = lendUuid,
@@ -74,16 +73,15 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
                 DisplayNote = "個人間貸付(出金)",
                 Server = "system"
             });
+            
             if (w.StatusCode != 200)
                 return new ApiResult<Loan?>(w.StatusCode, w.Message);
             
-            // 2) レコード作成（失敗時は返金）
             var repo = new LoanRepository(dbFactory);
             try
             {
                 var entity = await repo.CreateAsync(lendPlayer, lendUuid, borrowPlayer, borrowUuid, amount, paybackDate, collateralItem);
                 
-                // 3) 借手へ入金（失敗時はレコード削除と返金）
                 var deposit = await bank.DepositAsync(new DepositRequest
                 {
                     Uuid = borrowUuid,
@@ -96,24 +94,11 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
                 });
 
                 if (deposit.StatusCode == 200) return ApiResult<Loan?>.Ok(entity);
-                
                 await repo.DeleteByIdAsync(entity.Id);
-                
-                await bank.DepositAsync(new DepositRequest
-                {
-                    Uuid = lendUuid,
-                    Player = lendPlayer,
-                    Amount = amount,
-                    PluginName = "user_loan",
-                    Note = "user_loan_compensate_refund",
-                    DisplayNote = "個人間貸付(補償返金)",
-                    Server = "system"
-                });
-                return new ApiResult<Loan?>(deposit.StatusCode, deposit.Message);
+                throw new Exception("借手への入金に失敗しました: " + deposit.Message);
             }
             catch (Exception ex)
             {
-                // 補償: レコード作成失敗 → 資金移動を戻す
                 await bank.DepositAsync(new DepositRequest
                 {
                     Uuid = lendUuid,
@@ -127,102 +112,25 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
                 return ApiResult<Loan?>.Error($"借金レコードの作成に失敗しました: {ex.Message}");
             }
         }
-        catch (ArgumentException ex)
-        {
-            return ApiResult<Loan?>.BadRequest(ex.Message);
-        }
         catch (Exception ex)
         {
             return ApiResult<Loan?>.Error($"借金作成に失敗しました: {ex.Message}");
         }
     }
 
-    public async Task<ApiResult<Loan?>> RepayAsync(int id, string borrowerPlayer, decimal requestAmount)
+    public async Task<ApiResult<Loan?>> RepayAsync(int id, string collectorUuid)
     {
         try
         {
-            if (requestAmount <= 0m)
-                return ApiResult<Loan?>.BadRequest("返済金額は 0 より大きい必要があります。");
-
             var repo = new LoanRepository(dbFactory);
             var loan = await repo.GetByIdAsync(id);
             if (loan == null)
                 return ApiResult<Loan?>.NotFound("借金データが見つかりません。");
 
-            var pay = Math.Min(requestAmount, loan.Amount);
-            if (pay <= 0m)
-                return ApiResult<Loan?>.BadRequest("返済不要です。既に完済しています。");
-
-            // 1) 借手から出金
-            var w = await bank.WithdrawAsync(new WithdrawRequest
-            {
-                Uuid = loan.BorrowUuid,
-                Player = borrowerPlayer,
-                Amount = pay,
-                PluginName = "user_loan",
-                Note = "user_loan_repay_withdraw",
-                DisplayNote = "個人間貸付 返済(出金)",
-                Server = "system"
-            });
-            if (w.StatusCode != 200)
-                return new ApiResult<Loan?>(w.StatusCode, w.Message);
-
-            // 2) 貸手へ入金
-            var d = await bank.DepositAsync(new DepositRequest
-            {
-                Uuid = loan.LendUuid,
-                Player = loan.LendPlayer,
-                Amount = pay,
-                PluginName = "user_loan",
-                Note = "user_loan_repay_deposit",
-                DisplayNote = "個人間貸付 返済(入金)",
-                Server = "system"
-            });
-            if (d.StatusCode != 200)
-            {
-                // 補償: 貸手への入金失敗 → 借手に返金
-                await bank.DepositAsync(new DepositRequest
-                {
-                    Uuid = loan.BorrowUuid,
-                    Player = borrowerPlayer,
-                    Amount = pay,
-                    PluginName = "user_loan",
-                    Note = "user_loan_compensate_refund",
-                    DisplayNote = "個人間貸付(補償返金)",
-                    Server = "system"
-                });
-                return new ApiResult<Loan?>(d.StatusCode, d.Message);
-            }
-
-            // 3) レコードの金額更新
-            var updated = await repo.AdjustAmountAsync(id, -pay);
-            if (updated == null)
-            {
-                // 補償: レコード更新不可 → 資金移動を戻す
-                await bank.WithdrawAsync(new WithdrawRequest
-                {
-                    Uuid = loan.LendUuid,
-                    Player = loan.LendPlayer,
-                    Amount = pay,
-                    PluginName = "user_loan",
-                    Note = "user_loan_compensate_withdraw",
-                    DisplayNote = "個人間貸付(補償出金)",
-                    Server = "system"
-                });
-                await bank.DepositAsync(new DepositRequest
-                {
-                    Uuid = loan.BorrowUuid,
-                    Player = borrowerPlayer,
-                    Amount = pay,
-                    PluginName = "user_loan",
-                    Note = "user_loan_compensate_refund",
-                    DisplayNote = "個人間貸付(補償返金)",
-                    Server = "system"
-                });
-                return ApiResult<Loan?>.Error("返済レコード更新に失敗しました。");
-            }
-
-            return ApiResult<Loan?>.Ok(updated);
+            if (string.IsNullOrWhiteSpace(loan.CollateralItem))
+                return await RepayWithoutCollateralAsync(loan, collectorUuid);
+            else
+                return await RepayWithCollateralAsync(loan, collectorUuid);
         }
         catch (ArgumentException ex)
         {
@@ -232,5 +140,71 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
         {
             return ApiResult<Loan?>.Error($"返済処理に失敗しました: {ex.Message}");
         }
+    }
+
+    private async Task<ApiResult<Loan?>> RepayWithoutCollateralAsync(Loan loan, string collectorUuid)
+    {
+        var bal = await bank.GetBalanceAsync(loan.BorrowUuid);
+        if (bal.StatusCode != 200)
+            return new ApiResult<Loan?>(bal.StatusCode, bal.Message);
+
+        var toCollect = Math.Min(bal.Data, loan.Amount);
+        if (toCollect <= 0m)
+            return ApiResult<Loan?>.BadRequest("回収可能な残高がありません。");
+
+        var w = await bank.WithdrawAsync(new WithdrawRequest
+        {
+            Uuid = loan.BorrowUuid,
+            Player = loan.BorrowPlayer,
+            Amount = toCollect,
+            PluginName = "user_loan",
+            Note = "user_loan_collect_withdraw",
+            DisplayNote = "個人間貸付 回収(出金)",
+            Server = "system"
+        });
+        if (w.StatusCode != 200)
+            return new ApiResult<Loan?>(w.StatusCode, w.Message);
+
+        try
+        {
+            var repo = new LoanRepository(dbFactory);
+            var updated = await repo.AdjustAmountAsync(loan.Id, -toCollect);
+            if (updated == null) throw new Exception("返済レコード更新に失敗しました。");
+            
+            var deposit = await bank.DepositAsync(new DepositRequest
+            {
+                Uuid = collectorUuid,
+                Player = string.Empty,
+                Amount = toCollect,
+                PluginName = "user_loan",
+                Note = "user_loan_collect_deposit",
+                DisplayNote = "個人間貸付 回収(入金)",
+                Server = "system"
+            });
+
+            if (deposit.StatusCode != 200) throw new Exception("回収者への入金に失敗しました: " + deposit.Message);
+            
+            return ApiResult<Loan?>.Ok(updated);
+        }
+        catch (Exception e)
+        {
+            await bank.DepositAsync(new DepositRequest
+            {
+                Uuid = loan.BorrowUuid,
+                Player = loan.BorrowPlayer,
+                Amount = toCollect,
+                PluginName = "user_loan",
+                Note = "user_loan_compensate_refund",
+                DisplayNote = "個人間貸付(補償返金)",
+                Server = "system"
+            });
+            return ApiResult<Loan?>.Error(e.Message);
+        }
+    }
+
+    private Task<ApiResult<Loan?>> RepayWithCollateralAsync(Loan loan, string collectorUuid)
+    {
+        // 後で詳細実装
+        return Task.FromResult(ApiResult<Loan?>.BadRequest("担保回収ロジックは未実装です。"));
     }
 }
