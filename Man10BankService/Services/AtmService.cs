@@ -6,20 +6,13 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Man10BankService.Services;
 
-public class AtmService
+public class AtmService(IDbContextFactory<BankDbContext> dbFactory)
 {
-    private readonly IDbContextFactory<BankDbContext> _dbFactory;
-
-    public AtmService(IDbContextFactory<BankDbContext> dbFactory)
-    {
-        _dbFactory = dbFactory;
-    }
-
     public async Task<ApiResult<AtmLog>> AddLogAsync(AtmLogRequest req)
     {
         try
         {
-            var repo = new AtmRepository(_dbFactory);
+            var repo = new AtmRepository(dbFactory);
             var log = await repo.AddAtmLogAsync(req.Uuid, req.Player, req.Amount, req.Deposit);
             return ApiResult<AtmLog>.Ok(log);
         }
@@ -41,7 +34,7 @@ public class AtmService
             return ApiResult<List<AtmLog>>.BadRequest("offset は 0 以上で指定してください。");
         try
         {
-            var repo = new AtmRepository(_dbFactory);
+            var repo = new AtmRepository(dbFactory);
             var logs = await repo.GetAtmLogsAsync(uuid, limit, offset);
             return ApiResult<List<AtmLog>>.Ok(logs);
         }
