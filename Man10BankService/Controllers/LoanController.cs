@@ -8,7 +8,6 @@ namespace Man10BankService.Controllers;
 [Route("api/[controller]")]
 public class LoanController(LoanService service) : ControllerBase
 {
-    // 指定UUIDのローン一覧（債務者視点）
     [HttpGet("borrower/{uuid}")]
     public async Task<IActionResult> GetByBorrower([FromRoute] string uuid, [FromQuery] int limit = 100, [FromQuery] int offset = 0)
     {
@@ -16,7 +15,6 @@ public class LoanController(LoanService service) : ControllerBase
         return StatusCode(res.StatusCode, res);
     }
 
-    // 新規契約
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] LoanCreateRequest request)
     {
@@ -33,7 +31,6 @@ public class LoanController(LoanService service) : ControllerBase
         return StatusCode(res.StatusCode, res);
     }
 
-    // 指定IDの借金データ取得
     [HttpGet("{id:int}")]
     public async Task<IActionResult> GetById([FromRoute] int id)
     {
@@ -41,7 +38,6 @@ public class LoanController(LoanService service) : ControllerBase
         return StatusCode(res.StatusCode, res);
     }
 
-    // 指定IDの返済（回収者UUIDを指定）
     [HttpPost("{id:int}/repay")] 
     public async Task<IActionResult> Repay([FromRoute] int id, [FromQuery] string collectorUuid)
     {
@@ -51,7 +47,6 @@ public class LoanController(LoanService service) : ControllerBase
         return StatusCode(res.StatusCode, res);
     }
 
-    // 債務者が返済後に担保を取り返す
     [HttpPost("{id:int}/collateral/release")] 
     public async Task<IActionResult> ReleaseCollateral([FromRoute] int id, [FromQuery] string borrowerUuid)
     {
