@@ -107,4 +107,21 @@ public class LoanRepository(IDbContextFactory<BankDbContext> factory)
         await tx.CommitAsync();
         return true;
     }
+
+    // 債務を 0 にしつつ担保を回収（CollateralItem を空に）する。1 トランザクションで実行
+    public async Task<Loan?> ClearDebtAndCollectCollateralAsync(int id)
+    {
+        await using var db = await factory.CreateDbContextAsync();
+        await using var tx = await db.Database.BeginTransactionAsync();
+
+        var loan = await db.Loans.FirstOrDefaultAsync(x => x.Id == id);
+        if (loan == null) return null;
+
+        loan.Amount = 0m;
+        loan.CollateralItem = string.Empty;
+
+        await db.SaveChangesAsync();
+        await tx.CommitAsync();
+        return loan;
+    }
 }
