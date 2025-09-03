@@ -86,8 +86,7 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory)
     
     public async Task<List<ServerLoanLog>> GetLogsAsync(string uuid, int limit = 100, int offset = 0)
     {
-        if (limit < 1) limit = 1;
-        if (limit > 1000) limit = 1000;
+        limit = Math.Clamp(limit, 1, 1000);
         if (offset < 0) offset = 0;
 
         await using var db = await factory.CreateDbContextAsync();
