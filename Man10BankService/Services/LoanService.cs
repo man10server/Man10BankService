@@ -126,11 +126,13 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
             var loan = await repo.GetByIdAsync(id);
             if (loan == null)
                 return ApiResult<Loan?>.NotFound("借金データが見つかりません。");
+            
+            if (loan.PaybackDate > DateTime.UtcNow)
+                return ApiResult<Loan?>.BadRequest("返済期限前のため、返済できません。");
 
             if (string.IsNullOrWhiteSpace(loan.CollateralItem))
                 return await RepayWithoutCollateralAsync(loan, collectorUuid);
-            else
-                return await RepayWithCollateralAsync(loan, collectorUuid);
+            return await RepayWithCollateralAsync(loan, collectorUuid);
         }
         catch (ArgumentException ex)
         {
@@ -217,22 +219,26 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
             DisplayNote = "個人間貸付 一括回収(出金)",
             Server = "system"
         });
-        
+
+        // 残高不足などで一括回収できない場合は担保回収
         if (withdraw.StatusCode == 409)
         {
             var repo = new LoanRepository(dbFactory);
             var afterCollateral = await repo.ClearDebtAndCollectCollateralAsync(loan.Id);
             if (afterCollateral == null)
                 return ApiResult<Loan?>.Error("担保回収に失敗しました。");
-
             return ApiResult<Loan?>.Ok(afterCollateral, "担保を回収しました。");
         }
+
+        // その他のエラーはそのまま返す
+        if (withdraw.StatusCode != 200)
+            return new ApiResult<Loan?>(withdraw.StatusCode, withdraw.Message);
 
         try
         {
             var repo = new LoanRepository(dbFactory);
             var cleared = await repo.AdjustAmountAsync(loan.Id, -loan.Amount);
-            if (cleared == null) throw new Exception("返済レコード更新に失敗しました。"); 
+            if (cleared == null) throw new Exception("返済レコード更新に失敗しました。");
 
             var deposit = await bank.DepositAsync(new DepositRequest
             {
@@ -250,6 +256,7 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
         }
         catch (Exception e)
         {
+            // 返金（補償）
             await bank.DepositAsync(new DepositRequest
             {
                 Uuid = loan.BorrowUuid,
@@ -261,6 +268,37 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
                 Server = "system"
             });
             return ApiResult<Loan?>.Error(e.Message);
+        }
+    }
+
+    public async Task<ApiResult<Loan?>> ReleaseCollateralAsync(int id, string borrowerUuid)
+    {
+        try
+        {
+            var repo = new LoanRepository(dbFactory);
+            var loan = await repo.GetByIdAsync(id);
+            if (loan == null)
+                return ApiResult<Loan?>.NotFound("借金データが見つかりません。");
+
+            if (!string.Equals(loan.BorrowUuid, borrowerUuid, StringComparison.OrdinalIgnoreCase))
+                return ApiResult<Loan?>.BadRequest("借金データの債務者と一致しません。");
+
+            if (loan.Amount > 0m)
+                return ApiResult<Loan?>.BadRequest("未返済のため担保を返却できません。");
+
+            if (string.IsNullOrWhiteSpace(loan.CollateralItem))
+                return ApiResult<Loan?>.BadRequest("返却可能な担保はありません。");
+
+            var ok = await repo.CollectCollateralAsync(id);
+            if (!ok)
+                return ApiResult<Loan?>.Error("担保返却処理に失敗しました。");
+
+            var updated = await repo.GetByIdAsync(id);
+            return ApiResult<Loan?>.Ok(updated);
+        }
+        catch (Exception ex)
+        {
+            return ApiResult<Loan?>.Error($"担保返却に失敗しました: {ex.Message}");
         }
     }
 }
