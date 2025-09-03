@@ -45,29 +45,22 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
         }
     }
 
-    public async Task<ApiResult<Loan?>> CreateAsync(
-        string lendUuid,
-        string lendPlayer,
-        string borrowUuid,
-        string borrowPlayer,
-        decimal amount,
-        DateTime paybackDate,
-        string collateralItem)
+    public async Task<ApiResult<Loan?>> CreateAsync(LoanCreateRequest request)
     {
         try
         {
-            if (string.IsNullOrWhiteSpace(lendUuid) || string.IsNullOrWhiteSpace(borrowUuid))
+            if (string.IsNullOrWhiteSpace(request.LendUuid) || string.IsNullOrWhiteSpace(request.BorrowUuid))
                 return ApiResult<Loan?>.BadRequest("貸手/借手の UUID は必須です。");
-            if (lendUuid == borrowUuid)
+            if (request.LendUuid == request.BorrowUuid)
                 return ApiResult<Loan?>.BadRequest("貸手と借手が同一です。");
-            if (amount <= 0m)
+            if (request.Amount <= 0m)
                 return ApiResult<Loan?>.BadRequest("金額は 0 より大きい必要があります。");
 
             var w = await bank.WithdrawAsync(new WithdrawRequest
             {
-                Uuid = lendUuid,
-                Player = lendPlayer,
-                Amount = amount,
+                Uuid = request.LendUuid,
+                Player = request.LendPlayer,
+                Amount = request.Amount,
                 PluginName = "user_loan",
                 Note = "user_loan_lend_withdraw",
                 DisplayNote = "個人間貸付(出金)",
@@ -80,13 +73,20 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
             var repo = new LoanRepository(dbFactory);
             try
             {
-                var entity = await repo.CreateAsync(lendPlayer, lendUuid, borrowPlayer, borrowUuid, amount, paybackDate, collateralItem);
+                var entity = await repo.CreateAsync(
+                    request.LendPlayer,
+                    request.LendUuid,
+                    request.BorrowPlayer,
+                    request.BorrowUuid,
+                    request.Amount,
+                    request.PaybackDate,
+                    request.CollateralItem);
                 
                 var deposit = await bank.DepositAsync(new DepositRequest
                 {
-                    Uuid = borrowUuid,
-                    Player = borrowPlayer,
-                    Amount = amount,
+                    Uuid = request.BorrowUuid,
+                    Player = request.BorrowPlayer,
+                    Amount = request.Amount,
                     PluginName = "user_loan",
                     Note = "user_loan_borrow_deposit",
                     DisplayNote = "個人間貸付(入金)",
@@ -101,9 +101,9 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
             {
                 await bank.DepositAsync(new DepositRequest
                 {
-                    Uuid = lendUuid,
-                    Player = lendPlayer,
-                    Amount = amount,
+                    Uuid = request.LendUuid,
+                    Player = request.LendPlayer,
+                    Amount = request.Amount,
                     PluginName = "user_loan",
                     Note = "user_loan_compensate_refund",
                     DisplayNote = "個人間貸付(補償返金)",

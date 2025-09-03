@@ -19,15 +19,7 @@ public class LoanController(LoanService service) : ControllerBase
     public async Task<IActionResult> Create([FromBody] LoanCreateRequest request)
     {
         if (!ModelState.IsValid) return ValidationProblem(ModelState);
-        var res = await service.CreateAsync(
-            request.LendUuid,
-            request.LendPlayer,
-            request.BorrowUuid,
-            request.BorrowPlayer,
-            request.Amount,
-            request.PaybackDate,
-            request.CollateralItem
-        );
+        var res = await service.CreateAsync(request);
         return StatusCode(res.StatusCode, res);
     }
 
@@ -56,4 +48,3 @@ public class LoanController(LoanService service) : ControllerBase
         return StatusCode(res.StatusCode, res);
     }
 }
-
