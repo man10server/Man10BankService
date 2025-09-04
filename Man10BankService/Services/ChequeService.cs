@@ -20,7 +20,7 @@ public class ChequeService
     {
         _dbFactory = dbFactory;
         _bank = bank;
-        _ = Task.Run(WorkerAsync);
+        Task.Run(WorkerAsync);
     }
 
     public async Task<ApiResult<Cheque>> CreateAsync(ChequeCreateRequest req)

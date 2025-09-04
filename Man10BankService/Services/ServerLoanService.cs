@@ -22,16 +22,11 @@ public class ServerLoanService
 
     public ServerLoanService(IDbContextFactory<BankDbContext> dbFactory, BankService bank,IConfiguration config)
     {
-        StartScheduler();
+        Task.Run(SchedulerLoopAsync);
         Configure(config);
         
         _dbFactory = dbFactory;
         _bank = bank;
-    }
-    
-    public void StartScheduler()
-    {
-        Task.Run(SchedulerLoopAsync);
     }
 
     public async Task<ApiResult<ServerLoan>> GetByUuidAsync(string uuid)
