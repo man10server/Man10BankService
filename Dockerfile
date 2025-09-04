@@ -18,7 +18,7 @@ RUN dotnet restore Man10BankService/Man10BankService.csproj
 COPY . .
 
 # Publish self-contained files to a clean folder
-RUN dotnet publish Man10BankService/Man10BankService.csproj -c Release -o /app/publish /p:UseAppHost=false
+RUN dotnet publish Man10BankService/Man10BankService.csproj -c Release -o /app/publish /p:UseAppHost=false --no-restore
 
 # Runtime stage
 FROM --platform=$TARGETPLATFORM mcr.microsoft.com/dotnet/aspnet:9.0 AS final
