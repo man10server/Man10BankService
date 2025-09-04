@@ -1,7 +1,13 @@
 # syntax=docker/dockerfile:1
 
+# Enable multi-arch by honoring build args provided by BuildKit/buildx
+ARG TARGETPLATFORM
+ARG BUILDPLATFORM
+ARG TARGETOS
+ARG TARGETARCH
+
 # Build stage
-FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:9.0 AS build
 WORKDIR /src
 
 # Restore only the app project first for better layer caching
@@ -15,7 +21,7 @@ COPY . .
 RUN dotnet publish Man10BankService/Man10BankService.csproj -c Release -o /app/publish /p:UseAppHost=false
 
 # Runtime stage
-FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS final
+FROM --platform=$TARGETPLATFORM mcr.microsoft.com/dotnet/aspnet:9.0 AS final
 WORKDIR /app
 
 # Kestrel on 8080 inside the container
@@ -41,4 +47,3 @@ EXPOSE 8080
 COPY --from=build /app/publish .
 
 ENTRYPOINT ["dotnet", "Man10BankService.dll"]
-
