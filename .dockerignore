@@ -1,0 +1,21 @@
+# Git & IDE
+.git
+.gitignore
+.idea/
+*.user
+*.DotSettings.user
+
+# Build outputs
+**/bin/
+**/obj/
+
+# Local artifacts
+Test/
+.build.log
+.build_output.txt
+.test.log
+
+# Misc
+*.http
+*.DS_Store
+
