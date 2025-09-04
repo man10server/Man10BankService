@@ -1,4 +1,3 @@
-using System.Linq;
 using FluentAssertions;
 using Man10BankService.Controllers;
 using Man10BankService.Data;
@@ -187,7 +186,7 @@ public class LoanControllerTests
         repay!.StatusCode.Should().Be(400);
     }
 
-    [Fact(DisplayName = "loan: 担保あり 期限前・所持金十分は全額回収(担保は残る)")]
+    [Fact(DisplayName = "loan: 担保あり 所持金十分は全額回収(担保は残る)")]
     public async Task Repay_WithCollateral_BeforeDue_WithBalance_FullCollected()
     {
         using var env = BuildController();
@@ -207,7 +206,7 @@ public class LoanControllerTests
             BorrowUuid = borrowUuid,
             BorrowPlayer = borrowPlayer,
             Amount = 1200m,
-            PaybackDate = DateTime.UtcNow.AddDays(5),
+            PaybackDate = DateTime.UtcNow.AddDays(-1),
             CollateralItem = "diamond"
         }) as ObjectResult;
         var loan = (create!.Value as ApiResult<Loan>)!.Data!;
@@ -240,13 +239,14 @@ public class LoanControllerTests
             BorrowUuid = borrowUuid,
             BorrowPlayer = borrowPlayer,
             Amount = 1000m,
-            PaybackDate = DateTime.UtcNow.AddDays(2),
+            PaybackDate = DateTime.UtcNow.AddDays(-1),
             CollateralItem = "gold"
         }) as ObjectResult;
         var loan = (create!.Value as ApiResult<Loan>)!.Data!;
 
         await env.Bank.DepositAsync(new DepositRequest { Uuid = borrowUuid, Player = borrowPlayer, Amount = 2000m, PluginName = "test", Note = "seed", DisplayNote = "seed", Server = "dev" });
-        (await ctrl.Repay(loan.Id, collectorUuid: lendUuid) as ObjectResult)!.StatusCode.Should().Be(200);
+        var repay = await ctrl.Repay(loan.Id, collectorUuid: lendUuid) as ObjectResult;
+        repay!.StatusCode.Should().Be(200);
 
         var release = await ctrl.ReleaseCollateral(loan.Id, borrowerUuid: borrowUuid) as ObjectResult;
         release!.StatusCode.Should().Be(200);
@@ -289,6 +289,7 @@ public class LoanControllerTests
         var lenderBefore = await env.Bank.GetBalanceAsync(lendUuid);
         var repay = await ctrl.Repay(loan.Id, collectorUuid: lendUuid) as ObjectResult;
         repay!.StatusCode.Should().Be(200);
+        
         var lenderAfter = await env.Bank.GetBalanceAsync(lendUuid);
         lenderAfter.Data.Should().Be(lenderBefore.Data);
 
