@@ -11,6 +11,10 @@ public static partial class MinecraftProfileService
         Timeout = TimeSpan.FromSeconds(8)
     };
     private static readonly Regex UuidHex32 = MyRegex();
+    private static readonly JsonSerializerOptions JsonOpts = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
 
     /// <summary>
     /// Java版の UUID (ハイフンあり/なし可) から現在の MCID を取得します。
@@ -40,10 +44,7 @@ public static partial class MinecraftProfileService
                 return ApiResult<string>.Error($"プロフィール取得に失敗しました: {(int)res.StatusCode} {res.ReasonPhrase}");
 
             await using var stream = await res.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
-            var profile = await JsonSerializer.DeserializeAsync<MojangProfile>(stream, new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            }, ct);
+            var profile = await JsonSerializer.DeserializeAsync<MojangProfile>(stream, JsonOpts, ct);
 
             var name = profile?.Name;
             if (string.IsNullOrWhiteSpace(name))
