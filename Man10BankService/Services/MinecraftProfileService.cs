@@ -65,7 +65,7 @@ public static partial class MinecraftProfileService
         {
             return null;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             return null;
         }
