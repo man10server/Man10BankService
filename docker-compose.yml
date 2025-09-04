@@ -1,0 +1,46 @@
+services:
+  db:
+    image: mysql:8.4
+    container_name: man10-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: man10
+      MYSQL_USER: app
+      MYSQL_PASSWORD: app_pw
+      MYSQL_ROOT_PASSWORD: root_pw
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-proot_pw"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - db_data:/var/lib/mysql
+      # 初回起動時にスキーマを作成（ALTER系は避け、db.sql のみ適用）
+      - ./sql/db.sql:/docker-entrypoint-initdb.d/1_schema.sql:ro
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: man10-bank-service:local
+    container_name: man10-bank
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      Database__Host: db
+      Database__Port: "3306"
+      Database__Name: man10
+      Database__User: app
+      Database__Password: app_pw
+      Database__TreatTinyAsBoolean: "true"
+    ports:
+      - "8080:8080"
+
+volumes:
+  db_data:
+
