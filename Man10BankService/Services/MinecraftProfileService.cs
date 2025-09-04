@@ -1,4 +1,3 @@
-using System.Net.Http;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -15,6 +14,16 @@ public static partial class MinecraftProfileService
     {
         PropertyNameCaseInsensitive = true
     };
+    
+    private sealed class MojangProfile
+    {
+        public string? Id { get; init; }
+        public string? Name { get; init; }
+    }
+
+    [GeneratedRegex("^[0-9a-f]{32}$", RegexOptions.IgnoreCase | RegexOptions.Compiled, "ja-JP")]
+    private static partial Regex MyRegex();
+
 
     /// <summary>
     /// Java版の UUID (ハイフンあり/なし可) から現在の MCID を取得します。
@@ -61,15 +70,4 @@ public static partial class MinecraftProfileService
             return ApiResult<string>.Error($"プロフィール取得中にエラー: {ex.Message}");
         }
     }
-
-    
-
-    private sealed class MojangProfile
-    {
-        public string? Id { get; init; }
-        public string? Name { get; init; }
-    }
-
-    [GeneratedRegex("^[0-9a-f]{32}$", RegexOptions.IgnoreCase | RegexOptions.Compiled, "ja-JP")]
-    private static partial Regex MyRegex();
 }

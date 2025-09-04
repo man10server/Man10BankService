@@ -49,16 +49,16 @@ public class EstateRepository(IDbContextFactory<BankDbContext> factory)
 
         var current = await db.Estates.FirstOrDefaultAsync(x => x.Uuid == uuid);
 
-        bool isDifferent = current == null ||
-                           current.Player != player ||
-                           current.Vault != vault ||
-                           current.Bank != bank ||
-                           current.Cash != cash ||
-                           current.EstateAmount != estateAmount ||
-                           current.Loan != loan ||
-                           current.Shop != shop ||
-                           current.Crypto != crypto ||
-                           current.Total != total;
+        var isDifferent = current == null ||
+                          current.Player != player ||
+                          current.Vault != vault ||
+                          current.Bank != bank ||
+                          current.Cash != cash ||
+                          current.EstateAmount != estateAmount ||
+                          current.Loan != loan ||
+                          current.Shop != shop ||
+                          current.Crypto != crypto ||
+                          current.Total != total;
 
         if (!isDifferent)
         {
@@ -84,7 +84,6 @@ public class EstateRepository(IDbContextFactory<BankDbContext> factory)
                 Date = DateTime.UtcNow,
             };
             await db.Estates.AddAsync(current);
-            await db.SaveChangesAsync();
         }
         else
         {
@@ -98,14 +97,15 @@ public class EstateRepository(IDbContextFactory<BankDbContext> factory)
             current.Crypto = crypto;
             current.Total = total;
             current.Date = DateTime.UtcNow;
-            await db.SaveChangesAsync();
         }
+
+        await db.SaveChangesAsync();
 
         // History へ同一値で記録
         var hist = new EstateHistory
         {
             Uuid = uuid,
-            Player = player ?? string.Empty,
+            Player = player,
             Vault = vault,
             Bank = bank,
             Cash = cash,

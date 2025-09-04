@@ -46,30 +46,27 @@ public class EstateService(IDbContextFactory<BankDbContext> dbFactory, BankServi
             // 現在の最新値（存在しない場合は 0 扱い）
             var repo = new EstateRepository(dbFactory);
             var current = await repo.GetLatestAsync(uuid);
-
-            // bank 残高
-            var bankRes = await bankService.GetBalanceAsync(uuid);
-            if (bankRes.StatusCode != 200)
-                return new ApiResult<bool>(bankRes.StatusCode, bankRes.Message);
-            var bank = bankRes.Data;
-
+            
             // player 推定（UserBank から or 現行 or 空）
             var player = await GetPlayerAsync(uuid) ?? current?.Player ?? string.Empty;
 
             // サーバーローンの残債（BorrowAmount が残債）
             var loanOutstanding = await GetServerLoanOutstandingAsync(uuid);
+            
+            // 銀行残高
+            var bank = await GetBankAsync(uuid);
 
             // 入力（指定がなければ現行 or 0）
-            decimal cash = request.Cash ?? current?.Cash ?? 0m;
-            decimal vault = request.Vault ?? current?.Vault ?? 0m;
-            decimal estateAmount = request.EstateAmount ?? current?.EstateAmount ?? 0m;
-            decimal shop = request.Shop ?? current?.Shop ?? 0m;
-            decimal crypto = current?.Crypto ?? 0m; // 今回は入力対象外
+            var cash = request.Cash ?? current?.Cash ?? 0m;
+            var vault = request.Vault ?? current?.Vault ?? 0m;
+            var estateAmount = request.EstateAmount ?? current?.EstateAmount ?? 0m;
+            var shop = request.Shop ?? current?.Shop ?? 0m;
+            var crypto = current?.Crypto ?? 0m;
 
-            // 合計は素直に合算（ローンは負債として減算）
-            decimal total = cash + vault + bank + estateAmount + shop + crypto - loanOutstanding;
+            // 合計は合算（ローンは負債として減算）
+            var total = cash + vault + bank + estateAmount + shop + crypto - loanOutstanding;
 
-            var updated = await repo.AddSnapshotIfChangedAsync(
+            var isUpdated = await repo.AddSnapshotIfChangedAsync(
                 uuid: uuid,
                 player: player,
                 vault: vault,
@@ -81,7 +78,7 @@ public class EstateService(IDbContextFactory<BankDbContext> dbFactory, BankServi
                 crypto: crypto,
                 total: total);
 
-            return ApiResult<bool>.Ok(updated, updated ? "資産を更新しました。" : "変更はありませんでした。");
+            return ApiResult<bool>.Ok(isUpdated, isUpdated ? "資産を更新しました。" : "変更はありませんでした。");
         }
         catch (ArgumentException ex)
         {
@@ -103,8 +100,12 @@ public class EstateService(IDbContextFactory<BankDbContext> dbFactory, BankServi
     private async Task<decimal> GetServerLoanOutstandingAsync(string uuid)
     {
         var res = await serverLoanService.GetByUuidAsync(uuid);
-        if (res.StatusCode == 200 && res.Data != null)
-            return res.Data.BorrowAmount;
-        return 0m;
+        return res is { StatusCode: 200, Data: not null } ? res.Data.BorrowAmount : 0m;
+    }
+
+    private async Task<decimal> GetBankAsync(string uuid)
+    {
+        var res = await bankService.GetBalanceAsync(uuid);
+        return res.StatusCode != 200 ? 0 : res.Data;
     }
 }
