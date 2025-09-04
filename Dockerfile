@@ -17,15 +17,32 @@ RUN dotnet restore Man10BankService/Man10BankService.csproj
 # Copy the rest of the source
 COPY . .
 
-# Publish self-contained files to a clean folder
-RUN dotnet publish Man10BankService/Man10BankService.csproj -c Release -o /app/publish /p:UseAppHost=false --no-restore
+# Publish self-contained single-file (compressed) to a clean folder
+ARG TARGETOS
+ARG TARGETARCH
+RUN set -eux; \
+    case "$TARGETARCH" in \
+      amd64) RIDARCH=x64 ;; \
+      arm64) RIDARCH=arm64 ;; \
+      *) echo "Unsupported TARGETARCH: $TARGETARCH" >&2; exit 1 ;; \
+    esac; \
+    dotnet publish Man10BankService/Man10BankService.csproj \
+      -c Release \
+      -o /app/publish \
+      -r ${TARGETOS}-${RIDARCH} \
+      --self-contained true \
+      /p:PublishSingleFile=true \
+      /p:EnableCompressionInSingleFile=true \
+      /p:UseAppHost=true \
+      --no-restore
 
 # Runtime stage
-FROM --platform=$TARGETPLATFORM mcr.microsoft.com/dotnet/aspnet:9.0 AS final
+FROM --platform=$TARGETPLATFORM gcr.io/distroless/base-debian12:nonroot AS final
 WORKDIR /app
 
 # Kestrel on 8080 inside the container
-ENV ASPNETCORE_URLS=http://+:8080
+ENV ASPNETCORE_URLS=http://0.0.0.0:8080 \
+    DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
 EXPOSE 8080
 
 # Optional: set environment here or via `docker run -e ...`
@@ -44,6 +61,6 @@ EXPOSE 8080
 #  -e Database__Password=secret \
 #  --name man10-bank man10-bank-service:latest
 
-COPY --from=build /app/publish .
+COPY --from=build /app/publish/Man10BankService /app/Man10BankService
 
-ENTRYPOINT ["dotnet", "Man10BankService.dll"]
+ENTRYPOINT ["/app/Man10BankService"]
