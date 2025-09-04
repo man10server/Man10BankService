@@ -80,12 +80,13 @@ public class ServerLoanService
             if (outstanding + amount > limit)
                 return ApiResult<ServerLoan?>.Conflict("借入可能額を超過しているため借入できません。");
 
-            var updated = await repo.AdjustLoanAsync(uuid, player, amount, ServerLoanRepository.ServerLoanLogAction.Borrow);
+            var resolvedPlayer = await ResolveNameOrEmptyAsync(uuid, player);
+            var updated = await repo.AdjustLoanAsync(uuid, resolvedPlayer, amount, ServerLoanRepository.ServerLoanLogAction.Borrow);
 
             var dp = await _bank.DepositAsync(new DepositRequest
             {
                 Uuid = uuid,
-                Player = player,
+                Player = resolvedPlayer,
                 Amount = amount,
                 PluginName = "server_loan",
                 Note = "loan_borrow",
@@ -341,6 +342,19 @@ public class ServerLoanService
             WeeklyRepayTime = wrt;
         if (Enum.TryParse<DayOfWeek>(s["WeeklyRepayDay"], true, out var wrd))
             WeeklyRepayDay = wrd;
+    }
+
+
+    private static async System.Threading.Tasks.Task<string> ResolveNameOrEmptyAsync(string uuid, string? fallback)
+    {
+        try
+        {
+            var res = await MinecraftProfileService.GetNameByUuidAsync(uuid);
+            if (res.StatusCode == 200 && !string.IsNullOrWhiteSpace(res.Data))
+                return res.Data!;
+        }
+        catch { }
+        return string.IsNullOrWhiteSpace(fallback) ? string.Empty : fallback!;
     }
 
 }
