@@ -6,22 +6,13 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Man10BankService.Services;
 
-public class EstateService
+public class EstateService(IDbContextFactory<BankDbContext> dbFactory, BankService bankService, ServerLoanService serverLoanService)
 {
-    private readonly IDbContextFactory<BankDbContext> _dbFactory;
-    private readonly BankService _bankService;
-
-    public EstateService(IDbContextFactory<BankDbContext> dbFactory, BankService bankService)
-    {
-        _dbFactory = dbFactory;
-        _bankService = bankService;
-    }
-
     public async Task<ApiResult<Estate?>> GetLatestAsync(string uuid)
     {
         try
         {
-            var repo = new EstateRepository(_dbFactory);
+            var repo = new EstateRepository(dbFactory);
             var latest = await repo.GetLatestAsync(uuid);
             if (latest == null) return ApiResult<Estate?>.NotFound("資産データが見つかりません。");
             return ApiResult<Estate?>.Ok(latest);
@@ -38,7 +29,7 @@ public class EstateService
         if (offset < 0) return ApiResult<List<EstateHistory>>.BadRequest("offset は 0 以上で指定してください。");
         try
         {
-            var repo = new EstateRepository(_dbFactory);
+            var repo = new EstateRepository(dbFactory);
             var list = await repo.GetHistoryAsync(uuid, limit, offset);
             return ApiResult<List<EstateHistory>>.Ok(list);
         }
@@ -53,11 +44,11 @@ public class EstateService
         try
         {
             // 現在の最新値（存在しない場合は 0 扱い）
-            var repo = new EstateRepository(_dbFactory);
+            var repo = new EstateRepository(dbFactory);
             var current = await repo.GetLatestAsync(uuid);
 
             // bank 残高
-            var bankRes = await _bankService.GetBalanceAsync(uuid);
+            var bankRes = await bankService.GetBalanceAsync(uuid);
             if (bankRes.StatusCode != 200)
                 return new ApiResult<bool>(bankRes.StatusCode, bankRes.Message);
             var bank = bankRes.Data;
@@ -104,16 +95,16 @@ public class EstateService
 
     private async Task<string?> GetPlayerAsync(string uuid)
     {
-        await using var db = await _dbFactory.CreateDbContextAsync();
+        await using var db = await dbFactory.CreateDbContextAsync();
         var ub = await db.UserBanks.AsNoTracking().FirstOrDefaultAsync(x => x.Uuid == uuid);
         return ub?.Player;
     }
 
     private async Task<decimal> GetServerLoanOutstandingAsync(string uuid)
     {
-        var repo = new ServerLoanRepository(_dbFactory);
-        var loan = await repo.GetByUuidAsync(uuid);
-        return loan?.BorrowAmount ?? 0m;
+        var res = await serverLoanService.GetByUuidAsync(uuid);
+        if (res.StatusCode == 200 && res.Data != null)
+            return res.Data.BorrowAmount;
+        return 0m;
     }
 }
-
