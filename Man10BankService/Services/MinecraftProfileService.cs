@@ -1,14 +1,16 @@
 using System.Net.Http;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace Man10BankService.Services;
 
-public static class MinecraftProfileService
+public static partial class MinecraftProfileService
 {
     private static readonly HttpClient Http = new()
     {
         Timeout = TimeSpan.FromSeconds(8)
     };
+    private static readonly Regex UuidHex32 = MyRegex();
 
     /// <summary>
     /// Java版の UUID (ハイフンあり/なし可) から現在の MCID を取得します。
@@ -24,14 +26,14 @@ public static class MinecraftProfileService
                 return ApiResult<string>.BadRequest("UUID を指定してください。");
 
             var normalized = uuid.Replace("-", string.Empty).Trim().ToLowerInvariant();
-            if (normalized.Length != 32 || !normalized.All(IsHex))
+            if (!UuidHex32.IsMatch(normalized))
                 return ApiResult<string>.BadRequest("UUID の形式が不正です。(32桁hex)");
 
             var url = $"https://sessionserver.mojang.com/session/minecraft/profile/{normalized}";
             using var req = new HttpRequestMessage(HttpMethod.Get, url);
             using var res = await Http.SendAsync(req, ct).ConfigureAwait(false);
 
-            if (res.StatusCode == System.Net.HttpStatusCode.NoContent || res.StatusCode == System.Net.HttpStatusCode.NotFound)
+            if (res.StatusCode is System.Net.HttpStatusCode.NoContent or System.Net.HttpStatusCode.NotFound)
                 return ApiResult<string>.NotFound("プレイヤーが見つかりませんでした。");
 
             if (!res.IsSuccessStatusCode)
@@ -59,13 +61,14 @@ public static class MinecraftProfileService
         }
     }
 
-    private static bool IsHex(char c)
-        => c is >= '0' and <= '9' or >= 'a' and <= 'f';
+    
 
     private sealed class MojangProfile
     {
-        public string? Id { get; set; }
-        public string? Name { get; set; }
+        public string? Id { get; init; }
+        public string? Name { get; init; }
     }
-}
 
+    [GeneratedRegex("^[0-9a-f]{32}$", RegexOptions.IgnoreCase | RegexOptions.Compiled, "ja-JP")]
+    private static partial Regex MyRegex();
+}
