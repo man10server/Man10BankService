@@ -19,7 +19,7 @@ public class ServerLoanController(ServerLoanService service) : ControllerBase
     public async Task<IActionResult> Borrow([FromRoute] string uuid, [FromBody] ServerLoanBorrowBodyRequest request)
     {
         if (!ModelState.IsValid) return ValidationProblem(ModelState);
-        var res = await service.BorrowAsync(uuid, request.Player, request.Amount);
+        var res = await service.BorrowAsync(uuid, request.Amount);
         return StatusCode(res.StatusCode, res);
     }
 

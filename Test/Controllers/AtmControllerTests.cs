@@ -8,7 +8,6 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.AspNetCore.Mvc.ModelBinding.Validation;
 using Microsoft.Extensions.DependencyInjection;
-using System.Linq;
 using Test.Infrastructure;
 
 namespace Test.Controllers;
@@ -46,12 +45,11 @@ public class AtmControllerTests
     {
         using var host = BuildController();
         var ctrl = (AtmController)host.Controller;
-        const string uuid = "11111111-1111-1111-1111-111111111111";
+        const string uuid = TestConstants.Uuid;
 
         var req = new AtmLogRequest
         {
             Uuid = uuid,
-            Player = "alex",
             Amount = 700,
             Deposit = true,
         };
@@ -61,7 +59,7 @@ public class AtmControllerTests
         post!.StatusCode.Should().Be(200);
         var created = (post.Value as ApiResult<AtmLog>)!.Data!;
         created.Uuid.Should().Be(uuid);
-        created.Player.Should().Be("alex");
+        // Player 名は外部解決のためここでは検証しない
         created.Amount.Should().Be(700);
         created.Deposit.Should().BeTrue();
 
@@ -72,7 +70,6 @@ public class AtmControllerTests
         logs[0].Should().BeEquivalentTo(new
         {
             Uuid = uuid,
-            Player = "alex",
             Amount = 700m,
             Deposit = true
         }, opt => opt.ExcludingMissingMembers());
@@ -83,12 +80,11 @@ public class AtmControllerTests
     {
         using var host = BuildController();
         var ctrl = (AtmController)host.Controller;
-        const string uuid = "22222222-2222-2222-2222-222222222222";
+        const string uuid = TestConstants.Uuid;
 
         var req = new AtmLogRequest
         {
             Uuid = uuid,
-            Player = "alex",
             Amount = 0, // invalid
             Deposit = false,
         };
@@ -113,7 +109,7 @@ public class AtmControllerTests
         var db = host.Resources.OfType<TestDbFactory>().First();
         db.Connection.Close();
 
-        var res = await ctrl.GetLogs("33333333-3333-3333-3333-333333333333", 10) as ObjectResult;
+        var res = await ctrl.GetLogs(TestConstants.Uuid, 10) as ObjectResult;
         res!.StatusCode.Should().Be(500);
         var body = (res.Value as ApiResult<List<AtmLog>>)!
 ;        body.Message.Should().StartWith("ATMログの取得に失敗しました");
@@ -127,8 +123,7 @@ public class AtmControllerTests
 
         var req = new AtmLogRequest
         {
-            Uuid = "44444444-4444-4444-4444-444444444444",
-            Player = "alex",
+            Uuid = TestConstants.Uuid,
             Amount = 100,
             Deposit = false,
         };
@@ -148,11 +143,11 @@ public class AtmControllerTests
     {
         using var host = BuildController();
         var ctrl = (AtmController)host.Controller;
-        const string uuid = "55555555-5555-5555-5555-555555555555";
+        const string uuid = TestConstants.Uuid;
 
         for (var i = 1; i <= 100; i++)
         {
-            var req = new AtmLogRequest { Uuid = uuid, Player = "alex", Amount = i, Deposit = true };
+            var req = new AtmLogRequest { Uuid = uuid, Amount = i, Deposit = true };
             ctrl.TryValidateModel(req).Should().BeTrue();
             var res = await ctrl.AddLog(req) as ObjectResult;
             res!.StatusCode.Should().Be(200);

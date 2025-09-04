@@ -60,7 +60,8 @@ public class BankService
             try
             {
                 var repo = new BankRepository(_dbFactory);
-                var bal = await repo.ChangeBalanceAsync(req.Uuid, req.Player, req.Amount, req.PluginName, req.Note, req.DisplayNote, req.Server);
+                var player = await MinecraftProfileService.GetNameByUuidAsync(req.Uuid) ?? string.Empty;
+                var bal = await repo.ChangeBalanceAsync(req.Uuid, player, req.Amount, req.PluginName, req.Note, req.DisplayNote, req.Server);
                 return ApiResult<decimal>.Ok(bal);
             }
             catch (ArgumentException ex)
@@ -85,7 +86,8 @@ public class BankService
                 if (current < req.Amount)
                     return ApiResult<decimal>.Conflict("残高不足のため出金できません。");
 
-                var bal = await repo.ChangeBalanceAsync(req.Uuid, req.Player, -req.Amount, req.PluginName, req.Note, req.DisplayNote, req.Server);
+                var player = await MinecraftProfileService.GetNameByUuidAsync(req.Uuid) ?? string.Empty;
+                var bal = await repo.ChangeBalanceAsync(req.Uuid, player, -req.Amount, req.PluginName, req.Note, req.DisplayNote, req.Server);
                 return ApiResult<decimal>.Ok(bal);
             }
             catch (ArgumentException ex)

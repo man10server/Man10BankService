@@ -29,11 +29,11 @@ public class ChequeService
         {
             try
             {
+                var player = await MinecraftProfileService.GetNameByUuidAsync(req.Uuid) ?? string.Empty;
                 // 先に残高を引き落とし
                 var wres = await _bank.WithdrawAsync(new WithdrawRequest
                 {
                     Uuid = req.Uuid,
-                    Player = req.Player,
                     Amount = req.Amount,
                     PluginName = PluginName,
                     Note = $"create_cheque: {req.Note}",
@@ -47,7 +47,7 @@ public class ChequeService
                 Cheque cheque;
                 try
                 {
-                    cheque = await repo.CreateChequeAsync(req.Uuid, req.Player, req.Amount, req.Note);
+                    cheque = await repo.CreateChequeAsync(req.Uuid, player, req.Amount, req.Note);
                 }
                 catch (Exception ex)
                 {
@@ -55,7 +55,6 @@ public class ChequeService
                     await _bank.DepositAsync(new DepositRequest
                     {
                         Uuid = req.Uuid,
-                        Player = req.Player,
                         Amount = req.Amount,
                         PluginName = PluginName,
                         Note = "cheque_refund",
@@ -83,6 +82,7 @@ public class ChequeService
         {
             try
             {
+                var player = await MinecraftProfileService.GetNameByUuidAsync(req.Uuid) ?? string.Empty;
                 var repo = new ChequeRepository(_dbFactory);
                 var cheque = await repo.GetChequeAsync(id);
                 if (cheque == null)
@@ -91,13 +91,12 @@ public class ChequeService
                     return ApiResult<Cheque>.Conflict("既に使用済みの小切手です。");
 
                 // 先に使用済みへ更新（更新失敗時はここで終了し入金しない）
-                cheque = await repo.UseChequeAsync(id, req.Player) ?? cheque;
+                cheque = await repo.UseChequeAsync(id, player) ?? cheque;
 
                 // 次に入金
                 var dres = await _bank.DepositAsync(new DepositRequest
                 {
                     Uuid = req.Uuid,
-                    Player = req.Player,
                     Amount = cheque.Amount,
                     PluginName = PluginName,
                     Note = $"cheque_use:{id}",

@@ -56,13 +56,12 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
             if (request.Amount <= 0m)
                 return ApiResult<Loan?>.BadRequest("金額は 0 より大きい必要があります。");
 
-            var lendName = await ResolveNameOrEmptyAsync(request.LendUuid, request.LendPlayer);
-            var borrowName = await ResolveNameOrEmptyAsync(request.BorrowUuid, request.BorrowPlayer);
+            var lendName = await MinecraftProfileService.GetNameByUuidAsync(request.LendUuid) ?? string.Empty;
+            var borrowName = await MinecraftProfileService.GetNameByUuidAsync(request.BorrowUuid) ?? string.Empty;
 
             var w = await bank.WithdrawAsync(new WithdrawRequest
             {
                 Uuid = request.LendUuid,
-                Player = lendName,
                 Amount = request.Amount,
                 PluginName = "user_loan",
                 Note = "user_loan_lend_withdraw",
@@ -88,7 +87,6 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
                 var deposit = await bank.DepositAsync(new DepositRequest
                 {
                     Uuid = request.BorrowUuid,
-                    Player = borrowName,
                     Amount = request.Amount,
                     PluginName = "user_loan",
                     Note = "user_loan_borrow_deposit",
@@ -105,7 +103,6 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
                 await bank.DepositAsync(new DepositRequest
                 {
                     Uuid = request.LendUuid,
-                    Player = lendName,
                     Amount = request.Amount,
                     PluginName = "user_loan",
                     Note = "user_loan_compensate_refund",
@@ -157,13 +154,13 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
         if (toCollect <= 0m)
             return ApiResult<Loan?>.BadRequest("回収可能な残高がありません。");
 
-        var borrowerName = await ResolveNameOrEmptyAsync(loan.BorrowUuid, loan.BorrowPlayer);
-        var collectorName = await ResolveNameOrEmptyAsync(collectorUuid, string.Empty);
+        // 名前解決はロギング用途のみ。取得失敗時は空文字で続行。
+        _ = await MinecraftProfileService.GetNameByUuidAsync(loan.BorrowUuid) ?? loan.BorrowPlayer;
+        _ = await MinecraftProfileService.GetNameByUuidAsync(collectorUuid) ?? string.Empty;
 
         var w = await bank.WithdrawAsync(new WithdrawRequest
         {
             Uuid = loan.BorrowUuid,
-            Player = borrowerName,
             Amount = toCollect,
             PluginName = "user_loan",
             Note = "user_loan_collect_withdraw",
@@ -182,7 +179,6 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
             var deposit = await bank.DepositAsync(new DepositRequest
             {
                 Uuid = collectorUuid,
-                Player = collectorName,
                 Amount = toCollect,
                 PluginName = "user_loan",
                 Note = "user_loan_collect_deposit",
@@ -199,7 +195,6 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
             await bank.DepositAsync(new DepositRequest
             {
                 Uuid = loan.BorrowUuid,
-                Player = borrowerName,
                 Amount = toCollect,
                 PluginName = "user_loan",
                 Note = "user_loan_compensate_refund",
@@ -215,13 +210,12 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
         if (loan.Amount <= 0m)
             return ApiResult<Loan?>.BadRequest("返済不要です。既に完済しています。");
 
-        var borrowerName = await ResolveNameOrEmptyAsync(loan.BorrowUuid, loan.BorrowPlayer);
-        var collectorName = await ResolveNameOrEmptyAsync(collectorUuid, string.Empty);
+        _ = await MinecraftProfileService.GetNameByUuidAsync(loan.BorrowUuid) ?? loan.BorrowPlayer;
+        _ = await MinecraftProfileService.GetNameByUuidAsync(collectorUuid) ?? string.Empty;
 
         var withdraw = await bank.WithdrawAsync(new WithdrawRequest
         {
             Uuid = loan.BorrowUuid,
-            Player = borrowerName,
             Amount = loan.Amount,
             PluginName = "user_loan",
             Note = "user_loan_full_collect_withdraw",
@@ -252,7 +246,6 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
             var deposit = await bank.DepositAsync(new DepositRequest
             {
                 Uuid = collectorUuid,
-                Player = collectorName,
                 Amount = loan.Amount,
                 PluginName = "user_loan",
                 Note = "user_loan_full_collect_deposit",
@@ -269,7 +262,6 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
             await bank.DepositAsync(new DepositRequest
             {
                 Uuid = loan.BorrowUuid,
-                Player = borrowerName,
                 Amount = loan.Amount,
                 PluginName = "user_loan",
                 Note = "user_loan_compensate_refund",
@@ -310,19 +302,4 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
             return ApiResult<Loan?>.Error($"担保返却に失敗しました: {ex.Message}");
         }
     }
-
-    private static async System.Threading.Tasks.Task<string> ResolveNameOrEmptyAsync(string uuid, string? fallback)
-    {
-        try
-        {
-            var res = await MinecraftProfileService.GetNameByUuidAsync(uuid);
-            if (res.StatusCode == 200 && !string.IsNullOrWhiteSpace(res.Data))
-                return res.Data!;
-        }
-        catch
-        {
-        }
-        return string.IsNullOrWhiteSpace(fallback) ? string.Empty : fallback!;
-    }
-
 }

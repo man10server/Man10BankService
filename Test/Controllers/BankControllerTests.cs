@@ -9,7 +9,6 @@ using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.AspNetCore.Mvc.ModelBinding.Validation;
 using Microsoft.Extensions.DependencyInjection;
 using Test.Infrastructure;
-using System.Linq;
 using System.Collections.Concurrent;
 
 namespace Test.Controllers;
@@ -51,7 +50,7 @@ public class BankControllerTests
         var db = host.Resources.OfType<TestDbFactory>().First();
         db.Connection.Close();
 
-        var res = await ctrl.GetBalance("deadbeef-dead-beef-dead-beefdeadbeef") as ObjectResult;
+        var res = await ctrl.GetBalance(TestConstants.Uuid) as ObjectResult;
         res!.StatusCode.Should().Be(500);
         var body = res.Value as ApiResult<decimal>;
         body!.Message.Should().StartWith("残高取得に失敗しました");
@@ -64,8 +63,7 @@ public class BankControllerTests
         var ctrl = (BankController)host.Controller;
         var req = new DepositRequest
         {
-            Uuid = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-            Player = "steve",
+            Uuid = TestConstants.Uuid,
             Amount = 500,
             PluginName = "test",
             Note = "deposit",
@@ -87,8 +85,7 @@ public class BankControllerTests
         {
             Amount = 500m,
             Deposit = true,
-            Uuid = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-            Player = "steve",
+            TestConstants.Uuid,
             PluginName = "test",
             Note = "deposit",
             DisplayNote = "入金テスト",
@@ -103,8 +100,7 @@ public class BankControllerTests
         var ctrl = (BankController)host.Controller;
         var req = new DepositRequest
         {
-            Uuid = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
-            Player = "alex",
+            Uuid = TestConstants.Uuid,
             Amount = 0,
             PluginName = "test",
             Note = "deposit",
@@ -131,8 +127,7 @@ public class BankControllerTests
 
         var req = new DepositRequest
         {
-            Uuid = "dddddddd-dddd-dddd-dddd-dddddddddddd",
-            Player = "alex",
+            Uuid = TestConstants.Uuid,
             Amount = 100,
             PluginName = "test",
             Note = "down",
@@ -156,12 +151,11 @@ public class BankControllerTests
     {
         using var host = BuildController();
         var ctrl = (BankController)host.Controller;
-        const string uuid = "ffffffff-ffff-ffff-ffff-ffffffffffff";
+        const string uuid = TestConstants.Uuid;
 
         await ctrl.Deposit(new DepositRequest
         {
             Uuid = uuid,
-            Player = "alex",
             Amount = 1000,
             PluginName = "test",
             Note = "seed",
@@ -172,7 +166,6 @@ public class BankControllerTests
         var ok = await ctrl.Withdraw(new WithdrawRequest
         {
             Uuid = uuid,
-            Player = "alex",
             Amount = 600,
             PluginName = "test",
             Note = "w1",
@@ -191,7 +184,6 @@ public class BankControllerTests
             Amount = -600m,
             Deposit = false,
             Uuid = uuid,
-            Player = "alex",
             PluginName = "test",
             Note = "w1",
             DisplayNote = "出金1",
@@ -204,12 +196,11 @@ public class BankControllerTests
     {
         using var host = BuildController();
         var ctrl = (BankController)host.Controller;
-        const string uuid = "cccccccc-cccc-cccc-cccc-cccccccccccc";
+        const string uuid = TestConstants.Uuid;
 
         await ctrl.Deposit(new DepositRequest
         {
             Uuid = uuid,
-            Player = "alex",
             Amount = 1000,
             PluginName = "test",
             Note = "seed",
@@ -220,7 +211,6 @@ public class BankControllerTests
         var ok = await ctrl.Withdraw(new WithdrawRequest
         {
             Uuid = uuid,
-            Player = "alex",
             Amount = 600,
             PluginName = "test",
             Note = "w1",
@@ -234,7 +224,6 @@ public class BankControllerTests
         var ng = await ctrl.Withdraw(new WithdrawRequest
         {
             Uuid = uuid,
-            Player = "alex",
             Amount = 500,
             PluginName = "test",
             Note = "w2",
@@ -256,8 +245,7 @@ public class BankControllerTests
 
         var req = new WithdrawRequest
         {
-            Uuid = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
-            Player = "alex",
+            Uuid = TestConstants.Uuid,
             Amount = 100,
             PluginName = "test",
             Note = "down",
@@ -281,14 +269,13 @@ public class BankControllerTests
     {
         using var host = BuildController();
         var ctrl = (BankController)host.Controller;
-        const string uuid = "12345678-1234-1234-1234-1234567890ab";
+        const string uuid = TestConstants.Uuid;
 
         for (var i = 1; i <= 100; i++)
         {
             var req = new DepositRequest
             {
                 Uuid = uuid,
-                Player = "alex",
                 Amount = i,
                 PluginName = "test",
                 Note = $"dep{i}",
@@ -318,13 +305,12 @@ public class BankControllerTests
     {
         using var host = BuildController();
         var ctrl = (BankController)host.Controller;
-        const string uuid = "a1b2c3d4-e5f6-7a8b-9c0d-a1b2c3d4e5f6";
+        const string uuid = TestConstants.Uuid;
 
         // 初期残高を作って過剰な409を減らす
         (await ctrl.Deposit(new DepositRequest
         {
             Uuid = uuid,
-            Player = "alex",
             Amount = 2000,
             PluginName = "test",
             Note = "seed",
@@ -345,7 +331,6 @@ public class BankControllerTests
                 var res = await ctrl.Deposit(new DepositRequest
                 {
                     Uuid = uuid,
-                    Player = "alex",
                     Amount = op.amount,
                     PluginName = "test",
                     Note = $"dep{op.amount}",
@@ -359,7 +344,6 @@ public class BankControllerTests
                 var res = await ctrl.Withdraw(new WithdrawRequest
                 {
                     Uuid = uuid,
-                    Player = "alex",
                     Amount = op.amount,
                     PluginName = "test",
                     Note = $"wd{op.amount}",

@@ -8,8 +8,4 @@ public class ChequeUseRequest
     [StringLength(36)]
     [RegularExpression(@"^[0-9a-fA-F-]{36}$", ErrorMessage = "UUID の形式が不正です。")]
     public required string Uuid { get; set; }
-
-    [Required]
-    [StringLength(16)]
-    public required string Player { get; set; }
 }

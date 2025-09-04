@@ -13,7 +13,8 @@ public class AtmService(IDbContextFactory<BankDbContext> dbFactory)
         try
         {
             var repo = new AtmRepository(dbFactory);
-            var log = await repo.AddAtmLogAsync(req.Uuid, req.Player, req.Amount, req.Deposit);
+            var player = await MinecraftProfileService.GetNameByUuidAsync(req.Uuid) ?? string.Empty;
+            var log = await repo.AddAtmLogAsync(req.Uuid, player, req.Amount, req.Deposit);
             return ApiResult<AtmLog>.Ok(log);
         }
         catch (ArgumentException ex)

@@ -10,10 +10,6 @@ public class ChequeCreateRequest : IValidatableObject
     public required string Uuid { get; set; }
 
     [Required]
-    [StringLength(16)]
-    public required string Player { get; set; }
-
-    [Required]
     public decimal Amount { get; set; }
 
     [StringLength(64)]
@@ -22,6 +18,6 @@ public class ChequeCreateRequest : IValidatableObject
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
         if (Amount <= 0m)
-            yield return new ValidationResult("金額は 0 より大きい必要があります。", new[] { nameof(Amount) });
+            yield return new ValidationResult("金額は 0 より大きい必要があります。", [nameof(Amount)]);
     }
 }

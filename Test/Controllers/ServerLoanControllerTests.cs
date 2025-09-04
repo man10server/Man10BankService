@@ -1,4 +1,3 @@
-using System.Linq;
 using FluentAssertions;
 using Man10BankService.Controllers;
 using Man10BankService.Data;
@@ -66,11 +65,10 @@ public class ServerLoanControllerTests
     {
         using var env = BuildController();
         var ctrl = (ServerLoanController)env.Host.Controller;
-        const string uuid = "00000000-0000-0000-0000-000000000001";
-        const string player = "steve";
+        const string uuid = TestConstants.Uuid;
         const decimal amount = 1000m;
 
-        var res = await ctrl.Borrow(uuid, new ServerLoanBorrowBodyRequest { Player = player, Amount = amount }) as ObjectResult;
+        var res = await ctrl.Borrow(uuid, new ServerLoanBorrowBodyRequest { Amount = amount }) as ObjectResult;
         res!.StatusCode.Should().Be(200);
 
         var loan = await GetLoanAsync(env.DbFactory, uuid);
@@ -92,14 +90,12 @@ public class ServerLoanControllerTests
     {
         using var env = BuildController();
         var ctrl = (ServerLoanController)env.Host.Controller;
-        const string uuid = "00000000-0000-0000-0000-000000000002";
-        const string player = "alex";
-        
+        const string uuid = TestConstants.Uuid;
         var limitRes = await ctrl.GetBorrowLimit(uuid) as ObjectResult;
         limitRes!.StatusCode.Should().Be(200);
         
         var limit = (limitRes.Value as ApiResult<decimal>)!.Data;
-        var res = await ctrl.Borrow(uuid, new ServerLoanBorrowBodyRequest { Player = player, Amount = limit * 2 }) as ObjectResult;
+        var res = await ctrl.Borrow(uuid, new ServerLoanBorrowBodyRequest { Amount = limit * 2 }) as ObjectResult;
         res!.StatusCode.Should().Be(409);
     }
 
@@ -108,11 +104,9 @@ public class ServerLoanControllerTests
     {
         using var env = BuildController();
         var ctrl = (ServerLoanController)env.Host.Controller;
-        const string uuid = "00000000-0000-0000-0000-000000000005";
-        const string player = "sam";
-
-        (await ctrl.Borrow(uuid, new ServerLoanBorrowBodyRequest { Player = player, Amount = 400m }) as ObjectResult)!.StatusCode.Should().Be(200);
-        (await ctrl.Borrow(uuid, new ServerLoanBorrowBodyRequest { Player = player, Amount = 500m }) as ObjectResult)!.StatusCode.Should().Be(200);
+        const string uuid = TestConstants.Uuid;
+        (await ctrl.Borrow(uuid, new ServerLoanBorrowBodyRequest { Amount = 400m }) as ObjectResult)!.StatusCode.Should().Be(200);
+        (await ctrl.Borrow(uuid, new ServerLoanBorrowBodyRequest { Amount = 500m }) as ObjectResult)!.StatusCode.Should().Be(200);
 
         var loan = await GetLoanAsync(env.DbFactory, uuid);
         loan!.BorrowAmount.Should().Be(900m);
@@ -133,8 +127,7 @@ public class ServerLoanControllerTests
     {
         using var env = BuildController();
         var ctrl = (ServerLoanController)env.Host.Controller;
-        const string uuid = "00000000-0000-0000-0000-000000000007";
-        const string player = "mike";
+        const string uuid = TestConstants.Uuid;
 
         var limitRes = await ctrl.GetBorrowLimit(uuid) as ObjectResult;
         limitRes!.StatusCode.Should().Be(200);
@@ -143,13 +136,13 @@ public class ServerLoanControllerTests
         var first = limit / 2m;
         var second = limit * 2m;
 
-        (await ctrl.Borrow(uuid, new ServerLoanBorrowBodyRequest { Player = player, Amount = first }) as ObjectResult)!
+        (await ctrl.Borrow(uuid, new ServerLoanBorrowBodyRequest { Amount = first }) as ObjectResult)!
             .StatusCode.Should().Be(200);
 
         var afterFirst = await GetLoanAsync(env.DbFactory, uuid);
         afterFirst!.BorrowAmount.Should().Be(first);
 
-        var secondRes = await ctrl.Borrow(uuid, new ServerLoanBorrowBodyRequest { Player = player, Amount = second }) as ObjectResult;
+        var secondRes = await ctrl.Borrow(uuid, new ServerLoanBorrowBodyRequest { Amount = second }) as ObjectResult;
         secondRes!.StatusCode.Should().Be(409);
 
         var afterSecond = await GetLoanAsync(env.DbFactory, uuid);
@@ -161,15 +154,12 @@ public class ServerLoanControllerTests
     {
         using var env = BuildController();
         var ctrl = (ServerLoanController)env.Host.Controller;
-        const string uuid = "00000000-0000-0000-0000-000000000006";
-        const string player = "kat";
-
-        (await ctrl.Borrow(uuid, new ServerLoanBorrowBodyRequest { Player = player, Amount = 500m }) as ObjectResult)!.StatusCode.Should().Be(200);
+        const string uuid = TestConstants.Uuid;
+        (await ctrl.Borrow(uuid, new ServerLoanBorrowBodyRequest { Amount = 500m }) as ObjectResult)!.StatusCode.Should().Be(200);
 
         await env.Bank.WithdrawAsync(new WithdrawRequest
         {
             Uuid = uuid,
-            Player = player,
             Amount = 500m,
             PluginName = "test",
             Note = "spend_all",
@@ -194,11 +184,10 @@ public class ServerLoanControllerTests
     {
         using var env = BuildController();
         var ctrl = (ServerLoanController)env.Host.Controller;
-        const string uuid = "00000000-0000-0000-0000-000000000003";
-        const string player = "notch";
-        await env.Bank.DepositAsync(new DepositRequest { Uuid = uuid, Player = player, Amount = 100000m, PluginName = "test", Note = "seed", DisplayNote = "seed", Server = "dev" });
+        const string uuid = TestConstants.Uuid;
+        await env.Bank.DepositAsync(new DepositRequest { Uuid = uuid, Amount = 100000m, PluginName = "test", Note = "seed", DisplayNote = "seed", Server = "dev" });
 
-        await ctrl.Borrow(uuid, new ServerLoanBorrowBodyRequest { Player = player, Amount = 1000m });
+        await ctrl.Borrow(uuid, new ServerLoanBorrowBodyRequest { Amount = 1000m });
         var before = await GetLoanAsync(env.DbFactory, uuid);
         const decimal repayAmount = 6000m;
         var expectedRepayAmount = Math.Min(before!.BorrowAmount, repayAmount);
@@ -222,11 +211,10 @@ public class ServerLoanControllerTests
     {
         using var env = BuildController();
         var ctrl = (ServerLoanController)env.Host.Controller;
-        const string uuid = "00000000-0000-0000-0000-000000000004";
-        const string player = "jeb";
-        await env.Bank.DepositAsync(new DepositRequest { Uuid = uuid, Player = player, Amount = 100000m, PluginName = "test", Note = "seed", DisplayNote = "seed", Server = "dev" });
+        const string uuid = TestConstants.Uuid;
+        await env.Bank.DepositAsync(new DepositRequest { Uuid = uuid, Amount = 100000m, PluginName = "test", Note = "seed", DisplayNote = "seed", Server = "dev" });
 
-        await ctrl.Borrow(uuid, new ServerLoanBorrowBodyRequest { Player = player, Amount = 1000m });
+        await ctrl.Borrow(uuid, new ServerLoanBorrowBodyRequest { Amount = 1000m });
 
         var before = await GetLoanAsync(env.DbFactory, uuid);
         var noArg = await ctrl.Repay(uuid, amount: null) as ObjectResult;
