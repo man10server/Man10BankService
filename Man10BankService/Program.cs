@@ -19,9 +19,20 @@ var app = builder.Build();
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
+    // Swagger UI は組み込み OpenAPI (/openapi/v1.json) を表示
+    app.UseSwaggerUI(o =>
+    {
+        o.SwaggerEndpoint("/openapi/v1.json", "Man10BankService v1");
+        o.RoutePrefix = "swagger"; // /swagger で提供
+        o.DocumentTitle = "Man10BankService API";
+    });
 }
 
-app.UseHttpsRedirection();
+// コンテナ（HTTP のみ想定）では HTTPS リダイレクトを行わない
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
 
 app.MapControllers();
 
