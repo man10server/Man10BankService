@@ -13,6 +13,7 @@ builder.Services.AddSingleton<Man10BankService.Services.AtmService>();
 builder.Services.AddSingleton<Man10BankService.Services.ChequeService>();
 builder.Services.AddSingleton<Man10BankService.Services.ServerLoanService>();
 builder.Services.AddSingleton<Man10BankService.Services.LoanService>();
+builder.Services.AddSingleton<Man10BankService.Services.EstateService>();
 
 var app = builder.Build();
 
