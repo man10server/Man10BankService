@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { Api, formatJPY } from '../api/client'
 import type { ApiResult, Estate, EstateHistory, MoneyLog, ServerLoan } from '../api/client'
 
@@ -140,24 +140,73 @@ function BankLogsBigCard({ logs, empty, span = 12 }: { logs: MoneyLog[]; empty: 
 
 function EstateHistoryChartCard({ data, empty, span = 12 }: { data: EstateHistory[]; empty: string; span?: number }) {
   const width = 1100; // container max is 1200 with padding
-  const height = 240;
-  const padding = { top: 16, right: 16, bottom: 24, left: 48 };
+  const height = 280;
+  const padding = { top: 16, right: 16, bottom: 36, left: 64 };
   const innerW = width - padding.left - padding.right;
   const innerH = height - padding.top - padding.bottom;
 
-  const points = (() => {
+  const totals = useMemo(() => (data && data.length ? data.map(d => Number(d.total)) : []), [data]);
+  const min = useMemo(() => (totals.length ? Math.min(...totals) : 0), [totals]);
+  const max = useMemo(() => (totals.length ? Math.max(...totals) : 1), [totals]);
+  const range = Math.max(1, max - min);
+
+  const points = useMemo(() => {
     if (!data || data.length === 0) return '';
-    const totals = data.map(d => Number(d.total));
-    const min = Math.min(...totals);
-    const max = Math.max(...totals);
-    const range = max - min || 1;
-    return data.map((d, i) => {
-      const x = padding.left + (innerW * i) / Math.max(1, data.length - 1);
+    return data
+      .map((d, i) => {
+        const x = padding.left + (innerW * i) / Math.max(1, data.length - 1);
+        const norm = (Number(d.total) - min) / range;
+        const y = padding.top + (1 - norm) * innerH;
+        return `${x},${y}`;
+      })
+      .join(' ');
+  }, [data, innerW, innerH, min, range, padding.left, padding.top]);
+
+  // Axis ticks
+  const yTickCount = 4;
+  const yTicks = useMemo(() => {
+    return Array.from({ length: yTickCount + 1 }, (_, i) => {
+      const value = min + (range * i) / yTickCount;
+      const norm = (value - min) / range;
+      const y = padding.top + (1 - norm) * innerH;
+      return { y, value };
+    });
+  }, [min, range, innerH, padding.top]);
+
+  const xTickCount = Math.min(6, Math.max(2, Math.floor((data?.length ?? 0) / 5)) + 1);
+  const xTicks = useMemo(() => {
+    if (!data || data.length === 0) return [] as { x: number; label: string }[];
+    const n = data.length - 1;
+    const formatter = new Intl.DateTimeFormat('ja-JP', { month: 'numeric', day: 'numeric' });
+    return Array.from({ length: xTickCount }, (_, i) => {
+      const idx = Math.round((n * i) / Math.max(1, xTickCount - 1));
+      const x = padding.left + (innerW * idx) / Math.max(1, n);
+      const label = formatter.format(new Date(data[idx].date));
+      return { x, label };
+    });
+  }, [data, innerW, padding.left, xTickCount]);
+
+  // Hover state
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const [hover, setHover] = useState<{ idx: number; x: number; y: number } | null>(null);
+
+  const handleMove = useCallback(
+    (e: React.MouseEvent<SVGSVGElement>) => {
+      if (!data || data.length === 0) return;
+      const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
+      const px = e.clientX - rect.left;
+      const clamped = Math.min(width - padding.right, Math.max(padding.left, px));
+      const t = (clamped - padding.left) / innerW;
+      const idx = Math.round(t * Math.max(0, data.length - 1));
+      const d = data[idx];
       const norm = (Number(d.total) - min) / range;
       const y = padding.top + (1 - norm) * innerH;
-      return `${x},${y}`;
-    }).join(' ');
-  })();
+      setHover({ idx, x: padding.left + (innerW * idx) / Math.max(1, data.length - 1), y });
+    },
+    [data, innerW, innerH, min, range, padding.left, padding.right, padding.top]
+  );
+
+  const handleLeave = useCallback(() => setHover(null), []);
 
   const latest = data && data.length > 0 ? data[data.length - 1] : undefined;
 
@@ -165,13 +214,79 @@ function EstateHistoryChartCard({ data, empty, span = 12 }: { data: EstateHistor
     <div style={{ gridColumn: `span ${span}`, background: '#6b7280', color: '#fff', borderRadius: 12, padding: 16 }}>
       <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 8, textAlign: 'left' }}>資産推移 (30件)</div>
       {data && data.length > 0 ? (
-        <div style={{ width: '100%', overflowX: 'auto' }}>
-          <svg viewBox={`0 0 ${width} ${height}`} width="100%" height={height} role="img" aria-label="資産推移">
+        <div style={{ width: '100%', overflowX: 'auto', position: 'relative' }}>
+          <svg
+            ref={svgRef}
+            viewBox={`0 0 ${width} ${height}`}
+            width="100%"
+            height={height}
+            role="img"
+            aria-label="資産推移"
+            onMouseMove={handleMove}
+            onMouseLeave={handleLeave}
+          >
             <rect x={0} y={0} width={width} height={height} fill="#6b7280" />
-            <g>
-              <polyline fill="none" stroke="#ffffff" strokeWidth={2} points={points} />
+
+            {/* Axes */}
+            <g stroke="#d1d5db" strokeWidth={1}>
+              {/* Y axis line */}
+              <line x1={padding.left} y1={padding.top} x2={padding.left} y2={height - padding.bottom} />
+              {/* X axis line */}
+              <line x1={padding.left} y1={height - padding.bottom} x2={width - padding.right} y2={height - padding.bottom} />
+              {/* Y ticks and labels */}
+              {yTicks.map((t, i) => (
+                <g key={`y-${i}`}>
+                  <line x1={padding.left - 6} x2={width - padding.right} y1={t.y} y2={t.y} strokeOpacity={0.2} />
+                  <text x={padding.left - 8} y={t.y} fill="#fff" fontSize={10} textAnchor="end" dominantBaseline="middle">
+                    {formatJPY(Math.round(t.value))}
+                  </text>
+                </g>
+              ))}
+              {/* X ticks and labels */}
+              {xTicks.map((t, i) => (
+                <g key={`x-${i}`}>
+                  <line x1={t.x} x2={t.x} y1={height - padding.bottom} y2={height - padding.bottom + 6} />
+                  <text x={t.x} y={height - padding.bottom + 18} fill="#fff" fontSize={10} textAnchor="middle">
+                    {t.label}
+                  </text>
+                </g>
+              ))}
             </g>
+
+            {/* Line */}
+            <polyline fill="none" stroke="#ffffff" strokeWidth={2} points={points} />
+
+            {/* Hover cursor */}
+            {hover && (
+              <g>
+                <line x1={hover.x} x2={hover.x} y1={padding.top} y2={height - padding.bottom} stroke="#fef08a" strokeWidth={1} />
+                <circle cx={hover.x} cy={hover.y} r={3} fill="#fef08a" />
+              </g>
+            )}
           </svg>
+
+          {/* Tooltip */}
+          {hover && (
+            <div
+              style={{
+                position: 'absolute',
+                left: `${(hover.x / width) * 100}%`,
+                top: 8,
+                transform: 'translateX(-50%)',
+                background: 'rgba(0,0,0,0.6)',
+                color: '#fff',
+                padding: '6px 8px',
+                borderRadius: 6,
+                fontSize: 12,
+                whiteSpace: 'nowrap',
+                pointerEvents: 'none',
+              }}
+            >
+              <div>{formatDate(data[hover.idx].date)}</div>
+              <div><strong>{formatJPY(Number(data[hover.idx].total))}</strong></div>
+            </div>
+          )}
+
           {latest && (
             <div style={{ marginTop: 8, fontSize: 14 }}>
               最新 {formatDate(latest.date)}: <strong>{formatJPY(latest.total)}</strong>
