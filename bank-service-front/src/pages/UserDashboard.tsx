@@ -144,9 +144,9 @@ function BigStatCard(props: { span?: number; cash: number | null | undefined; va
   const hasAny = cash != null || vault != null || bank != null || serverLoan != null || total != null;
   return (
     <div style={{ gridColumn: `span ${span}`, background: '#6b7280', color: '#fff', borderRadius: 12, padding: 16 }}>
-      <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>サマリー</div>
+      <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 8, textAlign: 'left' }}>サマリー</div>
       {hasAny ? (
-        <div style={{ fontSize: 18, lineHeight: 1.8 }}>
+        <div style={{ fontSize: '2rem', lineHeight: 1.4, fontWeight: 700, textAlign: 'left' }}>
           <div>現金: {formatJPY(cash ?? 0)}</div>
           <div>電子マネー: {formatJPY(vault ?? 0)}</div>
           <div>銀行: {formatJPY(bank ?? 0)}</div>
@@ -154,7 +154,7 @@ function BigStatCard(props: { span?: number; cash: number | null | undefined; va
           <div>合計: {formatJPY(total ?? 0)}</div>
         </div>
       ) : (
-        <div style={{ fontSize: 16 }}>{fallbackMsg || 'データがありません'}</div>
+        <div style={{ fontSize: '2rem', fontWeight: 700, textAlign: 'left' }}>{fallbackMsg || 'データがありません'}</div>
       )}
     </div>
   )
