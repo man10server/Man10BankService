@@ -140,15 +140,16 @@ function BankLogsBigCard({ logs, empty, span = 12 }: { logs: MoneyLog[]; empty: 
               <tr>
                 <th style={{ textAlign: 'left' }}>日時</th>
                 <th style={{ textAlign: 'left' }}>内容</th>
-                <th style={{ textAlign: 'right' }}>金額</th>
+                <th style={{ textAlign: 'left' }}>金額</th>
               </tr>
             </thead>
             <tbody>
-              {logs.map(l => (
+              {
+              logs.map(l => (
                 <tr key={l.id}>
-                  <td>{formatDate(l.date)}</td>
-                  <td>{l.displayNote}</td>
-                  <td style={{ textAlign: 'right' }}>{formatJPY(l.amount)}</td>
+                  <td style={{ textAlign: 'left' }}>{formatDate(l.date)}</td>
+                  <td style={{ textAlign: 'left' }}>{l.displayNote}</td>
+                  <td style={{ textAlign: 'left', color: l.deposit ? 'yellowgreen' : '#ff4d4f' }}>{formatJPY(l.amount)}</td>
                 </tr>
               ))}
             </tbody>
