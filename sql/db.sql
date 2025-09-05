@@ -1,155 +1,182 @@
-CREATE TABLE atm_log
+create table atm_log
 (
-    id      INT AUTO_INCREMENT PRIMARY KEY,
-    player  VARCHAR(16)          NOT NULL,
-    uuid    VARCHAR(36)          NOT NULL,
-    amount  DECIMAL(20,0)        NOT NULL,
-    deposit TINYINT(1) DEFAULT 0 NOT NULL,
-    date    DATETIME   DEFAULT CURRENT_TIMESTAMP NOT NULL
+    id      int auto_increment
+        primary key,
+    player  varchar(16)                          not null,
+    uuid    varchar(36)                          not null,
+    deposit tinyint(1) default 0                 not null,
+    date    datetime   default CURRENT_TIMESTAMP not null,
+    amount  decimal(20)                          not null
 );
 
-CREATE TABLE cheque_tbl
+create index atm_log_player_uuid_date_index
+    on atm_log (player, uuid, date);
+
+create table cheque_tbl
 (
-    id         INT AUTO_INCREMENT PRIMARY KEY,
-    player     VARCHAR(16)                   NOT NULL,
-    uuid       VARCHAR(36)                   NOT NULL,
-    amount     DECIMAL(20,0)                 NOT NULL,
-    note       VARCHAR(128)  DEFAULT ''      NOT NULL,
-    date       DATETIME      DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    use_date   DATETIME      DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    use_player VARCHAR(16)   DEFAULT ''      NOT NULL,
-    used       TINYINT       DEFAULT 0       NOT NULL
+    id         int auto_increment
+        primary key,
+    player     varchar(16)                            not null,
+    uuid       varchar(36)                            not null,
+    note       varchar(128) default ''                not null,
+    date       datetime     default CURRENT_TIMESTAMP not null,
+    used       tinyint      default 0                 not null,
+    use_date   datetime     default CURRENT_TIMESTAMP not null,
+    use_player varchar(16)  default ''                not null,
+    amount     decimal(20)                            not null
 );
 
-CREATE INDEX cheque_tbl_used_index  ON cheque_tbl (used);
-CREATE INDEX cheque_tbl_uuid_index  ON cheque_tbl (uuid);
-CREATE INDEX cheque_tbl_player_index ON cheque_tbl (player);
+create index cheque_tbl_player_uuid_index
+    on cheque_tbl (player, uuid);
 
-CREATE TABLE estate_history_tbl
+create index cheque_tbl_used_use_player_index
+    on cheque_tbl (used, use_player);
+
+create table estate_history_tbl
 (
-    id     INT AUTO_INCREMENT PRIMARY KEY,
-    uuid   VARCHAR(36)                                  NOT NULL,
-    date   DATETIME     DEFAULT CURRENT_TIMESTAMP       NOT NULL,
-    player VARCHAR(16)  DEFAULT ''                      NOT NULL,
-    vault  DECIMAL(20,0) DEFAULT 0                      NOT NULL,
-    bank   DECIMAL(20,0) DEFAULT 0                      NOT NULL,
-    cash   DECIMAL(20,0) DEFAULT 0                      NOT NULL,
-    estate DECIMAL(20,0) DEFAULT 0                      NOT NULL,
-    loan   DECIMAL(20,0) DEFAULT 0                      NOT NULL,
-    shop   DECIMAL(20,0) DEFAULT 0                      NOT NULL,
-    crypto DECIMAL(20,0) DEFAULT 0                      NOT NULL,
-    total  DECIMAL(20,0) DEFAULT 0                      NOT NULL
+    id     int auto_increment
+        primary key,
+    uuid   varchar(36)                           not null,
+    player varchar(16) default ''                not null,
+    date   datetime    default CURRENT_TIMESTAMP not null,
+    vault  decimal(20)                           not null,
+    bank   decimal(20)                           not null,
+    cash   decimal(20)                           not null,
+    estate decimal(20)                           not null,
+    loan   decimal(20)                           not null,
+    shop   decimal(20)                           not null,
+    crypto decimal(20)                           not null,
+    total  decimal(20)                           not null
 );
 
-CREATE INDEX estate_history_tbl_uuid_date_index ON estate_history_tbl (uuid, date);
+create index estate_history_tbl_player_uuid_date_index
+    on estate_history_tbl (player, uuid, date);
 
-CREATE TABLE estate_tbl
+create table estate_tbl
 (
-    id     INT AUTO_INCREMENT PRIMARY KEY,
-    uuid   VARCHAR(36)                               NOT NULL,
-    date   DATETIME         DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    player VARCHAR(16)      DEFAULT ''               NOT NULL,
-    vault  DECIMAL(20,0)    DEFAULT 0                NOT NULL,
-    bank   DECIMAL(20,0)    DEFAULT 0                NOT NULL,
-    cash   DECIMAL(20,0)    DEFAULT 0                NOT NULL,
-    estate DECIMAL(20,0)    DEFAULT 0                NOT NULL,
-    loan   DECIMAL(20,0)    DEFAULT 0                NOT NULL,
-    shop   DECIMAL(20,0)    DEFAULT 0                NOT NULL,
-    crypto DECIMAL(20,0)    DEFAULT 0                NOT NULL,
-    total  DECIMAL(20,0)    DEFAULT 0                NOT NULL
-) COMMENT '現在の個人の資産テーブル';
+    id     int auto_increment
+        primary key,
+    uuid   varchar(36)                           not null,
+    player varchar(16) default ''                not null,
+    date   datetime    default CURRENT_TIMESTAMP not null,
+    vault  decimal(20)                           not null,
+    bank   decimal(20)                           not null,
+    cash   decimal(20)                           not null,
+    estate decimal(20)                           not null,
+    loan   decimal(20)                           not null,
+    shop   decimal(20)                           not null,
+    crypto decimal(20)                           not null,
+    total  decimal(20)                           not null
+)
+    comment '現在の個人の資産テーブル';
 
-CREATE INDEX estate_tbl_uuid_index ON estate_tbl (uuid);
+create index estate_tbl_player_uuid_index
+    on estate_tbl (player, uuid);
 
-CREATE TABLE loan_table
+create table loan_table
 (
-    id              INT AUTO_INCREMENT PRIMARY KEY,
-    lend_player     VARCHAR(16)  DEFAULT ''               NOT NULL,
-    lend_uuid       VARCHAR(36)  DEFAULT ''               NOT NULL,
-    borrow_player   VARCHAR(16)  DEFAULT ''               NOT NULL,
-    borrow_uuid     VARCHAR(36)  DEFAULT ''               NOT NULL,
-    borrow_date     DATETIME     DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    payback_date    DATETIME     DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    amount          DECIMAL(20,0) DEFAULT 0               NOT NULL,
-    collateral_item TEXT         DEFAULT ''               NOT NULL
+    id              int auto_increment
+        primary key,
+    lend_player     varchar(16) default ''                not null,
+    lend_uuid       varchar(36) default ''                not null,
+    borrow_player   varchar(16) default ''                not null,
+    borrow_uuid     varchar(36) default ''                not null,
+    borrow_date     datetime    default CURRENT_TIMESTAMP not null,
+    payback_date    datetime    default CURRENT_TIMESTAMP not null,
+    collateral_item text                                  not null,
+    amount          decimal(20)                           not null
 );
 
-CREATE INDEX loan_table_player_uuid_index       ON loan_table (borrow_player, borrow_uuid);
-CREATE INDEX loan_table_lend_player_uuid_index  ON loan_table (lend_player, lend_uuid);
+create index loan_table_lend_player_uuid_index
+    on loan_table (lend_player, lend_uuid);
 
-CREATE TABLE money_log
+create index loan_table_player_uuid_index
+    on loan_table (borrow_player, borrow_uuid);
+
+create table money_log
 (
-    id           INT AUTO_INCREMENT PRIMARY KEY,
-    player       VARCHAR(16)                          NOT NULL,
-    uuid         VARCHAR(36)                          NOT NULL,
-    plugin_name  VARCHAR(16)  DEFAULT ''              NOT NULL,
-    amount       DECIMAL(20,0) DEFAULT 0              NOT NULL,
-    note         VARCHAR(64)   DEFAULT ''              NOT NULL,
-    display_note VARCHAR(64)   DEFAULT ''              NOT NULL,
-    server       VARCHAR(16)   DEFAULT ''              NOT NULL,
-    deposit      TINYINT(1)    DEFAULT 1               NOT NULL,
-    date         DATETIME      DEFAULT CURRENT_TIMESTAMP NOT NULL
+    id           int auto_increment
+        primary key,
+    player       varchar(16)                           not null,
+    uuid         varchar(36)                           not null,
+    plugin_name  varchar(16) default ''                not null,
+    balance      double      default -1                null,
+    note         varchar(64) default ''                not null,
+    display_note varchar(64) default ''                not null,
+    server       varchar(16) default ''                not null,
+    deposit      tinyint(1)  default 1                 not null,
+    date         datetime    default CURRENT_TIMESTAMP not null,
+    amount       decimal(20)                           not null
 );
 
-CREATE INDEX money_log_uuid_player_date_index ON money_log (uuid, player, date);
+create index money_log_uuid_player_date_index
+    on money_log (uuid, player, date);
 
-CREATE TABLE server_estate_history
+create table server_estate_history
 (
-    id     INT AUTO_INCREMENT PRIMARY KEY,
-    vault  DECIMAL(20,0) DEFAULT 0                NOT NULL,
-    bank   DECIMAL(20,0) DEFAULT 0                NOT NULL,
-    cash   DECIMAL(20,0) DEFAULT 0                NOT NULL,
-    estate DECIMAL(20,0) DEFAULT 0                NOT NULL,
-    loan   DECIMAL(20,0) DEFAULT 0                NOT NULL,
-    crypto DECIMAL(20,0) DEFAULT 0                NOT NULL,
-    shop   DECIMAL(20,0) DEFAULT 0                NOT NULL,
-    total  DECIMAL(20,0) DEFAULT 0                NOT NULL,
-    year   INT            DEFAULT 0               NOT NULL,
-    month  INT            DEFAULT 0               NOT NULL,
-    day    INT            DEFAULT 0               NOT NULL,
-    hour   INT            DEFAULT 0               NOT NULL,
-    date   DATETIME       DEFAULT CURRENT_TIMESTAMP NOT NULL
+    id     int auto_increment
+        primary key,
+    year   int      default 0                 not null,
+    month  int      default 0                 not null,
+    day    int      default 0                 not null,
+    hour   int      default 0                 not null,
+    date   datetime default CURRENT_TIMESTAMP not null,
+    vault  decimal(20)                        not null,
+    bank   decimal(20)                        not null,
+    cash   decimal(20)                        not null,
+    estate decimal(20)                        not null,
+    loan   decimal(20)                        not null,
+    shop   decimal(20)                        not null,
+    crypto decimal(20)                        not null,
+    total  decimal(20)                        not null
 );
 
-CREATE INDEX server_estate_history_year_month_day_hour_index ON server_estate_history (year, month, day, hour);
-CREATE INDEX server_estate_history_date_index ON server_estate_history (date);
+create index server_estate_history_date_index
+    on server_estate_history (date);
 
-CREATE TABLE server_loan_tbl
+create index server_estate_history_year_month_day_hour_index
+    on server_estate_history (year, month, day, hour);
+
+create table server_loan_log
 (
-    id             INT AUTO_INCREMENT PRIMARY KEY,
-    player         VARCHAR(16)  DEFAULT ''               NOT NULL COMMENT '借りたプレイヤー',
-    uuid           VARCHAR(36)  DEFAULT ''               NOT NULL,
-    borrow_date    DATETIME     DEFAULT CURRENT_TIMESTAMP NOT NULL COMMENT '借りた日',
-    last_pay_date  DATETIME     DEFAULT CURRENT_TIMESTAMP NOT NULL COMMENT '最後に支払った日',
-    borrow_amount  DECIMAL(20,0) DEFAULT 0               NOT NULL COMMENT '借りた金額の合計',
-    payment_amount DECIMAL(20,0) DEFAULT 0               NOT NULL COMMENT '週ごとの支払額',
-    failed_payment INT           DEFAULT 0               NOT NULL COMMENT '支払いに失敗した回数',
-    stop_interest  TINYINT       DEFAULT 0               NOT NULL COMMENT '利息をたすかどうか'
+    id     int auto_increment
+        primary key,
+    player varchar(16)                        not null,
+    uuid   varchar(36)                        not null,
+    action varchar(16)                        not null comment 'borrow/repay/interest',
+    amount decimal(20)                        not null,
+    date   datetime default CURRENT_TIMESTAMP not null
 );
 
-CREATE INDEX server_loan_tbl_uuid_borrow_amount_index ON server_loan_tbl (uuid, borrow_amount);
-CREATE INDEX server_loan_tbl_player_index ON server_loan_tbl (player);
+create index server_loan_log_uuid_date_index
+    on server_loan_log (uuid, date);
 
--- ローン操作ログ（借入/返済/金利付与）
-CREATE TABLE server_loan_log
+create table server_loan_tbl
 (
-    id      INT AUTO_INCREMENT PRIMARY KEY,
-    player  VARCHAR(16)                    NOT NULL,
-    uuid    VARCHAR(36)                    NOT NULL,
-    action  VARCHAR(16)                    NOT NULL COMMENT 'borrow/repay/interest',
-    amount  DECIMAL(20,0)                  NOT NULL,
-    date    DATETIME     DEFAULT CURRENT_TIMESTAMP NOT NULL
+    id             int auto_increment
+        primary key,
+    player         varchar(16) default ''                not null,
+    uuid           varchar(36) default ''                not null,
+    borrow_date    datetime    default CURRENT_TIMESTAMP not null,
+    last_pay_date  datetime    default CURRENT_TIMESTAMP not null,
+    failed_payment int         default 0                 not null,
+    stop_interest  tinyint     default 0                 not null,
+    borrow_amount  decimal(20)                           not null,
+    payment_amount decimal(20)                           not null
 );
 
-CREATE INDEX server_loan_log_uuid_date_index ON server_loan_log (uuid, date);
+create index server_loan_tbl_player_uuid_index
+    on server_loan_tbl (player, uuid);
 
-CREATE TABLE user_bank
+create table user_bank
 (
-    id      INT AUTO_INCREMENT PRIMARY KEY,
-    player  VARCHAR(16)       NOT NULL,
-    uuid    VARCHAR(36)       NOT NULL,
-    balance DECIMAL(20,0) DEFAULT 0 NOT NULL
+    id      int auto_increment
+        primary key,
+    player  varchar(16) not null,
+    uuid    varchar(36) not null,
+    balance decimal(20) not null
 );
 
-CREATE INDEX user_bank_uuid_index   ON user_bank (uuid);
-CREATE INDEX user_bank_player_index ON user_bank (player);
+create index user_bank_player_uuid_index
+    on user_bank (player, uuid);
+
