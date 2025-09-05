@@ -43,3 +43,6 @@ if (!app.Environment.IsDevelopment())
 app.MapControllers();
 
 app.Run();
+
+// WebApplicationFactory 用のエントリーポイント
+public partial class Program { }
