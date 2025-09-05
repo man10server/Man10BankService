@@ -69,40 +69,14 @@ export function UserDashboard() {
       )}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 16 }}>
-        <Card title="銀行残高" span={3}>
-          <strong>{formatResultCurrency(bank)}</strong>
-          {bank?.message && <div style={{ color: '#666', fontSize: 12, marginTop: 4 }}>{bank.message}</div>}
-        </Card>
-
-        <Card title="資産 (最新)" span={5}>
-          {estate?.data ? (
-            <table style={{ width: '100%' }}>
-              <tbody>
-                <tr><td>Cash</td><td style={{ textAlign: 'right' }}>{formatJPY(estate.data.cash)}</td></tr>
-                <tr><td>Vault</td><td style={{ textAlign: 'right' }}>{formatJPY(estate.data.vault)}</td></tr>
-                <tr><td>Bank</td><td style={{ textAlign: 'right' }}>{formatJPY(estate.data.bank)}</td></tr>
-                <tr><td>Shop</td><td style={{ textAlign: 'right' }}>{formatJPY(estate.data.shop)}</td></tr>
-                <tr><td>Loan(負債)</td><td style={{ textAlign: 'right' }}>{formatJPY(estate.data.loan)}</td></tr>
-                <tr><td>Total</td><td style={{ textAlign: 'right' }}>{formatJPY(estate.data.total)}</td></tr>
-              </tbody>
-            </table>
-          ) : (
-            <div>{formatResultMessage(estate)}</div>
-          )}
-        </Card>
-
-        <Card title="サーバーローン (リボ)" span={4}>
-          {serverLoan?.data ? (
-            <div>
-              <div>残債: <strong>{formatJPY(serverLoan.data.borrowAmount)}</strong></div>
-              <div>支払額(週): {formatJPY(serverLoan.data.paymentAmount)}</div>
-              <div>最終支払: {formatDate(serverLoan.data.lastPayDate)}</div>
-              <div>借入日: {formatDate(serverLoan.data.borrowDate)}</div>
-            </div>
-          ) : (
-            <div>{formatResultMessage(serverLoan)}</div>
-          )}
-        </Card>
+        <BigStatCard span={12}
+          cash={estate?.data?.cash}
+          vault={estate?.data?.vault}
+          bank={estate?.data?.bank ?? (bank?.data ?? null)}
+          serverLoan={serverLoan?.data?.borrowAmount}
+          total={estate?.data?.total}
+          fallbackMsg={estate?.message || serverLoan?.message || bank?.message || ''}
+        />
 
         <Card title="個人間借金" span={6}>
           {loans?.data && loans.data.length > 0 ? (
@@ -165,6 +139,27 @@ function Card(props: { title: string; children: any; span?: number }) {
   )
 }
 
+function BigStatCard(props: { span?: number; cash: number | null | undefined; vault: number | null | undefined; bank: number | null | undefined; serverLoan: number | null | undefined; total: number | null | undefined; fallbackMsg?: string }) {
+  const { span = 12, cash, vault, bank, serverLoan, total, fallbackMsg } = props;
+  const hasAny = cash != null || vault != null || bank != null || serverLoan != null || total != null;
+  return (
+    <div style={{ gridColumn: `span ${span}`, background: '#6b7280', color: '#fff', borderRadius: 12, padding: 16 }}>
+      <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>サマリー</div>
+      {hasAny ? (
+        <div style={{ fontSize: 18, lineHeight: 1.8 }}>
+          <div>現金: {formatJPY(cash ?? 0)}</div>
+          <div>電子マネー: {formatJPY(vault ?? 0)}</div>
+          <div>銀行: {formatJPY(bank ?? 0)}</div>
+          <div>リボ: {formatJPY(serverLoan ?? 0)}</div>
+          <div>合計: {formatJPY(total ?? 0)}</div>
+        </div>
+      ) : (
+        <div style={{ fontSize: 16 }}>{fallbackMsg || 'データがありません'}</div>
+      )}
+    </div>
+  )
+}
+
 function LogsTable({ logs, empty }: { logs: MoneyLog[]; empty: string }) {
   if (!logs || logs.length === 0) return <div>{empty}</div>
   return (
@@ -218,12 +213,6 @@ function formatDate(iso?: string | null) {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
   return new Intl.DateTimeFormat('ja-JP', { dateStyle: 'medium', timeStyle: 'short' }).format(d);
-}
-
-function formatResultCurrency(res?: ApiResult<number> | null) {
-  if (!res) return '-';
-  if (res.statusCode !== 200 || res.data == null) return res.message || '-';
-  return formatJPY(res.data);
 }
 
 function formatResultMessage<T>(res?: ApiResult<T> | null) {
