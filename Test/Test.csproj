@@ -27,4 +27,8 @@
     <ProjectReference Include="../Man10BankService/Man10BankService.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Folder Include="Http\" />
+  </ItemGroup>
+
 </Project>
