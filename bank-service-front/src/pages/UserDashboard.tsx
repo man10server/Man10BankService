@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react'
 import { Api, formatJPY } from '../api/client'
-import type { ApiResult, AtmLog, Estate, EstateHistory, Loan, MoneyLog, ServerLoan } from '../api/client'
+import type { ApiResult, AtmLog, Estate, EstateHistory, MoneyLog, ServerLoan } from '../api/client'
 
 type FetchState = {
   loading: boolean;
@@ -15,7 +15,6 @@ export function UserDashboard() {
   const [estate, setEstate] = useState<ApiResult<Estate> | null>(null);
   const [estateHist, setEstateHist] = useState<ApiResult<EstateHistory[]> | null>(null);
   const [serverLoan, setServerLoan] = useState<ApiResult<ServerLoan> | null>(null);
-  const [loans, setLoans] = useState<ApiResult<Loan[]> | null>(null);
   const [bankLogs, setBankLogs] = useState<ApiResult<MoneyLog[]> | null>(null);
   const [atmLogs, setAtmLogs] = useState<ApiResult<AtmLog[]> | null>(null);
   const [state, setState] = useState<FetchState>({ loading: false });
@@ -26,12 +25,11 @@ export function UserDashboard() {
     setUuid(q);
     setState({ loading: true });
     try {
-      const [b, e, eh, sl, lo, bl, al] = await Promise.all([
+      const [b, e, eh, sl, bl, al] = await Promise.all([
         Api.bankBalance(q),
         Api.estateLatest(q),
         Api.estateHistory(q, 30, 0),
         Api.serverLoan(q),
-        Api.personalLoans(q, 100, 0),
         Api.bankLogs(q, 10, 0),
         Api.atmLogs(q, 10, 0),
       ]);
@@ -39,7 +37,6 @@ export function UserDashboard() {
       setEstate(e);
       setEstateHist(eh);
       setServerLoan(sl);
-      setLoans(lo);
       setBankLogs(bl);
       setAtmLogs(al);
       setState({ loading: false });
@@ -77,32 +74,6 @@ export function UserDashboard() {
           total={estate?.data?.total}
           fallbackMsg={estate?.message || serverLoan?.message || bank?.message || ''}
         />
-
-        <Card title="個人間借金" span={6}>
-          {loans?.data && loans.data.length > 0 ? (
-            <table style={{ width: '100%' }}>
-              <thead>
-                <tr>
-                  <th style={{ textAlign: 'left' }}>貸主</th>
-                  <th style={{ textAlign: 'right' }}>金額</th>
-                  <th style={{ textAlign: 'left' }}>借入日</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loans.data.map(l => (
-                  <tr key={l.id}>
-                    <td>{l.lendPlayer}</td>
-                    <td style={{ textAlign: 'right' }}>{formatJPY(l.amount)}</td>
-                    <td>{formatDate(l.borrowDate)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <div>{formatResultMessage(loans)}</div>
-          )}
-        </Card>
-
         <BankLogsBigCard span={12} logs={bankLogs?.data ?? []} empty={formatResultMessage(bankLogs)} />
 
         <Card title="ATM 履歴 (10)" span={6}>
