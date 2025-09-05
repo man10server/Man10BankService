@@ -35,9 +35,9 @@ services:
       ASPNETCORE_ENVIRONMENT: Development
       Database__Host: db
       Database__Port: "3306"
-      Database__Name: man10
-      Database__User: app
-      Database__Password: app_pw
+      Database__Name: man10_bank
+      Database__User: root
+      Database__Password: root_pw
       Database__TreatTinyAsBoolean: "true"
     ports:
       - "8080:8080"

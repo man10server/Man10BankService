@@ -1,3 +1,5 @@
+using Microsoft.EntityFrameworkCore;
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOpenApi();
@@ -6,8 +8,11 @@ builder.Services.AddControllers();
 // DB 接続設定を起動時に一度だけ設定（IConfiguration を渡す）
 Man10BankService.Data.BankDbContext.Configure(builder.Configuration);
 
-// DI 登録
-builder.Services.AddPooledDbContextFactory<Man10BankService.Data.BankDbContext>(_ => {  });
+// DI 登録（プーリング有効）: DbContext のオプションは DI 側で構成
+var cs = Man10BankService.Data.BankDbContext.GetConnectionString();
+builder.Services.AddPooledDbContextFactory<Man10BankService.Data.BankDbContext>(o =>
+    o.UseMySql(cs, ServerVersion.AutoDetect(cs))
+);
 builder.Services.AddSingleton<Man10BankService.Services.BankService>();
 builder.Services.AddSingleton<Man10BankService.Services.AtmService>();
 builder.Services.AddSingleton<Man10BankService.Services.ChequeService>();

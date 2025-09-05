@@ -20,6 +20,13 @@ public class BankDbContext : DbContext
         _connectionString = $"Server={host};Port={port};Database={name};User Id={user};Password={password};TreatTinyAsBoolean={treatTiny};";
     }
     
+    public static string GetConnectionString()
+    {
+        if (string.IsNullOrWhiteSpace(_connectionString))
+            throw new InvalidOperationException("データベース接続が未設定です。起動時に BankDbContext.Configure(...) を呼び出してください。");
+        return _connectionString!;
+    }
+    
     public DbSet<AtmLog> AtmLogs => Set<AtmLog>();
     public DbSet<Cheque> Cheques => Set<Cheque>();
     public DbSet<Estate> Estates => Set<Estate>();
