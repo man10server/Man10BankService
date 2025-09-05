@@ -8,7 +8,7 @@ export default defineConfig({
     proxy: {
       // Backend ASP.NET Core (Development) default HTTPS port
       '/api': {
-        target: 'https://localhost:7254',
+        target: 'http://localhost:8080',
         changeOrigin: true,
         secure: false,
       },
