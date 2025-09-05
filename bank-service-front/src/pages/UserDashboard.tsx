@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react'
 import { Api, formatJPY } from '../api/client'
-import type { ApiResult, AtmLog, Estate, EstateHistory, MoneyLog, ServerLoan } from '../api/client'
+import type { ApiResult, Estate, EstateHistory, MoneyLog, ServerLoan } from '../api/client'
 
 type FetchState = {
   loading: boolean;
@@ -16,7 +16,7 @@ export function UserDashboard() {
   const [estateHist, setEstateHist] = useState<ApiResult<EstateHistory[]> | null>(null);
   const [serverLoan, setServerLoan] = useState<ApiResult<ServerLoan> | null>(null);
   const [bankLogs, setBankLogs] = useState<ApiResult<MoneyLog[]> | null>(null);
-  const [atmLogs, setAtmLogs] = useState<ApiResult<AtmLog[]> | null>(null);
+  // ATMログは表示しないため削除
   const [state, setState] = useState<FetchState>({ loading: false });
 
   const onSearch = useCallback(async () => {
@@ -25,20 +25,18 @@ export function UserDashboard() {
     setUuid(q);
     setState({ loading: true });
     try {
-      const [b, e, eh, sl, bl, al] = await Promise.all([
+      const [b, e, eh, sl, bl] = await Promise.all([
         Api.bankBalance(q),
         Api.estateLatest(q),
         Api.estateHistory(q, 30, 0),
         Api.serverLoan(q),
         Api.bankLogs(q, 10, 0),
-        Api.atmLogs(q, 10, 0),
       ]);
       setBank(b);
       setEstate(e);
       setEstateHist(eh);
       setServerLoan(sl);
       setBankLogs(bl);
-      setAtmLogs(al);
       setState({ loading: false });
     } catch (err: any) {
       setState({ loading: false, error: err?.message ?? '取得に失敗しました' });
@@ -76,37 +74,13 @@ export function UserDashboard() {
         />
         <BankLogsBigCard span={12} logs={bankLogs?.data ?? []} empty={formatResultMessage(bankLogs)} />
 
-        <Card title="ATM 履歴 (10)" span={6}>
-          <AtmLogsTable logs={atmLogs?.data?.slice(0, 10) ?? []} empty={formatResultMessage(atmLogs)} />
-        </Card>
-
-        <Card title="資産推移 (30件)" span={12}>
-          {estateHist?.data && estateHist.data.length > 0 ? (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              {estateHist.data.map(h => (
-                <span key={h.id} style={{ fontSize: 12, color: '#333' }}>
-                  {formatDate(h.date)}: {formatJPY(h.total)}
-                </span>
-              ))}
-            </div>
-          ) : (
-            <div>{formatResultMessage(estateHist)}</div>
-          )}
-        </Card>
+        <EstateHistoryChartCard span={12} data={estateHist?.data ?? []} empty={formatResultMessage(estateHist)} />
       </div>
     </div>
   )
 }
 
-function Card(props: { title: string; children: any; span?: number }) {
-  const { title, children, span = 4 } = props;
-  return (
-    <div style={{ gridColumn: `span ${span}`, border: '1px solid #ddd', borderRadius: 8, padding: 12, background: '#fff' }}>
-      <div style={{ fontWeight: 600, marginBottom: 8 }}>{title}</div>
-      <div>{children}</div>
-    </div>
-  )
-}
+// 白カードの汎用コンポーネントは現在未使用のため削除
 
 function BigStatCard(props: { span?: number; cash: number | null | undefined; vault: number | null | undefined; bank: number | null | undefined; serverLoan: number | null | undefined; total: number | null | undefined; fallbackMsg?: string }) {
   const { span = 12, cash, vault, bank, serverLoan, total, fallbackMsg } = props;
@@ -164,27 +138,50 @@ function BankLogsBigCard({ logs, empty, span = 12 }: { logs: MoneyLog[]; empty: 
 
 // Bankログ用の大カードに統合したため、従来のLogsTableは削除しました。
 
-function AtmLogsTable({ logs, empty }: { logs: AtmLog[]; empty: string }) {
-  if (!logs || logs.length === 0) return <div>{empty}</div>
+function EstateHistoryChartCard({ data, empty, span = 12 }: { data: EstateHistory[]; empty: string; span?: number }) {
+  const width = 1100; // container max is 1200 with padding
+  const height = 240;
+  const padding = { top: 16, right: 16, bottom: 24, left: 48 };
+  const innerW = width - padding.left - padding.right;
+  const innerH = height - padding.top - padding.bottom;
+
+  const points = (() => {
+    if (!data || data.length === 0) return '';
+    const totals = data.map(d => Number(d.total));
+    const min = Math.min(...totals);
+    const max = Math.max(...totals);
+    const range = max - min || 1;
+    return data.map((d, i) => {
+      const x = padding.left + (innerW * i) / Math.max(1, data.length - 1);
+      const norm = (Number(d.total) - min) / range;
+      const y = padding.top + (1 - norm) * innerH;
+      return `${x},${y}`;
+    }).join(' ');
+  })();
+
+  const latest = data && data.length > 0 ? data[data.length - 1] : undefined;
+
   return (
-    <table style={{ width: '100%' }}>
-      <thead>
-        <tr>
-          <th style={{ textAlign: 'left' }}>日時</th>
-          <th style={{ textAlign: 'left' }}>種別</th>
-          <th style={{ textAlign: 'right' }}>金額</th>
-        </tr>
-      </thead>
-      <tbody>
-        {logs.map(l => (
-          <tr key={l.id}>
-            <td>{formatDate(l.date)}</td>
-            <td>{l.deposit ? '入金' : '出金'}</td>
-            <td style={{ textAlign: 'right' }}>{formatJPY(l.amount)}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <div style={{ gridColumn: `span ${span}`, background: '#6b7280', color: '#fff', borderRadius: 12, padding: 16 }}>
+      <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 8, textAlign: 'left' }}>資産推移 (30件)</div>
+      {data && data.length > 0 ? (
+        <div style={{ width: '100%', overflowX: 'auto' }}>
+          <svg viewBox={`0 0 ${width} ${height}`} width="100%" height={height} role="img" aria-label="資産推移">
+            <rect x={0} y={0} width={width} height={height} fill="#6b7280" />
+            <g>
+              <polyline fill="none" stroke="#ffffff" strokeWidth={2} points={points} />
+            </g>
+          </svg>
+          {latest && (
+            <div style={{ marginTop: 8, fontSize: 14 }}>
+              最新 {formatDate(latest.date)}: <strong>{formatJPY(latest.total)}</strong>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div style={{ fontSize: '1rem' }}>{empty || 'データなし'}</div>
+      )}
+    </div>
   )
 }
 
