@@ -103,9 +103,7 @@ export function UserDashboard() {
           )}
         </Card>
 
-        <Card title="Bank 履歴 (10)" span={6}>
-          <LogsTable logs={bankLogs?.data?.slice(0, 10) ?? []} empty={formatResultMessage(bankLogs)} />
-        </Card>
+        <BankLogsBigCard span={12} logs={bankLogs?.data ?? []} empty={formatResultMessage(bankLogs)} />
 
         <Card title="ATM 履歴 (10)" span={6}>
           <AtmLogsTable logs={atmLogs?.data?.slice(0, 10) ?? []} empty={formatResultMessage(atmLogs)} />
@@ -160,29 +158,39 @@ function BigStatCard(props: { span?: number; cash: number | null | undefined; va
   )
 }
 
-function LogsTable({ logs, empty }: { logs: MoneyLog[]; empty: string }) {
-  if (!logs || logs.length === 0) return <div>{empty}</div>
+function BankLogsBigCard({ logs, empty, span = 12 }: { logs: MoneyLog[]; empty: string; span?: number }) {
   return (
-    <table style={{ width: '100%' }}>
-      <thead>
-        <tr>
-          <th style={{ textAlign: 'left' }}>日時</th>
-          <th style={{ textAlign: 'left' }}>内容</th>
-          <th style={{ textAlign: 'right' }}>金額</th>
-        </tr>
-      </thead>
-      <tbody>
-        {logs.map(l => (
-          <tr key={l.id}>
-            <td>{formatDate(l.date)}</td>
-            <td>{l.displayNote}</td>
-            <td style={{ textAlign: 'right' }}>{formatJPY(l.amount)}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <div style={{ gridColumn: `span ${span}`, background: '#6b7280', color: '#fff', borderRadius: 12, padding: 16 }}>
+      <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 8, textAlign: 'left' }}>Bank 履歴</div>
+      <div style={{ maxHeight: 320, overflowY: 'auto', paddingRight: 8 }}>
+        {logs && logs.length > 0 ? (
+          <table style={{ width: '100%', color: '#fff' }}>
+            <thead>
+              <tr>
+                <th style={{ textAlign: 'left' }}>日時</th>
+                <th style={{ textAlign: 'left' }}>内容</th>
+                <th style={{ textAlign: 'right' }}>金額</th>
+              </tr>
+            </thead>
+            <tbody>
+              {logs.map(l => (
+                <tr key={l.id}>
+                  <td>{formatDate(l.date)}</td>
+                  <td>{l.displayNote}</td>
+                  <td style={{ textAlign: 'right' }}>{formatJPY(l.amount)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <div style={{ fontSize: '1rem' }}>{empty || 'データなし'}</div>
+        )}
+      </div>
+    </div>
   )
 }
+
+// Bankログ用の大カードに統合したため、従来のLogsTableは削除しました。
 
 function AtmLogsTable({ logs, empty }: { logs: AtmLog[]; empty: string }) {
   if (!logs || logs.length === 0) return <div>{empty}</div>
