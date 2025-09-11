@@ -1,11 +1,36 @@
 namespace Man10BankService.Services;
 
-public sealed record ApiResult<T>(int StatusCode, string Message = "", T? Data = default)
+public enum ErrorCode
 {
-    public static ApiResult<T> Ok(T data, string message = "") => new(200, message, data);
-    public static ApiResult<T> BadRequest(string message) => new(400, message);
-    public static ApiResult<T> NotFound(string message) => new(404, message);
-    public static ApiResult<T> Conflict(string message) => new(409, message);
-    public static ApiResult<T> Error(string message) => new(500, message);
+    None = 0,
+    ValidationError,
+    NotFound,
+    Conflict,
+    UnexpectedError,
+
+    // Domain specific
+    InsufficientFunds,
+    LimitOutOfRange,
+    OffsetOutOfRange,
+    ChequeNotFound,
+    ChequeAlreadyUsed,
+    EstateNotFound,
+    EstateUpdated,
+    EstateNoChange,
+    LoanNotFound,
+    BorrowLimitExceeded,
+    NoRepaymentNeeded,
+    PaymentAmountNotSet,
+    PaymentAmountZero,
+    InterestStopped,
+    InterestZero
 }
 
+public sealed record ApiResult<T>(int StatusCode, ErrorCode Code = ErrorCode.None, T? Data = default)
+{
+    public static ApiResult<T> Ok(T data, ErrorCode code = ErrorCode.None) => new(200, code, data);
+    public static ApiResult<T> BadRequest(ErrorCode code) => new(400, code);
+    public static ApiResult<T> NotFound(ErrorCode code) => new(404, code);
+    public static ApiResult<T> Conflict(ErrorCode code) => new(409, code);
+    public static ApiResult<T> Error(ErrorCode code) => new(500, code);
+}

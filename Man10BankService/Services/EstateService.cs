@@ -14,28 +14,28 @@ public class EstateService(IDbContextFactory<BankDbContext> dbFactory, BankServi
         {
             var repo = new EstateRepository(dbFactory);
             var latest = await repo.GetLatestAsync(uuid);
-            if (latest == null) return ApiResult<Estate?>.NotFound("資産データが見つかりません。");
+            if (latest == null) return ApiResult<Estate?>.NotFound(ErrorCode.EstateNotFound);
             return ApiResult<Estate?>.Ok(latest);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return ApiResult<Estate?>.Error($"資産データの取得に失敗しました: {ex.Message}");
+            return ApiResult<Estate?>.Error(ErrorCode.UnexpectedError);
         }
     }
 
     public async Task<ApiResult<List<EstateHistory>>> GetHistoryAsync(string uuid, int limit = 100, int offset = 0)
     {
-        if (limit is < 1 or > 1000) return ApiResult<List<EstateHistory>>.BadRequest("limit は 1..1000 で指定してください。");
-        if (offset < 0) return ApiResult<List<EstateHistory>>.BadRequest("offset は 0 以上で指定してください。");
+        if (limit is < 1 or > 1000) return ApiResult<List<EstateHistory>>.BadRequest(ErrorCode.LimitOutOfRange);
+        if (offset < 0) return ApiResult<List<EstateHistory>>.BadRequest(ErrorCode.OffsetOutOfRange);
         try
         {
             var repo = new EstateRepository(dbFactory);
             var list = await repo.GetHistoryAsync(uuid, limit, offset);
             return ApiResult<List<EstateHistory>>.Ok(list);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return ApiResult<List<EstateHistory>>.Error($"資産履歴の取得に失敗しました: {ex.Message}");
+            return ApiResult<List<EstateHistory>>.Error(ErrorCode.UnexpectedError);
         }
     }
 
@@ -78,15 +78,17 @@ public class EstateService(IDbContextFactory<BankDbContext> dbFactory, BankServi
                 crypto: crypto,
                 total: total);
 
-            return ApiResult<bool>.Ok(isUpdated, isUpdated ? "資産を更新しました。" : "変更はありませんでした。");
+            return isUpdated
+                ? ApiResult<bool>.Ok(true, ErrorCode.EstateUpdated)
+                : ApiResult<bool>.Ok(false, ErrorCode.EstateNoChange);
         }
-        catch (ArgumentException ex)
+        catch (ArgumentException)
         {
-            return ApiResult<bool>.BadRequest(ex.Message);
+            return ApiResult<bool>.BadRequest(ErrorCode.ValidationError);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return ApiResult<bool>.Error($"資産の更新に失敗しました: {ex.Message}");
+            return ApiResult<bool>.Error(ErrorCode.UnexpectedError);
         }
     }
 

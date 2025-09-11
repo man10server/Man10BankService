@@ -41,7 +41,7 @@ public class ChequeService
                     Server = "system"
                 });
                 if (wres.StatusCode != 200)
-                    return new ApiResult<Cheque>(wres.StatusCode, wres.Message);
+                    return new ApiResult<Cheque>(wres.StatusCode, wres.Code);
 
                 var repo = new ChequeRepository(_dbFactory);
                 Cheque cheque;
@@ -49,7 +49,7 @@ public class ChequeService
                 {
                     cheque = await repo.CreateChequeAsync(req.Uuid, player, req.Amount, req.Note);
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
                     // 失敗時は補償で返金
                     await _bank.DepositAsync(new DepositRequest
@@ -61,17 +61,17 @@ public class ChequeService
                         DisplayNote = "小切手作成失敗の返金",
                         Server = "system"
                     });
-                    throw new Exception($"小切手作成に失敗しました: {ex.Message}");
+                    throw new Exception("create_cheque_failed");
                 }
                 return ApiResult<Cheque>.Ok(cheque);
             }
-            catch (ArgumentException ex)
+            catch (ArgumentException)
             {
-                return ApiResult<Cheque>.BadRequest(ex.Message);
+                return ApiResult<Cheque>.BadRequest(ErrorCode.ValidationError);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                return ApiResult<Cheque>.Error($"小切手の作成に失敗しました: {ex.Message}");
+                return ApiResult<Cheque>.Error(ErrorCode.UnexpectedError);
             }
         });
     }
@@ -86,9 +86,9 @@ public class ChequeService
                 var repo = new ChequeRepository(_dbFactory);
                 var cheque = await repo.GetChequeAsync(id);
                 if (cheque == null)
-                    return ApiResult<Cheque>.NotFound("小切手が見つかりません。");
+                    return ApiResult<Cheque>.NotFound(ErrorCode.ChequeNotFound);
                 if (cheque.Used)
-                    return ApiResult<Cheque>.Conflict("既に使用済みの小切手です。");
+                    return ApiResult<Cheque>.Conflict(ErrorCode.ChequeAlreadyUsed);
 
                 // 先に使用済みへ更新（更新失敗時はここで終了し入金しない）
                 cheque = await repo.UseChequeAsync(id, player) ?? cheque;
@@ -104,17 +104,17 @@ public class ChequeService
                     Server = "system"
                 });
                 if (dres.StatusCode != 200)
-                    return new ApiResult<Cheque>(dres.StatusCode, dres.Message);
+                    return new ApiResult<Cheque>(dres.StatusCode, dres.Code);
 
                 return ApiResult<Cheque>.Ok(cheque);
             }
-            catch (ArgumentException ex)
+            catch (ArgumentException)
             {
-                return ApiResult<Cheque>.BadRequest(ex.Message);
+                return ApiResult<Cheque>.BadRequest(ErrorCode.ValidationError);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                return ApiResult<Cheque>.Error($"小切手の使用に失敗しました: {ex.Message}");
+                return ApiResult<Cheque>.Error(ErrorCode.UnexpectedError);
             }
         });
     }
@@ -126,12 +126,12 @@ public class ChequeService
             var repo = new ChequeRepository(_dbFactory);
             var cheque = await repo.GetChequeAsync(id);
             if (cheque == null)
-                return ApiResult<Cheque>.NotFound("小切手が見つかりません。");
+                return ApiResult<Cheque>.NotFound(ErrorCode.ChequeNotFound);
             return ApiResult<Cheque>.Ok(cheque);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return ApiResult<Cheque>.Error($"小切手の取得に失敗しました: {ex.Message}");
+            return ApiResult<Cheque>.Error(ErrorCode.UnexpectedError);
         }
     }
     

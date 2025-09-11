@@ -17,31 +17,31 @@ public class AtmService(IDbContextFactory<BankDbContext> dbFactory)
             var log = await repo.AddAtmLogAsync(req.Uuid, player, req.Amount, req.Deposit);
             return ApiResult<AtmLog>.Ok(log);
         }
-        catch (ArgumentException ex)
+        catch (ArgumentException)
         {
-            return ApiResult<AtmLog>.BadRequest(ex.Message);
+            return ApiResult<AtmLog>.BadRequest(ErrorCode.ValidationError);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return ApiResult<AtmLog>.Error($"ATMログの追加に失敗しました: {ex.Message}");
+            return ApiResult<AtmLog>.Error(ErrorCode.UnexpectedError);
         }
     }
 
     public async Task<ApiResult<List<AtmLog>>> GetLogsAsync(string uuid, int limit = 100, int offset = 0)
     {
         if (limit is < 1 or > 1000)
-            return ApiResult<List<AtmLog>>.BadRequest("limit は 1..1000 の範囲で指定してください。");
+            return ApiResult<List<AtmLog>>.BadRequest(ErrorCode.LimitOutOfRange);
         if (offset < 0)
-            return ApiResult<List<AtmLog>>.BadRequest("offset は 0 以上で指定してください。");
+            return ApiResult<List<AtmLog>>.BadRequest(ErrorCode.OffsetOutOfRange);
         try
         {
             var repo = new AtmRepository(dbFactory);
             var logs = await repo.GetAtmLogsAsync(uuid, limit, offset);
             return ApiResult<List<AtmLog>>.Ok(logs);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return ApiResult<List<AtmLog>>.Error($"ATMログの取得に失敗しました: {ex.Message}");
+            return ApiResult<List<AtmLog>>.Error(ErrorCode.UnexpectedError);
         }
-    }
+}
 }

@@ -15,23 +15,23 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
             var repo = new LoanRepository(dbFactory);
             var loan = await repo.GetByIdAsync(id);
             if (loan == null)
-                return ApiResult<Loan>.NotFound("借金データが見つかりません。");
+                return ApiResult<Loan>.NotFound(ErrorCode.LoanNotFound);
             return ApiResult<Loan>.Ok(loan);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return ApiResult<Loan>.Error($"借金データの取得に失敗しました: {ex.Message}");
+            return ApiResult<Loan>.Error(ErrorCode.UnexpectedError);
         }
     }
 
     public async Task<ApiResult<List<Loan>>> GetByBorrowerUuidAsync(string borrowUuid, int limit = 100, int offset = 0)
     {
         if (string.IsNullOrWhiteSpace(borrowUuid))
-            return ApiResult<List<Loan>>.BadRequest("borrowUuid を指定してください。");
+            return ApiResult<List<Loan>>.BadRequest(ErrorCode.ValidationError);
         if (limit is < 1 or > 1000)
-            return ApiResult<List<Loan>>.BadRequest("limit は 1..1000 の範囲で指定してください。");
+            return ApiResult<List<Loan>>.BadRequest(ErrorCode.LimitOutOfRange);
         if (offset < 0)
-            return ApiResult<List<Loan>>.BadRequest("offset は 0 以上で指定してください。");
+            return ApiResult<List<Loan>>.BadRequest(ErrorCode.OffsetOutOfRange);
 
         try
         {
@@ -39,9 +39,9 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
             var list = await repo.GetByBorrowerUuidAsync(borrowUuid, limit, offset);
             return ApiResult<List<Loan>>.Ok(list);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return ApiResult<List<Loan>>.Error($"借金一覧の取得に失敗しました: {ex.Message}");
+            return ApiResult<List<Loan>>.Error(ErrorCode.UnexpectedError);
         }
     }
 
@@ -50,11 +50,11 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
         try
         {
             if (string.IsNullOrWhiteSpace(request.LendUuid) || string.IsNullOrWhiteSpace(request.BorrowUuid))
-                return ApiResult<Loan?>.BadRequest("貸手/借手の UUID は必須です。");
+                return ApiResult<Loan?>.BadRequest(ErrorCode.ValidationError);
             if (request.LendUuid == request.BorrowUuid)
-                return ApiResult<Loan?>.BadRequest("貸手と借手が同一です。");
+                return ApiResult<Loan?>.BadRequest(ErrorCode.ValidationError);
             if (request.Amount <= 0m)
-                return ApiResult<Loan?>.BadRequest("金額は 0 より大きい必要があります。");
+                return ApiResult<Loan?>.BadRequest(ErrorCode.ValidationError);
 
             var lendName = await MinecraftProfileService.GetNameByUuidAsync(request.LendUuid) ?? string.Empty;
             var borrowName = await MinecraftProfileService.GetNameByUuidAsync(request.BorrowUuid) ?? string.Empty;
@@ -70,7 +70,7 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
             });
             
             if (w.StatusCode != 200)
-                return new ApiResult<Loan?>(w.StatusCode, w.Message);
+                return new ApiResult<Loan?>(w.StatusCode, w.Code);
             
             var repo = new LoanRepository(dbFactory);
             try
@@ -96,9 +96,9 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
 
                 if (deposit.StatusCode == 200) return ApiResult<Loan?>.Ok(entity);
                 await repo.DeleteByIdAsync(entity.Id);
-                throw new Exception("借手への入金に失敗しました: " + deposit.Message);
+                throw new Exception("borrower_deposit_failed");
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 await bank.DepositAsync(new DepositRequest
                 {
@@ -109,12 +109,12 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
                     DisplayNote = "個人間貸付(補償返金)",
                     Server = "system"
                 });
-                return ApiResult<Loan?>.Error($"借金レコードの作成に失敗しました: {ex.Message}");
+                return ApiResult<Loan?>.Error(ErrorCode.UnexpectedError);
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return ApiResult<Loan?>.Error($"借金作成に失敗しました: {ex.Message}");
+            return ApiResult<Loan?>.Error(ErrorCode.UnexpectedError);
         }
     }
 
@@ -125,22 +125,22 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
             var repo = new LoanRepository(dbFactory);
             var loan = await repo.GetByIdAsync(id);
             if (loan == null)
-                return ApiResult<Loan?>.NotFound("借金データが見つかりません。");
+                return ApiResult<Loan?>.NotFound(ErrorCode.LoanNotFound);
             
             if (loan.PaybackDate > DateTime.UtcNow)
-                return ApiResult<Loan?>.BadRequest("返済期限前のため、返済できません。");
+                return ApiResult<Loan?>.BadRequest(ErrorCode.ValidationError);
 
             if (string.IsNullOrWhiteSpace(loan.CollateralItem))
                 return await RepayWithoutCollateralAsync(loan, collectorUuid);
             return await RepayWithCollateralAsync(loan, collectorUuid);
         }
-        catch (ArgumentException ex)
+        catch (ArgumentException)
         {
-            return ApiResult<Loan?>.BadRequest(ex.Message);
+            return ApiResult<Loan?>.BadRequest(ErrorCode.ValidationError);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return ApiResult<Loan?>.Error($"返済処理に失敗しました: {ex.Message}");
+            return ApiResult<Loan?>.Error(ErrorCode.UnexpectedError);
         }
     }
 
@@ -148,11 +148,11 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
     {
         var bal = await bank.GetBalanceAsync(loan.BorrowUuid);
         if (bal.StatusCode != 200)
-            return new ApiResult<Loan?>(bal.StatusCode, bal.Message);
+            return new ApiResult<Loan?>(bal.StatusCode, bal.Code);
 
         var toCollect = Math.Min(bal.Data, loan.Amount);
         if (toCollect <= 0m)
-            return ApiResult<Loan?>.BadRequest("回収可能な残高がありません。");
+            return ApiResult<Loan?>.BadRequest(ErrorCode.ValidationError);
 
         // 名前解決はロギング用途のみ。取得失敗時は空文字で続行。
         _ = await MinecraftProfileService.GetNameByUuidAsync(loan.BorrowUuid) ?? loan.BorrowPlayer;
@@ -168,7 +168,7 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
             Server = "system"
         });
         if (w.StatusCode != 200)
-            return new ApiResult<Loan?>(w.StatusCode, w.Message);
+            return new ApiResult<Loan?>(w.StatusCode, w.Code);
 
         try
         {
@@ -186,11 +186,11 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
                 Server = "system"
             });
 
-            if (deposit.StatusCode != 200) throw new Exception("回収者への入金に失敗しました: " + deposit.Message);
+            if (deposit.StatusCode != 200) throw new Exception("collector_deposit_failed");
             
             return ApiResult<Loan?>.Ok(updated);
         }
-        catch (Exception e)
+        catch (Exception)
         {
             await bank.DepositAsync(new DepositRequest
             {
@@ -201,14 +201,14 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
                 DisplayNote = "個人間貸付(補償返金)",
                 Server = "system"
             });
-            return ApiResult<Loan?>.Error(e.Message);
+            return ApiResult<Loan?>.Error(ErrorCode.UnexpectedError);
         }
     }
 
     private async Task<ApiResult<Loan?>> RepayWithCollateralAsync(Loan loan, string collectorUuid)
     {
         if (loan.Amount <= 0m)
-            return ApiResult<Loan?>.BadRequest("返済不要です。既に完済しています。");
+            return ApiResult<Loan?>.BadRequest(ErrorCode.NoRepaymentNeeded);
 
         _ = await MinecraftProfileService.GetNameByUuidAsync(loan.BorrowUuid) ?? loan.BorrowPlayer;
         _ = await MinecraftProfileService.GetNameByUuidAsync(collectorUuid) ?? string.Empty;
@@ -229,19 +229,19 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
             var repo = new LoanRepository(dbFactory);
             var afterCollateral = await repo.ClearDebtAndCollectCollateralAsync(loan.Id);
             if (afterCollateral == null)
-                return ApiResult<Loan?>.Error("担保回収に失敗しました。");
-            return ApiResult<Loan?>.Ok(afterCollateral, "担保を回収しました。");
+                return ApiResult<Loan?>.Error(ErrorCode.UnexpectedError);
+            return ApiResult<Loan?>.Ok(afterCollateral, ErrorCode.Conflict);
         }
 
         // その他のエラーはそのまま返す
         if (withdraw.StatusCode != 200)
-            return new ApiResult<Loan?>(withdraw.StatusCode, withdraw.Message);
+            return new ApiResult<Loan?>(withdraw.StatusCode, withdraw.Code);
 
         try
         {
             var repo = new LoanRepository(dbFactory);
             var cleared = await repo.AdjustAmountAsync(loan.Id, -loan.Amount);
-            if (cleared == null) throw new Exception("返済レコード更新に失敗しました。");
+            if (cleared == null) throw new Exception("repay_update_failed");
 
             var deposit = await bank.DepositAsync(new DepositRequest
             {
@@ -253,10 +253,10 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
                 Server = "system"
             });
 
-            if (deposit.StatusCode != 200) throw new Exception("回収者への入金に失敗しました: " + deposit.Message);
-            return ApiResult<Loan?>.Ok(cleared, "全額回収しました。");
+            if (deposit.StatusCode != 200) throw new Exception("collector_deposit_failed");
+            return ApiResult<Loan?>.Ok(cleared);
         }
-        catch (Exception e)
+        catch (Exception)
         {
             // 返金（補償）
             await bank.DepositAsync(new DepositRequest
@@ -268,7 +268,7 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
                 DisplayNote = "個人間貸付(補償返金)",
                 Server = "system"
             });
-            return ApiResult<Loan?>.Error(e.Message);
+            return ApiResult<Loan?>.Error(ErrorCode.UnexpectedError);
         }
     }
 
@@ -279,27 +279,27 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
             var repo = new LoanRepository(dbFactory);
             var loan = await repo.GetByIdAsync(id);
             if (loan == null)
-                return ApiResult<Loan?>.NotFound("借金データが見つかりません。");
+                return ApiResult<Loan?>.NotFound(ErrorCode.LoanNotFound);
 
             if (!string.Equals(loan.BorrowUuid, borrowerUuid, StringComparison.OrdinalIgnoreCase))
-                return ApiResult<Loan?>.BadRequest("借金データの債務者と一致しません。");
+                return ApiResult<Loan?>.BadRequest(ErrorCode.ValidationError);
 
             if (loan.Amount > 0m)
-                return ApiResult<Loan?>.BadRequest("未返済のため担保を返却できません。");
+                return ApiResult<Loan?>.BadRequest(ErrorCode.ValidationError);
 
             if (string.IsNullOrWhiteSpace(loan.CollateralItem))
-                return ApiResult<Loan?>.BadRequest("返却可能な担保はありません。");
+                return ApiResult<Loan?>.BadRequest(ErrorCode.ValidationError);
 
             var ok = await repo.CollectCollateralAsync(id);
             if (!ok)
-                return ApiResult<Loan?>.Error("担保返却処理に失敗しました。");
+                return ApiResult<Loan?>.Error(ErrorCode.UnexpectedError);
 
             var updated = await repo.GetByIdAsync(id);
             return ApiResult<Loan?>.Ok(updated);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return ApiResult<Loan?>.Error($"担保返却に失敗しました: {ex.Message}");
+            return ApiResult<Loan?>.Error(ErrorCode.UnexpectedError);
         }
     }
 }

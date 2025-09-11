@@ -111,8 +111,9 @@ public class AtmControllerTests
 
         var res = await ctrl.GetLogs(TestConstants.Uuid, 10) as ObjectResult;
         res!.StatusCode.Should().Be(500);
-        var body = (res.Value as ApiResult<List<AtmLog>>)!
-;        body.Message.Should().StartWith("ATMログの取得に失敗しました");
+        var body = res.Value as ApiResult<List<AtmLog>>;
+        body.Should().NotBeNull();
+        body!.Code.Should().Be(ErrorCode.UnexpectedError);
     }
 
     [Fact(DisplayName = "DBダウン時: ATMログ追加は500エラー")]
@@ -134,8 +135,9 @@ public class AtmControllerTests
 
         var res = await ctrl.AddLog(req) as ObjectResult;
         res!.StatusCode.Should().Be(500);
-        var body = (res.Value as ApiResult<AtmLog>)!;
-        body.Message.Should().StartWith("ATMログの追加に失敗しました");
+        var body2 = res.Value as ApiResult<AtmLog>;
+        body2.Should().NotBeNull();
+        body2!.Code.Should().Be(ErrorCode.UnexpectedError);
     }
 
     [Fact(DisplayName = "ATMログ取得: 100件投入し limit/offset で中間10件を取得")]

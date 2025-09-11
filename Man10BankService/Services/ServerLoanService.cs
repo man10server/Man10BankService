@@ -36,30 +36,30 @@ public class ServerLoanService
             var repo = new ServerLoanRepository(_dbFactory);
             var loan = await repo.GetByUuidAsync(uuid);
             if (loan == null)
-                return ApiResult<ServerLoan>.NotFound("借入データが見つかりません。");
+                return ApiResult<ServerLoan>.NotFound(ErrorCode.LoanNotFound);
             return ApiResult<ServerLoan>.Ok(loan);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return ApiResult<ServerLoan>.Error($"借入データの取得に失敗しました: {ex.Message}");
+            return ApiResult<ServerLoan>.Error(ErrorCode.UnexpectedError);
         }
     }
     
     public async Task<ApiResult<List<ServerLoanLog>>> GetLogsAsync(string uuid, int limit = 100, int offset = 0)
     {
         if (limit is < 1 or > 1000)
-            return ApiResult<List<ServerLoanLog>>.BadRequest("limit は 1..1000 の範囲で指定してください。");
+            return ApiResult<List<ServerLoanLog>>.BadRequest(ErrorCode.LimitOutOfRange);
         if (offset < 0)
-            return ApiResult<List<ServerLoanLog>>.BadRequest("offset は 0 以上で指定してください。");
+            return ApiResult<List<ServerLoanLog>>.BadRequest(ErrorCode.OffsetOutOfRange);
         try
         {
             var repo = new ServerLoanRepository(_dbFactory);
             var logs = await repo.GetLogsAsync(uuid, limit, offset);
             return ApiResult<List<ServerLoanLog>>.Ok(logs);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return ApiResult<List<ServerLoanLog>>.Error($"ログ取得に失敗しました: {ex.Message}");
+            return ApiResult<List<ServerLoanLog>>.Error(ErrorCode.UnexpectedError);
         }
     }
     
@@ -68,17 +68,18 @@ public class ServerLoanService
         try
         {
             if (amount <= 0m)
-                return ApiResult<ServerLoan?>.BadRequest("借入金額は 0 より大きい必要があります。");
+                return ApiResult<ServerLoan?>.BadRequest(ErrorCode.ValidationError);
 
             var repo = new ServerLoanRepository(_dbFactory);
-            var (statusCode, message, limit) = await CalculateBorrowLimitAsync(uuid);
-            if (statusCode != 200)
-                return new ApiResult<ServerLoan?>(statusCode, message);
+            var limitRes = await CalculateBorrowLimitAsync(uuid);
+            if (limitRes.StatusCode != 200)
+                return new ApiResult<ServerLoan?>(limitRes.StatusCode, limitRes.Code);
+            var limit = limitRes.Data;
             
             var currentData = await repo.GetByUuidAsync(uuid);
             var outstanding = currentData != null ? (currentData.BorrowAmount - currentData.PaymentAmount) : 0m;
             if (outstanding + amount > limit)
-                return ApiResult<ServerLoan?>.Conflict("借入可能額を超過しているため借入できません。");
+                return ApiResult<ServerLoan?>.Conflict(ErrorCode.BorrowLimitExceeded);
 
             var resolvedPlayer = await MinecraftProfileService.GetNameByUuidAsync(uuid) ?? string.Empty;
             var updated = await repo.AdjustLoanAsync(uuid, resolvedPlayer, amount, ServerLoanRepository.ServerLoanLogAction.Borrow);
@@ -93,7 +94,7 @@ public class ServerLoanService
                 Server = "system"
             });
 
-            if (dp.StatusCode != 200) return new ApiResult<ServerLoan?>(dp.StatusCode, dp.Message);
+            if (dp.StatusCode != 200) return new ApiResult<ServerLoan?>(dp.StatusCode, dp.Code);
             
             var paymentAmount = Math.Round(amount * DailyInterestRate * 7m * 2m, 0, MidpointRounding.AwayFromZero);
             if (paymentAmount < 1m) paymentAmount = 1m;
@@ -104,13 +105,13 @@ public class ServerLoanService
             if (set != null) updated = set;
             return ApiResult<ServerLoan?>.Ok(updated);
         }
-        catch (ArgumentException ex)
+        catch (ArgumentException)
         {
-            return ApiResult<ServerLoan?>.BadRequest(ex.Message);
+            return ApiResult<ServerLoan?>.BadRequest(ErrorCode.ValidationError);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return ApiResult<ServerLoan?>.Error($"借入処理に失敗しました: {ex.Message}");
+            return ApiResult<ServerLoan?>.Error(ErrorCode.UnexpectedError);
         }
     }
     
@@ -121,19 +122,19 @@ public class ServerLoanService
             var repo = new ServerLoanRepository(_dbFactory);
             var loan = await repo.GetByUuidAsync(uuid);
             if (loan == null)
-                return ApiResult<ServerLoan?>.NotFound("借入データが見つかりません。");
+                return ApiResult<ServerLoan?>.NotFound(ErrorCode.LoanNotFound);
 
             var remain = loan.BorrowAmount;
             if (remain <= 0m)
-                return ApiResult<ServerLoan?>.BadRequest("返済は不要です。すでに完済しています。");
+                return ApiResult<ServerLoan?>.BadRequest(ErrorCode.NoRepaymentNeeded);
 
             var requested = payAmount is > 0m ? payAmount.Value : loan.PaymentAmount;
             if (requested <= 0m)
-                return ApiResult<ServerLoan?>.BadRequest("支払額が設定されていません。支払額を指定するか、PaymentAmount を設定してください。");
+                return ApiResult<ServerLoan?>.BadRequest(ErrorCode.PaymentAmountNotSet);
 
             var amount = Math.Min(requested, remain);
             if (amount <= 0m)
-                return ApiResult<ServerLoan?>.BadRequest("支払額が 0 円のため処理を実行できません。");
+                return ApiResult<ServerLoan?>.BadRequest(ErrorCode.PaymentAmountZero);
 
             var withdrawResult = await _bank.WithdrawAsync(new WithdrawRequest
             {
@@ -152,15 +153,15 @@ public class ServerLoanService
             }
 
             await repo.AdjustLoanAsync(uuid, loan.Player, amount, ServerLoanRepository.ServerLoanLogAction.RepayFailure);
-            return new ApiResult<ServerLoan?>(withdrawResult.StatusCode, withdrawResult.Message);
+            return new ApiResult<ServerLoan?>(withdrawResult.StatusCode, withdrawResult.Code);
         }
-        catch (ArgumentException ex)
+        catch (ArgumentException)
         {
-            return ApiResult<ServerLoan?>.BadRequest(ex.Message);
+            return ApiResult<ServerLoan?>.BadRequest(ErrorCode.ValidationError);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return ApiResult<ServerLoan?>.Error($"返済処理に失敗しました: {ex.Message}");
+            return ApiResult<ServerLoan?>.Error(ErrorCode.UnexpectedError);
         }
     }
     
@@ -207,9 +208,9 @@ public class ServerLoanService
             if (borrowable < 0m) borrowable = 0m;
             return ApiResult<decimal>.Ok(borrowable);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return ApiResult<decimal>.Error($"借入可能額の計算に失敗しました: {ex.Message}");
+            return ApiResult<decimal>.Error(ErrorCode.UnexpectedError);
         }
     }
     
@@ -220,16 +221,16 @@ public class ServerLoanService
             var repo = new ServerLoanRepository(_dbFactory);
             var loan = await repo.SetPaymentAmountAsync(uuid, paymentAmount);
             if (loan == null)
-                return ApiResult<ServerLoan?>.NotFound("借入データが見つかりません。");
+                return ApiResult<ServerLoan?>.NotFound(ErrorCode.LoanNotFound);
             return ApiResult<ServerLoan?>.Ok(loan);
         }
-        catch (ArgumentException ex)
+        catch (ArgumentException)
         {
-            return ApiResult<ServerLoan?>.BadRequest(ex.Message);
+            return ApiResult<ServerLoan?>.BadRequest(ErrorCode.ValidationError);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return ApiResult<ServerLoan?>.Error($"支払額の設定に失敗しました: {ex.Message}");
+            return ApiResult<ServerLoan?>.Error(ErrorCode.UnexpectedError);
         }
     }
     
@@ -240,19 +241,19 @@ public class ServerLoanService
             var repo = new ServerLoanRepository(_dbFactory);
             var loan = await repo.GetByUuidAsync(uuid);
             if (loan == null)
-                return ApiResult<ServerLoan?>.NotFound("借入データが見つかりません。");
+                return ApiResult<ServerLoan?>.NotFound(ErrorCode.LoanNotFound);
 
             if (loan.StopInterest)
-                return ApiResult<ServerLoan?>.Ok(loan, "利息計算は停止されています。");
+                return ApiResult<ServerLoan?>.Ok(loan, ErrorCode.InterestStopped);
 
             if (loan.BorrowAmount <= 0m)
-                return ApiResult<ServerLoan?>.Ok(loan, "借入額が 0 円のため、利息は追加されません。");
+                return ApiResult<ServerLoan?>.Ok(loan, ErrorCode.InterestZero);
 
             var interest = loan.BorrowAmount * DailyInterestRate;
 
             var rounded = Math.Round(interest, 0, MidpointRounding.AwayFromZero);
             if (rounded <= 0m)
-                return ApiResult<ServerLoan?>.Ok(loan, "利息が 0 円のため、追加は行いません。");
+                return ApiResult<ServerLoan?>.Ok(loan, ErrorCode.InterestZero);
 
             var updated = await repo.AdjustLoanAsync(uuid,
                 string.IsNullOrWhiteSpace(player) ? loan.Player : player,
@@ -261,13 +262,13 @@ public class ServerLoanService
 
             return ApiResult<ServerLoan?>.Ok(updated);
         }
-        catch (ArgumentException ex)
+        catch (ArgumentException)
         {
-            return ApiResult<ServerLoan?>.BadRequest(ex.Message);
+            return ApiResult<ServerLoan?>.BadRequest(ErrorCode.ValidationError);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return ApiResult<ServerLoan?>.Error($"利息追加に失敗しました: {ex.Message}");
+            return ApiResult<ServerLoan?>.Error(ErrorCode.UnexpectedError);
         }
     }
     

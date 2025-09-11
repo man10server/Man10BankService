@@ -29,27 +29,27 @@ public class BankService
             var bal = await repo.GetBalanceAsync(uuid);
             return ApiResult<decimal>.Ok(bal);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return ApiResult<decimal>.Error($"残高取得に失敗しました: {ex.Message}");
+            return ApiResult<decimal>.Error(ErrorCode.UnexpectedError);
         }
     }
 
     public async Task<ApiResult<List<MoneyLog>>> GetLogsAsync(string uuid, int limit = 100, int offset = 0)
     {
         if (limit is < 1 or > 1000)
-            return ApiResult<List<MoneyLog>>.BadRequest("limit は 1..1000 の範囲で指定してください。");
+            return ApiResult<List<MoneyLog>>.BadRequest(ErrorCode.LimitOutOfRange);
         if (offset < 0)
-            return ApiResult<List<MoneyLog>>.BadRequest("offset は 0 以上で指定してください。");
+            return ApiResult<List<MoneyLog>>.BadRequest(ErrorCode.OffsetOutOfRange);
         try
         {
             var repo = new BankRepository(_dbFactory);
             var logs = await repo.GetMoneyLogsAsync(uuid, limit, offset);
             return ApiResult<List<MoneyLog>>.Ok(logs);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return ApiResult<List<MoneyLog>>.Error($"ログ取得に失敗しました: {ex.Message}");
+            return ApiResult<List<MoneyLog>>.Error(ErrorCode.UnexpectedError);
         }
     }
 
@@ -64,13 +64,13 @@ public class BankService
                 var bal = await repo.ChangeBalanceAsync(req.Uuid, player, req.Amount, req.PluginName, req.Note, req.DisplayNote, req.Server);
                 return ApiResult<decimal>.Ok(bal);
             }
-            catch (ArgumentException ex)
+            catch (ArgumentException)
             {
-                return ApiResult<decimal>.BadRequest(ex.Message);
+                return ApiResult<decimal>.BadRequest(ErrorCode.ValidationError);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                return ApiResult<decimal>.Error($"入金に失敗しました: {ex.Message}");
+                return ApiResult<decimal>.Error(ErrorCode.UnexpectedError);
             }
         });
     }
@@ -84,19 +84,19 @@ public class BankService
                 var repo = new BankRepository(_dbFactory);
                 var current = await repo.GetBalanceAsync(req.Uuid);
                 if (current < req.Amount)
-                    return ApiResult<decimal>.Conflict("残高不足のため出金できません。");
+                    return ApiResult<decimal>.Conflict(ErrorCode.InsufficientFunds);
 
                 var player = await MinecraftProfileService.GetNameByUuidAsync(req.Uuid) ?? string.Empty;
                 var bal = await repo.ChangeBalanceAsync(req.Uuid, player, -req.Amount, req.PluginName, req.Note, req.DisplayNote, req.Server);
                 return ApiResult<decimal>.Ok(bal);
             }
-            catch (ArgumentException ex)
+            catch (ArgumentException)
             {
-                return ApiResult<decimal>.BadRequest(ex.Message);
+                return ApiResult<decimal>.BadRequest(ErrorCode.ValidationError);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                return ApiResult<decimal>.Error($"出金に失敗しました: {ex.Message}");
+                return ApiResult<decimal>.Error(ErrorCode.UnexpectedError);
             }
         });
     }
@@ -117,9 +117,9 @@ public class BankService
                 var result = await item.Work().ConfigureAwait(false);
                 item.Tcs.SetResult(result);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                item.Tcs.SetResult(ApiResult<decimal>.Error($"処理中にエラーが発生しました: {ex.Message}"));
+                item.Tcs.SetResult(ApiResult<decimal>.Error(ErrorCode.UnexpectedError));
             }
         }
     }

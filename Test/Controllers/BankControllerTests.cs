@@ -53,7 +53,8 @@ public class BankControllerTests
         var res = await ctrl.GetBalance(TestConstants.Uuid) as ObjectResult;
         res!.StatusCode.Should().Be(500);
         var body = res.Value as ApiResult<decimal>;
-        body!.Message.Should().StartWith("残高取得に失敗しました");
+        body.Should().NotBeNull();
+        body!.Code.Should().Be(ErrorCode.UnexpectedError);
     }
     
     [Fact(DisplayName = "入金成功: 残高が増加しログが記録される")]
@@ -142,8 +143,9 @@ public class BankControllerTests
 
         var res = await ctrl.Deposit(req) as ObjectResult;
         res!.StatusCode.Should().Be(500);
-        var body = res.Value as ApiResult<decimal>;
-        body!.Message.Should().StartWith("入金に失敗しました");
+        var body2 = res.Value as ApiResult<decimal>;
+        body2.Should().NotBeNull();
+        body2!.Code.Should().Be(ErrorCode.UnexpectedError);
     }
     
     [Fact(DisplayName = "出金成功: 残高が減少しログが記録される")]
@@ -260,8 +262,9 @@ public class BankControllerTests
 
         var res = await ctrl.Withdraw(req) as ObjectResult;
         res!.StatusCode.Should().Be(500);
-        var body = res.Value as ApiResult<decimal>;
-        body!.Message.Should().StartWith("出金に失敗しました");
+        var body3 = res.Value as ApiResult<decimal>;
+        body3.Should().NotBeNull();
+        body3!.Code.Should().Be(ErrorCode.UnexpectedError);
     }
 
     [Fact(DisplayName = "MoneyLog取得: 100件の入金後に limit/offset で中間10件を取得")]
