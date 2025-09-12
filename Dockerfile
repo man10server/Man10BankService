@@ -46,6 +46,11 @@ RUN set -eux; \
     -o /app/out
 
 ###############################################
+# Getting libicu stage
+###############################################
+FROM mcr.microsoft.com/dotnet/runtime-deps:9.0 AS icu
+
+###############################################
 # Runtime stage
 ###############################################
 FROM gcr.io/distroless/cc-debian12:nonroot AS final
@@ -53,8 +58,10 @@ WORKDIR /app
 
 # Kestrel を 8080 で待ち受け
 ENV ASPNETCORE_URLS=http://0.0.0.0:8080
-ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
 EXPOSE 8080
+
+# libicu をコピー
+COPY --from=icu /usr/lib/*-linux-gnu/libicu*.so.* /usr/lib/
 
 # ビルド成果物をコピー
 COPY --from=build /app/out/Man10BankService /app/Man10BankService
