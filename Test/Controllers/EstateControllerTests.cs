@@ -9,7 +9,6 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.AspNetCore.Mvc.ModelBinding.Validation;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Test.Infrastructure;
 
@@ -30,21 +29,8 @@ public class EstateControllerTests
         services.AddLogging();
         services.AddControllers().AddApplicationPart(typeof(EstateController).Assembly);
 
-        var config = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["ServerLoan:DailyInterestRate"] = "0.01",
-                ["ServerLoan:MinAmount"] = "1000",
-                ["ServerLoan:MaxAmount"] = "3000000",
-                ["ServerLoan:RepayWindow"] = "10"
-            })
-            .Build();
-
         var sp = services.BuildServiceProvider();
-
-        var bank = new BankService(db.Factory);
-        var serverLoan = new ServerLoanService(db.Factory, bank, config);
-        var estateService = new EstateService(db.Factory, bank, serverLoan);
+        var estateService = new EstateService(db.Factory);
 
         var ctrl = new EstateController(estateService)
         {
@@ -154,4 +140,3 @@ public class EstateControllerTests
         }, options => options.IncludingAllDeclaredProperties());
     }
 }
-

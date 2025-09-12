@@ -7,7 +7,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Man10BankService.Services;
 
-public class EstateService(IDbContextFactory<BankDbContext> dbFactory, BankService bankService, ServerLoanService serverLoanService)
+public class EstateService(IDbContextFactory<BankDbContext> dbFactory)
 {
     public async Task<ApiResult<Estate?>> GetLatestAsync(string uuid)
     {
@@ -95,13 +95,14 @@ public class EstateService(IDbContextFactory<BankDbContext> dbFactory, BankServi
 
     private async Task<decimal> GetServerLoanBorrowAmountAsync(string uuid)
     {
-        var res = await serverLoanService.GetByUuidAsync(uuid);
-        return res.StatusCode == 200 ? res.Data?.BorrowAmount ?? 0m : 0m;
+        var repo = new ServerLoanRepository(dbFactory);
+        var loan = await repo.GetByUuidAsync(uuid);
+        return loan?.BorrowAmount ?? 0m;
     }
 
     private async Task<decimal> GetBankAsync(string uuid)
     {
-        var res = await bankService.GetBalanceAsync(uuid);
-        return res.StatusCode == 200 ? res.Data : 0m;
+        var repo = new BankRepository(dbFactory);
+        return await repo.GetBalanceAsync(uuid);
     }
 }
