@@ -27,6 +27,22 @@ public class EstateRepository(IDbContextFactory<BankDbContext> factory)
             .ToListAsync();
     }
 
+    public async Task<List<Estate>> GetRankingAsync(int limit = 100, int offset = 0)
+    {
+        limit = Math.Clamp(limit, 1, 1000);
+        if (offset < 0) offset = 0;
+
+        await using var db = await factory.CreateDbContextAsync();
+        return await db.Estates
+            .AsNoTracking()
+            .OrderByDescending(x => x.Total)
+            .ThenByDescending(x => x.Date)
+            .ThenByDescending(x => x.Id)
+            .Skip(offset)
+            .Take(limit)
+            .ToListAsync();
+    }
+
     /// <summary>
     /// 新しいスナップショットが現行と重複していない場合に Estate を更新し、EstateHistory に同一値を記録します。
     /// 重複（全フィールド一致）の場合は何もしません。

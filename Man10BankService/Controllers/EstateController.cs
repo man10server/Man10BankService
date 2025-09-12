@@ -28,5 +28,11 @@ public class EstateController(EstateService service) : ControllerBase
         var res = await service.UpdateSnapshotAsync(uuid, request);
         return StatusCode(res.StatusCode, res);
     }
-}
 
+    [HttpGet("~/api/[controller]/ranking")]
+    public async Task<IActionResult> GetRanking([FromQuery] int limit = 100, [FromQuery] int offset = 0)
+    {
+        var res = await service.GetRankingAsync(limit, offset);
+        return StatusCode(res.StatusCode, res);
+    }
+}

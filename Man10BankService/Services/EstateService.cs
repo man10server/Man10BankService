@@ -40,6 +40,22 @@ public class EstateService(IDbContextFactory<BankDbContext> dbFactory)
         }
     }
 
+    public async Task<ApiResult<List<Estate>>> GetRankingAsync(int limit = 100, int offset = 0)
+    {
+        if (limit is < 1 or > 1000) return ApiResult<List<Estate>>.BadRequest(ErrorCode.LimitOutOfRange);
+        if (offset < 0) return ApiResult<List<Estate>>.BadRequest(ErrorCode.OffsetOutOfRange);
+        try
+        {
+            var repo = new EstateRepository(dbFactory);
+            var list = await repo.GetRankingAsync(limit, offset);
+            return ApiResult<List<Estate>>.Ok(list);
+        }
+        catch (Exception)
+        {
+            return ApiResult<List<Estate>>.Error(ErrorCode.UnexpectedError);
+        }
+    }
+
     public async Task<ApiResult<bool>> UpdateSnapshotAsync(string uuid, EstateUpdateRequest request)
     {
         try
