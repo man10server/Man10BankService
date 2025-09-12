@@ -69,8 +69,9 @@ public class ChequesControllerTests
         })).StatusCode.Should().Be(200);
 
         var post = await ctrl.Create(create);
-        (post.Result as OkObjectResult).Should().NotBeNull();
-        var created = post.Value!;
+        var created = post.Result
+            .Should().BeOfType<OkObjectResult>().Which.Value
+            .Should().BeOfType<Cheque>().Which;
         created.Id.Should().BeGreaterThan(0);
         created.Uuid.Should().Be(create.Uuid);
         // Player 名は外部解決のためここでは検証しない
@@ -78,8 +79,9 @@ public class ChequesControllerTests
         created.Used.Should().BeFalse();
 
         var get = await ctrl.Get(created.Id);
-        (get.Result as OkObjectResult).Should().NotBeNull();
-        var fetched = get.Value!;
+        var fetched = get.Result
+            .Should().BeOfType<OkObjectResult>().Which.Value
+            .Should().BeOfType<Cheque>().Which;
         fetched.Id.Should().Be(created.Id);
         fetched.Used.Should().BeFalse();
     }
@@ -111,13 +113,15 @@ public class ChequesControllerTests
         })).StatusCode.Should().Be(200);
 
         var createdRes = await ctrl.Create(create);
-        (createdRes.Result as OkObjectResult).Should().NotBeNull();
-        var id = (createdRes.Value as Cheque)!.Id;
+        var id = createdRes.Result
+            .Should().BeOfType<OkObjectResult>().Which.Value
+            .Should().BeOfType<Cheque>().Which.Id;
 
         // 1回目使用
         var ok = await ctrl.Use(id, new ChequeUseRequest { Uuid = TestConstants.Uuid });
-        (ok.Result as OkObjectResult).Should().NotBeNull();
-        var used = (ok.Value as Cheque)!;
+        var used = ok.Result
+            .Should().BeOfType<OkObjectResult>().Which.Value
+            .Should().BeOfType<Cheque>().Which;
         used.Used.Should().BeTrue();
         // UsePlayer の具体名は外部解決のため省略
 
@@ -127,7 +131,9 @@ public class ChequesControllerTests
 
         // 参照
         var get = await ctrl.Get(id);
-        var current = get!.Value!;
+        var current = get.Result
+            .Should().BeOfType<OkObjectResult>().Which.Value
+            .Should().BeOfType<Cheque>().Which;
         current.Used.Should().BeTrue();
     }
 
@@ -137,8 +143,11 @@ public class ChequesControllerTests
         using var host = BuildController();
         var ctrl = (ChequesController)host.Controller;
 
-        (await ctrl.Get(999999)).Result.Should().BeOfType<NotFoundObjectResult>();
-        (await ctrl.Use(999999, new ChequeUseRequest { Uuid = TestConstants.Uuid })).Result.Should().BeOfType<NotFoundObjectResult>();
+        var get = await ctrl.Get(999999);
+        get.Result.Should().BeOfType<NotFoundObjectResult>();
+
+        var use = await ctrl.Use(999999, new ChequeUseRequest { Uuid = TestConstants.Uuid });
+        use.Result.Should().BeOfType<NotFoundObjectResult>();
     }
 
     [Fact(DisplayName = "小切手作成: 金額0は400で拒否")]
@@ -154,7 +163,8 @@ public class ChequesControllerTests
         };
         ctrl.TryValidateModel(req).Should().BeFalse();
         var res = await ctrl.Create(req);
-        (res.Result as ObjectResult)!.Value.Should().BeOfType<ValidationProblemDetails>();
+        var obj = res.Result.Should().BeOfType<ObjectResult>().Which;
+        obj.Value.Should().BeOfType<ValidationProblemDetails>();
     }
 
     [Fact(DisplayName = "小切手使用: 並列実行でも先着のみ成功（FIFO直列化）")]
@@ -181,15 +191,19 @@ public class ChequesControllerTests
             DisplayNote = "初期入金",
             Server = "dev"
         })).StatusCode.Should().Be(200);
-        var created = (await ctrl.Create(create)).Value!;
-        var id = created.Id;
+        var created = await ctrl.Create(create);
+        var id = created.Result
+            .Should().BeOfType<OkObjectResult>().Which.Value
+            .Should().BeOfType<Cheque>().Which.Id;
 
         var players = Enumerable.Range(1, 10).Select(i => (uuid: TestConstants.Uuid, player: $"p{i}" )).ToArray();
         var statuses = new ConcurrentBag<int?>();
         var tasks = players.Select(async p =>
         {
             var res = await ctrl.Use(id, new ChequeUseRequest { Uuid = p.uuid });
-            statuses.Add(((res.Result as ObjectResult)!.StatusCode));
+            if (res.Result is OkObjectResult) { statuses.Add(200); return; }
+            if (res.Result is ConflictObjectResult) { statuses.Add(409); return; }
+            statuses.Add((res.Result as ObjectResult)!.StatusCode);
         }).ToArray();
 
         await Task.WhenAll(tasks);
@@ -198,8 +212,9 @@ public class ChequesControllerTests
         statuses.Count(s => s == 200).Should().Be(1);
         statuses.Count(s => s == 409).Should().Be(players.Length - 1);
 
-        var state = (await ctrl.Get(id)).Value!;
+        var state = (await ctrl.Get(id)).Result
+            .Should().BeOfType<OkObjectResult>().Which.Value
+            .Should().BeOfType<Cheque>().Which;
         state.Used.Should().BeTrue();
-        // 使用者名は環境依存のため検証しない
     }
 }
