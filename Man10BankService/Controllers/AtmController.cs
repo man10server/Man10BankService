@@ -1,3 +1,4 @@
+using Man10BankService.Models.Database;
 using Man10BankService.Models.Requests;
 using Man10BankService.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -9,17 +10,39 @@ namespace Man10BankService.Controllers;
 public class AtmController(AtmService service) : ControllerBase
 {
     [HttpGet("{uuid}/logs")]
-    public async Task<IActionResult> GetLogs([FromRoute] string uuid, [FromQuery] int limit = 100, [FromQuery] int offset = 0)
+    [Produces("application/json")]
+    [ProducesResponseType(typeof(List<AtmLog>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<List<AtmLog>>> GetLogs([FromRoute] string uuid, [FromQuery] int limit = 100, [FromQuery] int offset = 0)
     {
         var res = await service.GetLogsAsync(uuid, limit, offset);
-        return StatusCode(res.StatusCode, res);
+        if (res.StatusCode == 200) return Ok(res.Data);
+        return ToProblem(res);
     }
 
     [HttpPost("logs")]
-    public async Task<IActionResult> AddLog([FromBody] AtmLogRequest request)
+    [Consumes("application/json")]
+    [Produces("application/json")]
+    [ProducesResponseType(typeof(AtmLog), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<AtmLog>> AddLog([FromBody] AtmLogRequest request)
     {
         if (!ModelState.IsValid) return ValidationProblem(ModelState);
         var res = await service.AddLogAsync(request);
-        return StatusCode(res.StatusCode, res);
+        if (res.StatusCode == 200) return Ok(res.Data);
+        return ToProblem(res);
+    }
+
+    private ActionResult ToProblem<T>(ApiResult<T> res)
+    {
+        var pd = new ProblemDetails
+        {
+            Title = res.Code.ToString(),
+            Status = res.StatusCode,
+        };
+        pd.Extensions["code"] = res.Code.ToString();
+        return StatusCode(res.StatusCode, pd);
     }
 }
