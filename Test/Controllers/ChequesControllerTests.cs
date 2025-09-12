@@ -70,7 +70,7 @@ public class ChequesControllerTests
 
         var post = await ctrl.Create(create) as ObjectResult;
         post!.StatusCode.Should().Be(200);
-        var created = (post.Value as ApiResult<Cheque>)!.Data!;
+        var created = (post.Value as Cheque)!;
         created.Id.Should().BeGreaterThan(0);
         created.Uuid.Should().Be(create.Uuid);
         // Player 名は外部解決のためここでは検証しない
@@ -79,7 +79,7 @@ public class ChequesControllerTests
 
         var get = await ctrl.Get(created.Id) as ObjectResult;
         get!.StatusCode.Should().Be(200);
-        var fetched = (get.Value as ApiResult<Cheque>)!.Data!;
+        var fetched = (get.Value as Cheque)!;
         fetched.Id.Should().Be(created.Id);
         fetched.Used.Should().BeFalse();
     }
@@ -112,12 +112,12 @@ public class ChequesControllerTests
 
         var createdRes = await ctrl.Create(create) as ObjectResult;
         createdRes!.StatusCode.Should().Be(200);
-        var id = (createdRes.Value as ApiResult<Cheque>)!.Data!.Id;
+        var id = (createdRes.Value as Cheque)!.Id;
 
         // 1回目使用
         var ok = await ctrl.Use(id, new ChequeUseRequest { Uuid = TestConstants.Uuid }) as ObjectResult;
         ok!.StatusCode.Should().Be(200);
-        var used = (ok.Value as ApiResult<Cheque>)!.Data!;
+        var used = (ok.Value as Cheque)!;
         used.Used.Should().BeTrue();
         // UsePlayer の具体名は外部解決のため省略
 
@@ -127,7 +127,7 @@ public class ChequesControllerTests
 
         // 参照
         var get = await ctrl.Get(id) as ObjectResult;
-        var current = (get!.Value as ApiResult<Cheque>)!.Data!;
+        var current = (get!.Value as Cheque)!;
         current.Used.Should().BeTrue();
     }
 
@@ -182,7 +182,7 @@ public class ChequesControllerTests
             DisplayNote = "初期入金",
             Server = "dev"
         })).StatusCode.Should().Be(200);
-        var created = ((await ctrl.Create(create) as ObjectResult)!.Value as ApiResult<Cheque>)!.Data!;
+        var created = ((await ctrl.Create(create) as ObjectResult)!.Value as Cheque)!;
         var id = created.Id;
 
         var players = Enumerable.Range(1, 10).Select(i => (uuid: TestConstants.Uuid, player: $"p{i}" )).ToArray();
@@ -199,7 +199,7 @@ public class ChequesControllerTests
         statuses.Count(s => s == 200).Should().Be(1);
         statuses.Count(s => s == 409).Should().Be(players.Length - 1);
 
-        var state = ((await ctrl.Get(id) as ObjectResult)!.Value as ApiResult<Cheque>)!.Data!;
+        var state = ((await ctrl.Get(id) as ObjectResult)!.Value as Cheque)!;
         state.Used.Should().BeTrue();
         // 使用者名は環境依存のため検証しない
     }

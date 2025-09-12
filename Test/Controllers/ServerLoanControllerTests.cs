@@ -81,7 +81,7 @@ public class ServerLoanControllerTests
 
         var loanLogsRes = await ctrl.GetLogs(uuid, limit: 10) as ObjectResult;
         loanLogsRes!.StatusCode.Should().Be(200);
-        var loanLogs = (loanLogsRes.Value as ApiResult<List<ServerLoanLog>>)!.Data!;
+        var loanLogs = (loanLogsRes.Value as List<ServerLoanLog>)!;
         loanLogs.Any(l => l is { Action: "Borrow", Amount: amount }).Should().BeTrue();
     }
 
@@ -94,7 +94,7 @@ public class ServerLoanControllerTests
         var limitRes = await ctrl.GetBorrowLimit(uuid) as ObjectResult;
         limitRes!.StatusCode.Should().Be(200);
         
-        var limit = (limitRes.Value as ApiResult<decimal>)!.Data;
+        var limit = (decimal)limitRes.Value!;
         var res = await ctrl.Borrow(uuid, new ServerLoanBorrowBodyRequest { Amount = limit * 2 }) as ObjectResult;
         res!.StatusCode.Should().Be(409);
     }
@@ -117,7 +117,7 @@ public class ServerLoanControllerTests
 
         var loanLogsRes = await ctrl.GetLogs(uuid, limit: 10) as ObjectResult;
         loanLogsRes!.StatusCode.Should().Be(200);
-        var loanLogs = (loanLogsRes.Value as ApiResult<List<ServerLoanLog>>)!.Data!;
+        var loanLogs = (loanLogsRes.Value as List<ServerLoanLog>)!;
         loanLogs.Count(l => l.Action == "Borrow").Should().Be(2);
         loanLogs.Where(l => l.Action == "Borrow").Sum(l => l.Amount).Should().Be(900m);
     }
@@ -131,7 +131,7 @@ public class ServerLoanControllerTests
 
         var limitRes = await ctrl.GetBorrowLimit(uuid) as ObjectResult;
         limitRes!.StatusCode.Should().Be(200);
-        var limit = (limitRes.Value as ApiResult<decimal>)!.Data;
+        var limit = (decimal)limitRes.Value!;
 
         var first = limit / 2m;
         var second = limit * 2m;
@@ -175,7 +175,7 @@ public class ServerLoanControllerTests
 
         var loanLogRes = await ctrl.GetLogs(uuid, limit: 10) as ObjectResult;
         loanLogRes!.StatusCode.Should().Be(200);
-        var loanLogs = (loanLogRes.Value as ApiResult<List<ServerLoanLog>>)!.Data!;
+        var loanLogs = (loanLogRes.Value as List<ServerLoanLog>)!;
         loanLogs.Any(l => l.Action == "RepayFailure").Should().BeTrue();
     }
 
@@ -202,7 +202,7 @@ public class ServerLoanControllerTests
 
         var loanLogRes = await ctrl.GetLogs(uuid, limit: 10) as ObjectResult;
         loanLogRes!.StatusCode.Should().Be(200);
-        var loanLogs = (loanLogRes.Value as ApiResult<List<ServerLoanLog>>)!.Data!;
+        var loanLogs = (loanLogRes.Value as List<ServerLoanLog>)!;
         loanLogs.Any(l => l.Action == "RepaySuccess" && l.Amount == -expectedRepayAmount).Should().BeTrue();
     }
 
@@ -233,7 +233,7 @@ public class ServerLoanControllerTests
 
         var loanLogRes = await ctrl.GetLogs(uuid, limit: 20) as ObjectResult;
         loanLogRes!.StatusCode.Should().Be(200);
-        var loanLogs = (loanLogRes.Value as ApiResult<List<ServerLoanLog>>)!.Data!;
+        var loanLogs = (loanLogRes.Value as List<ServerLoanLog>)!;
         loanLogs.Any(l => l.Action == "RepaySuccess" && l.Amount == -used1).Should().BeTrue();
         loanLogs.Any(l => l.Action == "RepaySuccess" && l.Amount == -remain).Should().BeTrue();
     }

@@ -69,16 +69,16 @@ public class LoanControllerTests
 
         var createRes = await ctrl.Create(createReq) as ObjectResult;
         createRes!.StatusCode.Should().Be(200);
-        var created = (createRes.Value as ApiResult<Loan>)!.Data!;
+        var created = (createRes.Value as Loan)!;
 
         var listRes = await ctrl.GetByBorrower(borrowUuid) as ObjectResult;
         listRes!.StatusCode.Should().Be(200);
-        var list = (listRes.Value as ApiResult<List<Loan>>)!.Data!;
+        var list = (listRes.Value as List<Loan>)!;
         list.Any(l => l.Id == created.Id).Should().BeTrue();
 
         var getRes = await ctrl.GetById(created.Id) as ObjectResult;
         getRes!.StatusCode.Should().Be(200);
-        var got = (getRes.Value as ApiResult<Loan>)!.Data!;
+        var got = (getRes.Value as Loan)!;
         got.Id.Should().Be(created.Id);
         got.Amount.Should().Be(created.Amount);
         got.BorrowUuid.Should().Be(created.BorrowUuid);
@@ -102,7 +102,7 @@ public class LoanControllerTests
             PaybackDate = DateTime.UtcNow.AddDays(5),
             CollateralItem = string.Empty
         }) as ObjectResult;
-        var loan = (create!.Value as ApiResult<Loan>)!.Data!;
+        var loan = (create!.Value as Loan)!;
 
         var repay = await ctrl.Repay(loan.Id, collectorUuid: lendUuid) as ObjectResult;
         repay!.StatusCode.Should().Be(400);
@@ -128,7 +128,7 @@ public class LoanControllerTests
             PaybackDate = DateTime.UtcNow.AddDays(-1),
             CollateralItem = string.Empty
         }) as ObjectResult;
-        var loan = (create!.Value as ApiResult<Loan>)!.Data!;
+        var loan = (create!.Value as Loan)!;
 
         await env.Bank.DepositAsync(new DepositRequest { Uuid = borrowUuid, Amount = 1000m, PluginName = "test", Note = "seed", DisplayNote = "seed", Server = "dev" });
         var repay = await ctrl.Repay(loan.Id, collectorUuid: lendUuid) as ObjectResult;
@@ -155,7 +155,7 @@ public class LoanControllerTests
             PaybackDate = DateTime.UtcNow.AddDays(3),
             CollateralItem = string.Empty
         }) as ObjectResult;
-        var loan = (create!.Value as ApiResult<Loan>)!.Data!;
+        var loan = (create!.Value as Loan)!;
 
         var bal = await env.Bank.GetBalanceAsync(borrowUuid);
         if (bal.Data > 0)
@@ -184,7 +184,7 @@ public class LoanControllerTests
             PaybackDate = DateTime.UtcNow.AddDays(-1),
             CollateralItem = "diamond"
         }) as ObjectResult;
-        var loan = (create!.Value as ApiResult<Loan>)!.Data!;
+        var loan = (create!.Value as Loan)!;
 
         await env.Bank.DepositAsync(new DepositRequest { Uuid = borrowUuid, Amount = 2000m, PluginName = "test", Note = "seed", DisplayNote = "seed", Server = "dev" });
         var repay = await ctrl.Repay(loan.Id, collectorUuid: lendUuid) as ObjectResult;
@@ -212,7 +212,7 @@ public class LoanControllerTests
             PaybackDate = DateTime.UtcNow.AddDays(-1),
             CollateralItem = "gold"
         }) as ObjectResult;
-        var loan = (create!.Value as ApiResult<Loan>)!.Data!;
+        var loan = (create!.Value as Loan)!;
 
         await env.Bank.DepositAsync(new DepositRequest { Uuid = borrowUuid, Amount = 2000m, PluginName = "test", Note = "seed", DisplayNote = "seed", Server = "dev" });
         var repay = await ctrl.Repay(loan.Id, collectorUuid: lendUuid) as ObjectResult;
@@ -242,7 +242,7 @@ public class LoanControllerTests
             PaybackDate = DateTime.UtcNow.AddDays(-1),
             CollateralItem = "emerald"
         }) as ObjectResult;
-        var loan = (create!.Value as ApiResult<Loan>)!.Data!;
+        var loan = (create!.Value as Loan)!;
 
         // 借手の残高を0に
         var bal = await env.Bank.GetBalanceAsync(borrowUuid);

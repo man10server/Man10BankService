@@ -64,12 +64,11 @@ public class EstateControllerTests
 
         var post = await ctrl.UpdateSnapshot(uuid, req) as ObjectResult;
         post!.StatusCode.Should().Be(200);
-        var updated = (post.Value as ApiResult<bool>)!;
-        updated.Data.Should().BeTrue();
+        ((bool)post.Value!).Should().BeTrue();
 
         var get = await ctrl.GetLatest(uuid) as ObjectResult;
         get!.StatusCode.Should().Be(200);
-        var latest = (get.Value as ApiResult<Estate?>)!.Data!;
+        var latest = (get.Value as Estate)!;
 
         latest.Should().BeEquivalentTo(new
         {
@@ -85,7 +84,7 @@ public class EstateControllerTests
         
         var histRes = await ctrl.GetHistory(uuid) as ObjectResult;
         histRes!.StatusCode.Should().Be(200);
-        var history = (histRes.Value as ApiResult<List<EstateHistory>>)!.Data!;
+        var history = (histRes.Value as List<EstateHistory>)!;
         history.Count.Should().Be(1);
     }
 
@@ -106,27 +105,25 @@ public class EstateControllerTests
 
         var firstUpdate = await ctrl.UpdateSnapshot(uuid, req) as ObjectResult;
         firstUpdate!.StatusCode.Should().Be(200);
-        var firstUpdateResult = (firstUpdate.Value as ApiResult<bool>)!;
-        firstUpdateResult.Data.Should().BeTrue();
+        ((bool)firstUpdate.Value!).Should().BeTrue();
 
         var firstHistory = await ctrl.GetHistory(uuid) as ObjectResult;
         firstHistory!.StatusCode.Should().Be(200);
-        var history1 = (firstHistory.Value as ApiResult<List<EstateHistory>>)!.Data!;
+        var history1 = (firstHistory.Value as List<EstateHistory>)!;
         history1.Count.Should().Be(1);
 
         var secondUpdate = await ctrl.UpdateSnapshot(uuid, req) as ObjectResult;
         secondUpdate!.StatusCode.Should().Be(200);
-        var secondUpdateResult = (secondUpdate.Value as ApiResult<bool>)!;
-        secondUpdateResult.Data.Should().BeFalse();
+        ((bool)secondUpdate.Value!).Should().BeFalse();
 
         var secondHistory = await ctrl.GetHistory(uuid) as ObjectResult;
         secondHistory!.StatusCode.Should().Be(200);
-        var history2 = (secondHistory.Value as ApiResult<List<EstateHistory>>)!.Data!;
+        var history2 = (secondHistory.Value as List<EstateHistory>)!;
         history2.Count.Should().Be(1);
 
         var latestResult = await ctrl.GetLatest(uuid) as ObjectResult;
         latestResult!.StatusCode.Should().Be(200);
-        var latest = (latestResult.Value as ApiResult<Estate?>)!.Data!;
+        var latest = (latestResult.Value as Estate)!;
         latest.Should().BeEquivalentTo(new
         {
             Cash = 10m,

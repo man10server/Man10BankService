@@ -57,7 +57,7 @@ public class AtmControllerTests
 
         var post = await ctrl.AddLog(req) as ObjectResult;
         post!.StatusCode.Should().Be(200);
-        var created = (post.Value as ApiResult<AtmLog>)!.Data!;
+        var created = (post.Value as AtmLog)!;
         created.Uuid.Should().Be(uuid);
         // Player 名は外部解決のためここでは検証しない
         created.Amount.Should().Be(700);
@@ -65,7 +65,7 @@ public class AtmControllerTests
 
         var get = await ctrl.GetLogs(uuid, 10) as ObjectResult;
         get!.StatusCode.Should().Be(200);
-        var logs = (get.Value as ApiResult<List<AtmLog>>)!.Data!;
+        var logs = (get.Value as List<AtmLog>)!;
         logs.Should().NotBeEmpty();
         logs[0].Should().BeEquivalentTo(new
         {
@@ -96,7 +96,7 @@ public class AtmControllerTests
 
         var get = await ctrl.GetLogs(uuid, 10) as ObjectResult;
         get!.StatusCode.Should().Be(200);
-        var logs = (get.Value as ApiResult<List<AtmLog>>)!.Data!;
+        var logs = (get.Value as List<AtmLog>)!;
         logs.Should().BeEmpty();
     }
 
@@ -111,9 +111,7 @@ public class AtmControllerTests
 
         var res = await ctrl.GetLogs(TestConstants.Uuid, 10) as ObjectResult;
         res!.StatusCode.Should().Be(500);
-        var body = res.Value as ApiResult<List<AtmLog>>;
-        body.Should().NotBeNull();
-        body!.Code.Should().Be(ErrorCode.UnexpectedError);
+        res.Value.Should().BeOfType<ProblemDetails>();
     }
 
     [Fact(DisplayName = "DBダウン時: ATMログ追加は500エラー")]
@@ -135,9 +133,7 @@ public class AtmControllerTests
 
         var res = await ctrl.AddLog(req) as ObjectResult;
         res!.StatusCode.Should().Be(500);
-        var body2 = res.Value as ApiResult<AtmLog>;
-        body2.Should().NotBeNull();
-        body2!.Code.Should().Be(ErrorCode.UnexpectedError);
+        res.Value.Should().BeOfType<ProblemDetails>();
     }
 
     [Fact(DisplayName = "ATMログ取得: 100件投入し limit/offset で中間10件を取得")]
@@ -157,7 +153,7 @@ public class AtmControllerTests
 
         var get = await ctrl.GetLogs(uuid, limit: 10, offset: 30) as ObjectResult;
         get!.StatusCode.Should().Be(200);
-        var logs = (get.Value as ApiResult<List<AtmLog>>)!.Data!;
+        var logs = (get.Value as List<AtmLog>)!;
         logs.Should().HaveCount(10);
         var amounts = logs.Select(x => x.Amount).ToArray();
         amounts.Should().BeEquivalentTo(new decimal[] { 70, 69, 68, 67, 66, 65, 64, 63, 62, 61 }, opt => opt.WithStrictOrdering());
