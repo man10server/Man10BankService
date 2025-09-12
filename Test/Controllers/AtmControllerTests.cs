@@ -58,8 +58,8 @@ public class AtmControllerTests
         var addResult = await ctrl.AddLog(req);
         addResult.Result.Should().BeOfType<OkObjectResult>();
 
-        var getResult = await ctrl.GetLogs(uuid, 10);
-        var logs = getResult.Result
+        var logsResult = await ctrl.GetLogs(uuid, 10);
+        var logs = logsResult.Result
             .Should().BeOfType<OkObjectResult>().Which.Value
             .Should().BeOfType<List<AtmLog>>().Which;
         
@@ -72,7 +72,7 @@ public class AtmControllerTests
         }, opt => opt.ExcludingMissingMembers());
     }
 
-    [Fact(DisplayName = "ATMログ追加失敗: 金額不正で400・ログ未作成")]
+    [Fact(DisplayName = "ATMログ追加失敗: 金額不正でValidationProblem・ログ未作成")]
     public async Task AddLog_Invalid_ShouldReturn400_AndNoLog()
     {
         using var host = BuildController();
@@ -88,7 +88,8 @@ public class AtmControllerTests
         ctrl.TryValidateModel(req).Should().BeFalse();
 
         var post = await ctrl.AddLog(req);
-        post.Result.Should().BeOfType<ObjectResult>();
+        var postResult = post.Result.Should().BeOfType<ObjectResult>().Which;
+        postResult.Value.Should().BeOfType<ValidationProblemDetails>();
 
         var get = await ctrl.GetLogs(uuid, 10);
         var logs = get.Result
@@ -107,7 +108,8 @@ public class AtmControllerTests
         db.Connection.Close();
 
         var res = await ctrl.GetLogs(TestConstants.Uuid, 10);
-        ((res.Result as ObjectResult)!.StatusCode).Should().Be(500);
+        res.Result.Should().BeOfType<ObjectResult>()
+            .Which.StatusCode.Should().Be(500);
     }
 
     [Fact(DisplayName = "DBダウン時: ATMログ追加は500エラー")]
@@ -128,7 +130,8 @@ public class AtmControllerTests
         db.Connection.Close();
 
         var res = await ctrl.AddLog(req);
-        ((res.Result as ObjectResult)!.StatusCode).Should().Be(500);
+        res.Result.Should().BeOfType<ObjectResult>()
+            .Which.StatusCode.Should().Be(500);
     }
 
     [Fact(DisplayName = "ATMログ取得: 100件投入し limit/offset で中間10件を取得")]

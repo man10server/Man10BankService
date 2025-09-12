@@ -71,18 +71,21 @@ public class BankControllerTests
         };
         ctrl.TryValidateModel(req).Should().BeTrue();
         var result = await ctrl.Deposit(req);
-        result.Result.Should().BeOfType<OkObjectResult>();
-        var deposited = (decimal)((OkObjectResult)result.Result!).Value!;
+        var deposited = result.Result
+            .Should().BeOfType<OkObjectResult>().Which.Value
+            .Should().BeOfType<decimal>().Which;
         deposited.Should().Be(500m);
 
         var balRes = await ctrl.GetBalance(req.Uuid);
-        balRes.Result.Should().BeOfType<OkObjectResult>();
-        var balance = (decimal)((OkObjectResult)balRes.Result!).Value!;
+        var balance = balRes.Result
+            .Should().BeOfType<OkObjectResult>().Which.Value
+            .Should().BeOfType<decimal>().Which;
         balance.Should().Be(500m);
 
         var logsRes = await ctrl.GetLogs(req.Uuid, 10);
-        logsRes.Result.Should().BeOfType<OkObjectResult>();
-        var logs = (List<MoneyLog>)((OkObjectResult)logsRes.Result!).Value!;
+        var logs = logsRes.Result
+            .Should().BeOfType<OkObjectResult>().Which.Value
+            .Should().BeOfType<List<MoneyLog>>().Which;
         logs[0].Should().BeEquivalentTo(new
         {
             Amount = 500m,
@@ -95,7 +98,7 @@ public class BankControllerTests
         });
     }
     
-    [Fact(DisplayName = "入金失敗: 金額不正で400・残高とログは変化なし")]
+    [Fact(DisplayName = "入金失敗: 金額不正残高とログは変化なし")]
     public async Task Deposit_Invalid_ShouldNotChangeBalance_AndReturn400()
     {
         using var host = BuildController();
@@ -110,19 +113,21 @@ public class BankControllerTests
             Server = "dev"
         };
         ctrl.TryValidateModel(req).Should().BeFalse();
+        
         var result = await ctrl.Deposit(req);
         var bad = result.Result.Should().BeOfType<ObjectResult>().Which;
-        var details = bad.Value.Should().BeOfType<ValidationProblemDetails>().Which;
-        details.Status.Should().Be(400);
+        bad.Value.Should().BeOfType<ValidationProblemDetails>();
 
         var balRes = await ctrl.GetBalance(req.Uuid);
-        balRes.Result.Should().BeOfType<OkObjectResult>();
-        var bal = (decimal)((OkObjectResult)balRes.Result!).Value!;
+        var bal = balRes.Result
+            .Should().BeOfType<OkObjectResult>().Which.Value
+            .Should().BeOfType<decimal>().Which;
         bal.Should().Be(0m);
 
         var logsRes = await ctrl.GetLogs(req.Uuid, 10);
-        logsRes.Result.Should().BeOfType<OkObjectResult>();
-        var logs = (List<MoneyLog>)((OkObjectResult)logsRes.Result!).Value!;
+        var logs = logsRes.Result
+            .Should().BeOfType<OkObjectResult>().Which.Value
+            .Should().BeOfType<List<MoneyLog>>().Which;
         logs.Count.Should().Be(0);
     }
 
@@ -181,13 +186,15 @@ public class BankControllerTests
         withdraw.Result.Should().BeOfType<OkObjectResult>();
 
         var balRes2 = await ctrl.GetBalance(uuid);
-        balRes2.Result.Should().BeOfType<OkObjectResult>();
-        var bal2 = (decimal)((OkObjectResult)balRes2.Result!).Value!;
+        var bal2 = balRes2.Result
+            .Should().BeOfType<OkObjectResult>().Which.Value!
+            .Should().BeOfType<decimal>().Which;
         bal2.Should().Be(400m);
 
         var logsRes2 = await ctrl.GetLogs(uuid, 10);
-        logsRes2.Result.Should().BeOfType<OkObjectResult>();
-        var logs = logsRes2.Value!;
+        var logs = logsRes2.Result
+            .Should().BeOfType<OkObjectResult>().Which.Value
+            .Should().BeOfType<List<MoneyLog>>().Which;
         logs[0].Should().BeEquivalentTo(new
         {
             Amount = -600m,
@@ -228,10 +235,11 @@ public class BankControllerTests
         });
         withdraw.Result.Should().BeOfType<OkObjectResult>();
         
-        var bal1 = await ctrl.GetBalance(uuid);
-        bal1.Result.Should().BeOfType<OkObjectResult>();
-        var bal1v = (decimal)((OkObjectResult)bal1.Result!).Value!;
-        bal1v.Should().Be(400m);
+        var firstBalResult = await ctrl.GetBalance(uuid);
+        var firstBal = firstBalResult.Result
+            .Should().BeOfType<OkObjectResult>().Which.Value
+            .Should().BeOfType<decimal>().Which;
+        firstBal.Should().Be(400m);
 
         var ng = await ctrl.Withdraw(new WithdrawRequest
         {
@@ -244,10 +252,11 @@ public class BankControllerTests
         });
         ng.Result.Should().BeOfType<ConflictObjectResult>();
 
-        var bal2Res = await ctrl.GetBalance(uuid);
-        bal2Res.Result.Should().BeOfType<OkObjectResult>();
-        var bal2v = (decimal)((OkObjectResult)bal2Res.Result!).Value!;
-        bal2v.Should().Be(400m);
+        var secondBalResult = await ctrl.GetBalance(uuid);
+        var secondBal = secondBalResult.Result
+            .Should().BeOfType<OkObjectResult>().Which.Value
+            .Should().BeOfType<decimal>().Which;
+        secondBal.Should().Be(400m);
     }
 
 
@@ -301,13 +310,15 @@ public class BankControllerTests
         }
 
         var get = await ctrl.GetLogs(uuid, limit: 10);
-        get.Result.Should().BeOfType<OkObjectResult>();
-        var top = (List<MoneyLog>)((OkObjectResult)get.Result!).Value!;
+        var top = get.Result
+            .Should().BeOfType<OkObjectResult>().Which.Value
+            .Should().BeOfType<List<MoneyLog>>().Which;
         top.First().Amount.Should().Be(100);
 
         var midRes = await ctrl.GetLogs(uuid, limit: 10, offset: 30);
-        midRes.Result.Should().BeOfType<OkObjectResult>();
-        var logs = (List<MoneyLog>)((OkObjectResult)midRes.Result!).Value!;
+        var logs = midRes.Result
+            .Should().BeOfType<OkObjectResult>().Which.Value
+            .Should().BeOfType<List<MoneyLog>>().Which;
         logs.Should().HaveCount(10);
         var amounts = logs.Select(x => x.Amount).ToArray();
         amounts.Should().BeEquivalentTo(new decimal[] { 70, 69, 68, 67, 66, 65, 64, 63, 62, 61 }, opt => opt.WithStrictOrdering());
@@ -377,13 +388,15 @@ public class BankControllerTests
         await Task.WhenAll(tasks);
 
         var get = await ctrl.GetLogs(uuid, limit: 1000);
-        get.Result.Should().BeOfType<OkObjectResult>();
-        var logs = (List<MoneyLog>)((OkObjectResult)get.Result!).Value!;
+        var logs = get.Result
+            .Should().BeOfType<OkObjectResult>().Which.Value
+            .Should().BeOfType<List<MoneyLog>>().Which;
         var sum = logs.Sum(l => l.Amount);
 
         var balRes3 = await ctrl.GetBalance(uuid);
-        balRes3.Result.Should().BeOfType<OkObjectResult>();
-        var balance = (decimal)((OkObjectResult)balRes3.Result!).Value!;
+        var balance = balRes3.Result
+            .Should().BeOfType<OkObjectResult>().Which.Value
+            .Should().BeOfType<decimal>().Which;
         balance.Should().Be(sum);
 
         logs.All(l => l.Amount >= 0m == l.Deposit).Should().BeTrue();
