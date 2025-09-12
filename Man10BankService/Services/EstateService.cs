@@ -52,7 +52,7 @@ public class EstateService(IDbContextFactory<BankDbContext> dbFactory, BankServi
             var player = await MinecraftProfileService.GetNameByUuidAsync(uuid) ?? current?.Player ?? string.Empty;
 
             // サーバーローンの残債（BorrowAmount が残債）
-            var loanOutstanding = await GetServerLoanOutstandingAsync(uuid);
+            var loanOutstanding = await GetServerLoanBorrowAmountAsync(uuid);
             
             // 銀行残高
             var bank = await GetBankAsync(uuid);
@@ -93,7 +93,7 @@ public class EstateService(IDbContextFactory<BankDbContext> dbFactory, BankServi
         }
     }
 
-    private async Task<decimal> GetServerLoanOutstandingAsync(string uuid)
+    private async Task<decimal> GetServerLoanBorrowAmountAsync(string uuid)
     {
         var res = await serverLoanService.GetByUuidAsync(uuid);
         return res.StatusCode == 200 ? res.Data?.BorrowAmount ?? 0m : 0m;
