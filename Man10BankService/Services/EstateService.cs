@@ -4,6 +4,7 @@ using Man10BankService.Models.Requests;
 using Man10BankService.Repositories;
 using Microsoft.EntityFrameworkCore;
 
+
 namespace Man10BankService.Services;
 
 public class EstateService(IDbContextFactory<BankDbContext> dbFactory, BankService bankService, ServerLoanService serverLoanService)
@@ -47,8 +48,8 @@ public class EstateService(IDbContextFactory<BankDbContext> dbFactory, BankServi
             var repo = new EstateRepository(dbFactory);
             var current = await repo.GetLatestAsync(uuid);
             
-            // player 推定（UserBank から or 現行 or 空）
-            var player = await GetPlayerAsync(uuid) ?? current?.Player ?? string.Empty;
+            // player 推定
+            var player = await MinecraftProfileService.GetNameByUuidAsync(uuid) ?? current?.Player ?? string.Empty;
 
             // サーバーローンの残債（BorrowAmount が残債）
             var loanOutstanding = await GetServerLoanOutstandingAsync(uuid);
@@ -92,22 +93,15 @@ public class EstateService(IDbContextFactory<BankDbContext> dbFactory, BankServi
         }
     }
 
-    private async Task<string?> GetPlayerAsync(string uuid)
-    {
-        await using var db = await dbFactory.CreateDbContextAsync();
-        var ub = await db.UserBanks.AsNoTracking().FirstOrDefaultAsync(x => x.Uuid == uuid);
-        return ub?.Player;
-    }
-
     private async Task<decimal> GetServerLoanOutstandingAsync(string uuid)
     {
         var res = await serverLoanService.GetByUuidAsync(uuid);
-        return res is { StatusCode: 200, Data: not null } ? res.Data.BorrowAmount : 0m;
+        return res.StatusCode == 200 ? res.Data?.BorrowAmount ?? 0m : 0m;
     }
 
     private async Task<decimal> GetBankAsync(string uuid)
     {
         var res = await bankService.GetBalanceAsync(uuid);
-        return res.StatusCode != 200 ? 0 : res.Data;
+        return res.StatusCode == 200 ? res.Data : 0m;
     }
 }
