@@ -19,7 +19,7 @@ public class ChequesController(ChequeService service) : ControllerBase
     {
         if (!ModelState.IsValid) return ValidationProblem(ModelState);
         var res = await service.CreateAsync(request);
-        return res.StatusCode == 200 ? Ok(res.Data) : this.ToProblem(res);
+        return this.ToActionResult(res);
     }
 
     [HttpGet("{id:int}")]
@@ -30,7 +30,7 @@ public class ChequesController(ChequeService service) : ControllerBase
     public async Task<ActionResult<Cheque>> Get([FromRoute] int id)
     {
         var res = await service.GetAsync(id);
-        return res.StatusCode == 200 ? Ok(res.Data) : this.ToProblem(res);
+        return this.ToActionResult(res);
     }
 
     [HttpPost("{id:int}/use")]
@@ -45,6 +45,6 @@ public class ChequesController(ChequeService service) : ControllerBase
     {
         if (!ModelState.IsValid) return ValidationProblem(ModelState);
         var res = await service.UseAsync(id, request);
-        return res.StatusCode == 200 ? Ok(res.Data) : this.ToProblem(res);
+        return this.ToActionResult(res);
     }
 }

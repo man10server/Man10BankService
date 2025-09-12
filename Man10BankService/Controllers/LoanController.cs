@@ -17,7 +17,7 @@ public class LoanController(LoanService service) : ControllerBase
     public async Task<ActionResult<List<Loan>>> GetByBorrower([FromRoute] string uuid, [FromQuery] int limit = 100, [FromQuery] int offset = 0)
     {
         var res = await service.GetByBorrowerUuidAsync(uuid, limit, offset);
-        return res.StatusCode == 200 ? Ok(res.Data) : this.ToProblem(res);
+        return this.ToActionResult(res);
     }
 
     [HttpPost]
@@ -30,7 +30,7 @@ public class LoanController(LoanService service) : ControllerBase
     {
         if (!ModelState.IsValid) return ValidationProblem(ModelState);
         var res = await service.CreateAsync(request);
-        return res.StatusCode == 200 ? Ok(res.Data) : this.ToProblem(res);
+        return this.ToActionResult(res);
     }
 
     [HttpGet("{id:int}")]
@@ -41,7 +41,7 @@ public class LoanController(LoanService service) : ControllerBase
     public async Task<ActionResult<Loan>> GetById([FromRoute] int id)
     {
         var res = await service.GetByIdAsync(id);
-        return res.StatusCode == 200 ? Ok(res.Data) : this.ToProblem(res);
+        return this.ToActionResult(res);
     }
 
     [HttpPost("{id:int}/repay")] 
@@ -54,7 +54,7 @@ public class LoanController(LoanService service) : ControllerBase
     public async Task<ActionResult<Loan?>> Repay([FromRoute] int id, [FromQuery] string collectorUuid)
     {
         var res = await service.RepayAsync(id, collectorUuid);
-        return res.StatusCode == 200 ? Ok(res.Data) : this.ToProblem(res);
+        return this.ToActionResult(res);
     }
 
     [HttpPost("{id:int}/collateral/release")] 
@@ -66,6 +66,6 @@ public class LoanController(LoanService service) : ControllerBase
     public async Task<ActionResult<Loan?>> ReleaseCollateral([FromRoute] int id, [FromQuery] string borrowerUuid)
     {
         var res = await service.ReleaseCollateralAsync(id, borrowerUuid);
-        return res.StatusCode == 200 ? Ok(res.Data) : this.ToProblem(res);
+        return this.ToActionResult(res);
     }
 }

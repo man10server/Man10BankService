@@ -16,6 +16,6 @@ public class ServerEstateController(ServerEstateService service) : ControllerBas
     public async Task<ActionResult<List<ServerEstateHistory>>> GetHistory([FromQuery] int limit = 100, [FromQuery] int offset = 0)
     {
         var res = await service.GetHistoryAsync(limit, offset);
-        return res.StatusCode == 200 ? Ok(res.Data) : this.ToProblem(res);
+        return this.ToActionResult(res);
     }
 }

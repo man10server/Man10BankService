@@ -17,7 +17,7 @@ public class EstateController(EstateService service) : ControllerBase
     public async Task<ActionResult<Estate>> GetLatest([FromRoute] string uuid)
     {
         var res = await service.GetLatestAsync(uuid);
-        return res.StatusCode == 200 ? Ok(res.Data) : this.ToProblem(res);
+        return this.ToActionResult(res);
     }
 
     [HttpGet("history")]
@@ -28,7 +28,7 @@ public class EstateController(EstateService service) : ControllerBase
     public async Task<ActionResult<List<EstateHistory>>> GetHistory([FromRoute] string uuid, [FromQuery] int limit = 100, [FromQuery] int offset = 0)
     {
         var res = await service.GetHistoryAsync(uuid, limit, offset);
-        return res.StatusCode == 200 ? Ok(res.Data) : this.ToProblem(res);
+        return this.ToActionResult(res);
     }
 
     [HttpPost("snapshot")]
@@ -40,7 +40,7 @@ public class EstateController(EstateService service) : ControllerBase
     public async Task<ActionResult<bool>> UpdateSnapshot([FromRoute] string uuid, [FromBody] EstateUpdateRequest request)
     {
         var res = await service.UpdateSnapshotAsync(uuid, request);
-        return res.StatusCode == 200 ? Ok(res.Data) : this.ToProblem(res);
+        return this.ToActionResult(res);
     }
 
     [HttpGet("~/api/[controller]/ranking")]
@@ -51,6 +51,6 @@ public class EstateController(EstateService service) : ControllerBase
     public async Task<ActionResult<List<Estate>>> GetRanking([FromQuery] int limit = 100, [FromQuery] int offset = 0)
     {
         var res = await service.GetRankingAsync(limit, offset);
-        return res.StatusCode == 200 ? Ok(res.Data) : this.ToProblem(res);
+        return this.ToActionResult(res);
     }
 }
