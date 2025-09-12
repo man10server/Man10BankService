@@ -63,12 +63,13 @@ public class EstateControllerTests
         };
 
         var post = await ctrl.UpdateSnapshot(uuid, req);
-        (post.Result as OkObjectResult).Should().NotBeNull();
-        ((bool)post.Value!).Should().BeTrue();
+        var ok = post.Result.Should().BeOfType<OkObjectResult>().Which;
+        ((bool)ok.Value!).Should().BeTrue();
 
         var get = await ctrl.GetLatest(uuid);
-        (get.Result as OkObjectResult).Should().NotBeNull();
-        var latest = (get.Value as Estate)!;
+        var latest = get.Result
+            .Should().BeOfType<OkObjectResult>().Which.Value
+            .Should().BeOfType<Estate>().Which;
 
         latest.Should().BeEquivalentTo(new
         {
@@ -83,8 +84,9 @@ public class EstateControllerTests
         },options => options.IncludingAllDeclaredProperties());
         
         var histRes = await ctrl.GetHistory(uuid);
-        (histRes.Result as OkObjectResult).Should().NotBeNull();
-        var history = (histRes.Value as List<EstateHistory>)!;
+        var history = histRes.Result
+            .Should().BeOfType<OkObjectResult>().Which.Value
+            .Should().BeOfType<List<EstateHistory>>().Which;
         history.Count.Should().Be(1);
     }
 
@@ -104,26 +106,29 @@ public class EstateControllerTests
         };
 
         var firstUpdate = await ctrl.UpdateSnapshot(uuid, req);
-        (firstUpdate.Result as OkObjectResult).Should().NotBeNull();
-        ((bool)firstUpdate.Value!).Should().BeTrue();
+        var firstOk = firstUpdate.Result.Should().BeOfType<OkObjectResult>().Which;
+        ((bool)firstOk.Value!).Should().BeTrue();
 
         var firstHistory = await ctrl.GetHistory(uuid);
-        (firstHistory.Result as OkObjectResult).Should().NotBeNull();
-        var history1 = (firstHistory.Value as List<EstateHistory>)!;
+        var history1 = firstHistory.Result
+            .Should().BeOfType<OkObjectResult>().Which.Value
+            .Should().BeOfType<List<EstateHistory>>().Which;
         history1.Count.Should().Be(1);
 
         var secondUpdate = await ctrl.UpdateSnapshot(uuid, req);
-        (secondUpdate.Result as OkObjectResult).Should().NotBeNull();
-        ((bool)secondUpdate.Value!).Should().BeFalse();
+        var secondOk = secondUpdate.Result.Should().BeOfType<OkObjectResult>().Which;
+        ((bool)secondOk.Value!).Should().BeFalse();
 
         var secondHistory = await ctrl.GetHistory(uuid);
-        (secondHistory.Result as OkObjectResult).Should().NotBeNull();
-        var history2 = (secondHistory.Value as List<EstateHistory>)!;
+        var history2 = secondHistory.Result
+            .Should().BeOfType<OkObjectResult>().Which.Value
+            .Should().BeOfType<List<EstateHistory>>().Which;
         history2.Count.Should().Be(1);
 
         var latestResult = await ctrl.GetLatest(uuid);
-        (latestResult.Result as OkObjectResult).Should().NotBeNull();
-        var latest = (latestResult.Value as Estate)!;
+        var latest = latestResult.Result
+            .Should().BeOfType<OkObjectResult>().Which.Value
+            .Should().BeOfType<Estate>().Which;
         latest.Should().BeEquivalentTo(new
         {
             Cash = 10m,

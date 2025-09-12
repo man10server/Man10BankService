@@ -69,7 +69,7 @@ public class ServerLoanControllerTests
         const decimal amount = 1000m;
 
         var res = await ctrl.Borrow(uuid, new ServerLoanBorrowBodyRequest { Amount = amount });
-        (res.Result as OkObjectResult).Should().NotBeNull();
+        res.Result.Should().BeOfType<OkObjectResult>();
 
         var loan = await GetLoanAsync(env.DbFactory, uuid);
         loan!.BorrowAmount.Should().Be(amount);
@@ -80,8 +80,9 @@ public class ServerLoanControllerTests
         moneyLogs.First().Should().BeEquivalentTo(new { Amount = amount, Deposit = true, Note = "loan_borrow" });
 
         var loanLogsRes = await ctrl.GetLogs(uuid, limit: 10);
-        (loanLogsRes.Result as OkObjectResult).Should().NotBeNull();
-        var loanLogs = (loanLogsRes.Value as List<ServerLoanLog>)!;
+        var loanLogs = loanLogsRes.Result
+            .Should().BeOfType<OkObjectResult>().Which.Value
+            .Should().BeOfType<List<ServerLoanLog>>().Which;
         loanLogs.Any(l => l is { Action: "Borrow", Amount: amount }).Should().BeTrue();
     }
 
@@ -92,9 +93,8 @@ public class ServerLoanControllerTests
         var ctrl = (ServerLoanController)env.Host.Controller;
         const string uuid = TestConstants.Uuid;
         var limitRes = await ctrl.GetBorrowLimit(uuid);
-        (limitRes.Result as OkObjectResult).Should().NotBeNull();
-        
-        var limit = (decimal)limitRes.Value!;
+        var limit = (decimal)limitRes.Result
+            .Should().BeOfType<OkObjectResult>().Which.Value!;
         var res = await ctrl.Borrow(uuid, new ServerLoanBorrowBodyRequest { Amount = limit * 2 });
         res.Result.Should().BeOfType<ConflictObjectResult>();
     }
@@ -105,8 +105,10 @@ public class ServerLoanControllerTests
         using var env = BuildController();
         var ctrl = (ServerLoanController)env.Host.Controller;
         const string uuid = TestConstants.Uuid;
-        (await ctrl.Borrow(uuid, new ServerLoanBorrowBodyRequest { Amount = 400m }) as ObjectResult)!.StatusCode.Should().Be(200);
-        (await ctrl.Borrow(uuid, new ServerLoanBorrowBodyRequest { Amount = 500m }) as ObjectResult)!.StatusCode.Should().Be(200);
+        var b1 = await ctrl.Borrow(uuid, new ServerLoanBorrowBodyRequest { Amount = 400m });
+        b1.Result.Should().BeOfType<OkObjectResult>();
+        var b2 = await ctrl.Borrow(uuid, new ServerLoanBorrowBodyRequest { Amount = 500m });
+        b2.Result.Should().BeOfType<OkObjectResult>();
 
         var loan = await GetLoanAsync(env.DbFactory, uuid);
         loan!.BorrowAmount.Should().Be(900m);
@@ -116,8 +118,9 @@ public class ServerLoanControllerTests
         moneyLogs.Where(l => l.Note == "loan_borrow").Sum(l => l.Amount).Should().Be(900m);
 
         var loanLogsRes = await ctrl.GetLogs(uuid, limit: 10);
-        (loanLogsRes.Result as OkObjectResult).Should().NotBeNull();
-        var loanLogs = (loanLogsRes.Value as List<ServerLoanLog>)!;
+        var loanLogs = loanLogsRes.Result
+            .Should().BeOfType<OkObjectResult>().Which.Value
+            .Should().BeOfType<List<ServerLoanLog>>().Which;
         loanLogs.Count(l => l.Action == "Borrow").Should().Be(2);
         loanLogs.Where(l => l.Action == "Borrow").Sum(l => l.Amount).Should().Be(900m);
     }
@@ -130,14 +133,14 @@ public class ServerLoanControllerTests
         const string uuid = TestConstants.Uuid;
 
         var limitRes = await ctrl.GetBorrowLimit(uuid);
-        (limitRes.Result as OkObjectResult).Should().NotBeNull();
-        var limit = (decimal)limitRes.Value!;
+        var limit = (decimal)limitRes.Result
+            .Should().BeOfType<OkObjectResult>().Which.Value!;
 
         var first = limit / 2m;
         var second = limit * 2m;
 
-        (await ctrl.Borrow(uuid, new ServerLoanBorrowBodyRequest { Amount = first }) as ObjectResult)!
-            .StatusCode.Should().Be(200);
+        var firstRes = await ctrl.Borrow(uuid, new ServerLoanBorrowBodyRequest { Amount = first });
+        firstRes.Result.Should().BeOfType<OkObjectResult>();
 
         var afterFirst = await GetLoanAsync(env.DbFactory, uuid);
         afterFirst!.BorrowAmount.Should().Be(first);
@@ -155,7 +158,8 @@ public class ServerLoanControllerTests
         using var env = BuildController();
         var ctrl = (ServerLoanController)env.Host.Controller;
         const string uuid = TestConstants.Uuid;
-        (await ctrl.Borrow(uuid, new ServerLoanBorrowBodyRequest { Amount = 500m }) as ObjectResult)!.StatusCode.Should().Be(200);
+        var borrowOk = await ctrl.Borrow(uuid, new ServerLoanBorrowBodyRequest { Amount = 500m });
+        borrowOk.Result.Should().BeOfType<OkObjectResult>();
 
         await env.Bank.WithdrawAsync(new WithdrawRequest
         {
@@ -174,8 +178,9 @@ public class ServerLoanControllerTests
         moneyLogs.First().Note.Should().NotBe("loan_repay");
 
         var loanLogRes = await ctrl.GetLogs(uuid, limit: 10);
-        (loanLogRes.Result as OkObjectResult).Should().NotBeNull();
-        var loanLogs = (loanLogRes.Value as List<ServerLoanLog>)!;
+        var loanLogs = loanLogRes.Result
+            .Should().BeOfType<OkObjectResult>().Which.Value
+            .Should().BeOfType<List<ServerLoanLog>>().Which;
         loanLogs.Any(l => l.Action == "RepayFailure").Should().BeTrue();
     }
 
@@ -192,7 +197,7 @@ public class ServerLoanControllerTests
         const decimal repayAmount = 6000m;
         var expectedRepayAmount = Math.Min(before!.BorrowAmount, repayAmount);
         var repayRes = await ctrl.Repay(uuid, amount: repayAmount);
-        (repayRes.Result as OkObjectResult).Should().NotBeNull();
+        repayRes.Result.Should().BeOfType<OkObjectResult>();
 
         var after = await GetLoanAsync(env.DbFactory, uuid);
         after!.BorrowAmount.Should().Be(before.BorrowAmount - expectedRepayAmount);
@@ -201,8 +206,9 @@ public class ServerLoanControllerTests
         moneyLogs.First().Should().BeEquivalentTo(new { Amount = -expectedRepayAmount, Deposit = false, Note = "loan_repay" });
 
         var loanLogRes = await ctrl.GetLogs(uuid, limit: 10);
-        (loanLogRes.Result as OkObjectResult).Should().NotBeNull();
-        var loanLogs = (loanLogRes.Value as List<ServerLoanLog>)!;
+        var loanLogs = loanLogRes.Result
+            .Should().BeOfType<OkObjectResult>().Which.Value
+            .Should().BeOfType<List<ServerLoanLog>>().Which;
         loanLogs.Any(l => l.Action == "RepaySuccess" && l.Amount == -expectedRepayAmount).Should().BeTrue();
     }
 
@@ -218,7 +224,7 @@ public class ServerLoanControllerTests
 
         var before = await GetLoanAsync(env.DbFactory, uuid);
         var noArg = await ctrl.Repay(uuid, amount: null);
-        (noArg.Result as OkObjectResult).Should().NotBeNull();
+        noArg.Result.Should().BeOfType<OkObjectResult>();
 
         var after = await GetLoanAsync(env.DbFactory, uuid);
         var used1 = before!.BorrowAmount - after!.BorrowAmount;
@@ -226,14 +232,15 @@ public class ServerLoanControllerTests
 
         var remain = after.BorrowAmount;
         var overRes = await ctrl.Repay(uuid, amount: remain + 9999m);
-        (overRes.Result as OkObjectResult).Should().NotBeNull();
+        overRes.Result.Should().BeOfType<OkObjectResult>();
 
         var final = await GetLoanAsync(env.DbFactory, uuid);
         final!.BorrowAmount.Should().Be(0);
 
         var loanLogRes2 = await ctrl.GetLogs(uuid, limit: 20);
-        (loanLogRes2.Result as OkObjectResult).Should().NotBeNull();
-        var loanLogs = (loanLogRes2.Value as List<ServerLoanLog>)!;
+        var loanLogs = loanLogRes2.Result
+            .Should().BeOfType<OkObjectResult>().Which.Value
+            .Should().BeOfType<List<ServerLoanLog>>().Which;
         loanLogs.Any(l => l.Action == "RepaySuccess" && l.Amount == -used1).Should().BeTrue();
         loanLogs.Any(l => l.Action == "RepaySuccess" && l.Amount == -remain).Should().BeTrue();
     }
