@@ -17,8 +17,7 @@ public class ServerLoanController(ServerLoanService service) : ControllerBase
     public async Task<ActionResult<ServerLoan>> GetByUuid([FromRoute] string uuid)
     {
         var res = await service.GetByUuidAsync(uuid);
-        if (res.StatusCode == 200) return Ok(res.Data);
-        return ToProblem(res);
+        return res.StatusCode == 200 ? Ok(res.Data) : this.ToProblem(res);
     }
 
     [HttpPost("borrow")]
@@ -32,8 +31,7 @@ public class ServerLoanController(ServerLoanService service) : ControllerBase
     {
         if (!ModelState.IsValid) return ValidationProblem(ModelState);
         var res = await service.BorrowAsync(uuid, request.Amount);
-        if (res.StatusCode == 200) return Ok(res.Data);
-        return ToProblem(res);
+        return res.StatusCode == 200 ? Ok(res.Data) : this.ToProblem(res);
     }
 
     [HttpPost("repay")]
@@ -46,8 +44,7 @@ public class ServerLoanController(ServerLoanService service) : ControllerBase
     public async Task<ActionResult<ServerLoan?>> Repay([FromRoute] string uuid, [FromQuery] decimal? amount)
     {
         var res = await service.RepayAsync(uuid, amount);
-        if (res.StatusCode == 200) return Ok(res.Data);
-        return ToProblem(res);
+        return res.StatusCode == 200 ? Ok(res.Data) : this.ToProblem(res);
     }
 
     [HttpPost("payment-amount")]
@@ -59,8 +56,7 @@ public class ServerLoanController(ServerLoanService service) : ControllerBase
     public async Task<ActionResult<ServerLoan?>> SetPaymentAmount([FromRoute] string uuid, [FromQuery] decimal paymentAmount)
     {
         var res = await service.SetPaymentAmountAsync(uuid, paymentAmount);
-        if (res.StatusCode == 200) return Ok(res.Data);
-        return ToProblem(res);
+        return res.StatusCode == 200 ? Ok(res.Data) : this.ToProblem(res);
     }
 
     [HttpGet("borrow-limit")]
@@ -70,8 +66,7 @@ public class ServerLoanController(ServerLoanService service) : ControllerBase
     public async Task<ActionResult<decimal>> GetBorrowLimit([FromRoute] string uuid)
     {
         var res = await service.CalculateBorrowLimitAsync(uuid);
-        if (res.StatusCode == 200) return Ok(res.Data);
-        return ToProblem(res);
+        return res.StatusCode == 200 ? Ok(res.Data) : this.ToProblem(res);
     }
 
     [HttpGet("logs")]
@@ -82,14 +77,6 @@ public class ServerLoanController(ServerLoanService service) : ControllerBase
     public async Task<ActionResult<List<ServerLoanLog>>> GetLogs([FromRoute] string uuid, [FromQuery] int limit = 100, [FromQuery] int offset = 0)
     {
         var res = await service.GetLogsAsync(uuid, limit, offset);
-        if (res.StatusCode == 200) return Ok(res.Data);
-        return ToProblem(res);
-    }
-
-    private ActionResult ToProblem<T>(ApiResult<T> res)
-    {
-        var pd = new ProblemDetails { Title = res.Code.ToString(), Status = res.StatusCode };
-        pd.Extensions["code"] = res.Code.ToString();
-        return StatusCode(res.StatusCode, pd);
+        return res.StatusCode == 200 ? Ok(res.Data) : this.ToProblem(res);
     }
 }

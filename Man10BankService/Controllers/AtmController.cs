@@ -17,8 +17,7 @@ public class AtmController(AtmService service) : ControllerBase
     public async Task<ActionResult<List<AtmLog>>> GetLogs([FromRoute] string uuid, [FromQuery] int limit = 100, [FromQuery] int offset = 0)
     {
         var res = await service.GetLogsAsync(uuid, limit, offset);
-        if (res.StatusCode == 200) return Ok(res.Data);
-        return ToProblem(res);
+        return res.StatusCode == 200 ? Ok(res.Data) : this.ToProblem(res);
     }
 
     [HttpPost("logs")]
@@ -31,18 +30,6 @@ public class AtmController(AtmService service) : ControllerBase
     {
         if (!ModelState.IsValid) return ValidationProblem(ModelState);
         var res = await service.AddLogAsync(request);
-        if (res.StatusCode == 200) return Ok(res.Data);
-        return ToProblem(res);
-    }
-
-    private ActionResult ToProblem<T>(ApiResult<T> res)
-    {
-        var pd = new ProblemDetails
-        {
-            Title = res.Code.ToString(),
-            Status = res.StatusCode,
-        };
-        pd.Extensions["code"] = res.Code.ToString();
-        return StatusCode(res.StatusCode, pd);
+        return res.StatusCode == 200 ? Ok(res.Data) : this.ToProblem(res);
     }
 }

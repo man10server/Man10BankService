@@ -8,7 +8,7 @@ namespace Man10BankService.Controllers;
 [Route("api/[controller]")]
 public class HealthController(IDbContextFactory<BankDbContext> dbFactory) : ControllerBase
 {
-    private sealed record HealthPayload(
+    public sealed record HealthPayload(
         string Service,
         DateTime ServerTimeUtc,
         DateTime StartedAtUtc,

@@ -16,8 +16,7 @@ public class BankController(BankService service) : ControllerBase
     public async Task<ActionResult<decimal>> GetBalance([FromRoute] string uuid)
     {
         var res = await service.GetBalanceAsync(uuid);
-        if (res.StatusCode == 200) return Ok(res.Data);
-        return ToProblem(res);
+        return res.StatusCode == 200 ? Ok(res.Data) : this.ToProblem(res);
     }
 
     [HttpGet("{uuid}/logs")]
@@ -28,8 +27,7 @@ public class BankController(BankService service) : ControllerBase
     public async Task<ActionResult<List<MoneyLog>>> GetLogs([FromRoute] string uuid, [FromQuery] int limit = 100, [FromQuery] int offset = 0)
     {
         var res = await service.GetLogsAsync(uuid, limit, offset);
-        if (res.StatusCode == 200) return Ok(res.Data);
-        return ToProblem(res);
+        return res.StatusCode == 200 ? Ok(res.Data) : this.ToProblem(res);
     }
 
     [HttpPost("deposit")]
@@ -42,8 +40,7 @@ public class BankController(BankService service) : ControllerBase
     {
         if (!ModelState.IsValid) return ValidationProblem(ModelState);
         var res = await service.DepositAsync(request);
-        if (res.StatusCode == 200) return Ok(res.Data);
-        return ToProblem(res);
+        return res.StatusCode == 200 ? Ok(res.Data) : this.ToProblem(res);
     }
 
     [HttpPost("withdraw")]
@@ -57,14 +54,6 @@ public class BankController(BankService service) : ControllerBase
     {
         if (!ModelState.IsValid) return ValidationProblem(ModelState);
         var res = await service.WithdrawAsync(request);
-        if (res.StatusCode == 200) return Ok(res.Data);
-        return ToProblem(res);
-    }
-
-    private ActionResult ToProblem<T>(ApiResult<T> res)
-    {
-        var pd = new ProblemDetails { Title = res.Code.ToString(), Status = res.StatusCode };
-        pd.Extensions["code"] = res.Code.ToString();
-        return StatusCode(res.StatusCode, pd);
+        return res.StatusCode == 200 ? Ok(res.Data) : this.ToProblem(res);
     }
 }

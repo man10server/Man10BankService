@@ -17,8 +17,7 @@ public class LoanController(LoanService service) : ControllerBase
     public async Task<ActionResult<List<Loan>>> GetByBorrower([FromRoute] string uuid, [FromQuery] int limit = 100, [FromQuery] int offset = 0)
     {
         var res = await service.GetByBorrowerUuidAsync(uuid, limit, offset);
-        if (res.StatusCode == 200) return Ok(res.Data);
-        return ToProblem(res);
+        return res.StatusCode == 200 ? Ok(res.Data) : this.ToProblem(res);
     }
 
     [HttpPost]
@@ -31,8 +30,7 @@ public class LoanController(LoanService service) : ControllerBase
     {
         if (!ModelState.IsValid) return ValidationProblem(ModelState);
         var res = await service.CreateAsync(request);
-        if (res.StatusCode == 200) return Ok(res.Data);
-        return ToProblem(res);
+        return res.StatusCode == 200 ? Ok(res.Data) : this.ToProblem(res);
     }
 
     [HttpGet("{id:int}")]
@@ -43,8 +41,7 @@ public class LoanController(LoanService service) : ControllerBase
     public async Task<ActionResult<Loan>> GetById([FromRoute] int id)
     {
         var res = await service.GetByIdAsync(id);
-        if (res.StatusCode == 200) return Ok(res.Data);
-        return ToProblem(res);
+        return res.StatusCode == 200 ? Ok(res.Data) : this.ToProblem(res);
     }
 
     [HttpPost("{id:int}/repay")] 
@@ -56,11 +53,8 @@ public class LoanController(LoanService service) : ControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<Loan?>> Repay([FromRoute] int id, [FromQuery] string collectorUuid)
     {
-        if (string.IsNullOrWhiteSpace(collectorUuid))
-            return ValidationProblem(new() { Title = "collectorUuid を指定してください。" });
         var res = await service.RepayAsync(id, collectorUuid);
-        if (res.StatusCode == 200) return Ok(res.Data);
-        return ToProblem(res);
+        return res.StatusCode == 200 ? Ok(res.Data) : this.ToProblem(res);
     }
 
     [HttpPost("{id:int}/collateral/release")] 
@@ -71,17 +65,7 @@ public class LoanController(LoanService service) : ControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<Loan?>> ReleaseCollateral([FromRoute] int id, [FromQuery] string borrowerUuid)
     {
-        if (string.IsNullOrWhiteSpace(borrowerUuid))
-            return ValidationProblem(new() { Title = "borrowerUuid を指定してください。" });
         var res = await service.ReleaseCollateralAsync(id, borrowerUuid);
-        if (res.StatusCode == 200) return Ok(res.Data);
-        return ToProblem(res);
-    }
-
-    private ActionResult ToProblem<T>(ApiResult<T> res)
-    {
-        var pd = new ProblemDetails { Title = res.Code.ToString(), Status = res.StatusCode };
-        pd.Extensions["code"] = res.Code.ToString();
-        return StatusCode(res.StatusCode, pd);
+        return res.StatusCode == 200 ? Ok(res.Data) : this.ToProblem(res);
     }
 }

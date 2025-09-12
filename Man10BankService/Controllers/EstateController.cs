@@ -17,8 +17,7 @@ public class EstateController(EstateService service) : ControllerBase
     public async Task<ActionResult<Estate>> GetLatest([FromRoute] string uuid)
     {
         var res = await service.GetLatestAsync(uuid);
-        if (res.StatusCode == 200) return Ok(res.Data);
-        return ToProblem(res);
+        return res.StatusCode == 200 ? Ok(res.Data) : this.ToProblem(res);
     }
 
     [HttpGet("history")]
@@ -29,8 +28,7 @@ public class EstateController(EstateService service) : ControllerBase
     public async Task<ActionResult<List<EstateHistory>>> GetHistory([FromRoute] string uuid, [FromQuery] int limit = 100, [FromQuery] int offset = 0)
     {
         var res = await service.GetHistoryAsync(uuid, limit, offset);
-        if (res.StatusCode == 200) return Ok(res.Data);
-        return ToProblem(res);
+        return res.StatusCode == 200 ? Ok(res.Data) : this.ToProblem(res);
     }
 
     [HttpPost("snapshot")]
@@ -42,8 +40,7 @@ public class EstateController(EstateService service) : ControllerBase
     public async Task<ActionResult<bool>> UpdateSnapshot([FromRoute] string uuid, [FromBody] EstateUpdateRequest request)
     {
         var res = await service.UpdateSnapshotAsync(uuid, request);
-        if (res.StatusCode == 200) return Ok(res.Data);
-        return ToProblem(res);
+        return res.StatusCode == 200 ? Ok(res.Data) : this.ToProblem(res);
     }
 
     [HttpGet("~/api/[controller]/ranking")]
@@ -54,14 +51,6 @@ public class EstateController(EstateService service) : ControllerBase
     public async Task<ActionResult<List<Estate>>> GetRanking([FromQuery] int limit = 100, [FromQuery] int offset = 0)
     {
         var res = await service.GetRankingAsync(limit, offset);
-        if (res.StatusCode == 200) return Ok(res.Data);
-        return ToProblem(res);
-    }
-
-    private ActionResult ToProblem<T>(ApiResult<T> res)
-    {
-        var pd = new ProblemDetails { Title = res.Code.ToString(), Status = res.StatusCode };
-        pd.Extensions["code"] = res.Code.ToString();
-        return StatusCode(res.StatusCode, pd);
+        return res.StatusCode == 200 ? Ok(res.Data) : this.ToProblem(res);
     }
 }
