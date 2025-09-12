@@ -1,5 +1,4 @@
 using Man10BankService.Data;
-using Man10BankService.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -18,7 +17,9 @@ public class HealthController(IDbContextFactory<BankDbContext> dbFactory) : Cont
     );
 
     [HttpGet]
-    public async Task<IActionResult> Get()
+    [Produces("application/json")]
+    [ProducesResponseType(typeof(HealthPayload), StatusCodes.Status200OK)]
+    public async Task<ActionResult<HealthPayload>> Get()
     {
         var nowUtc = DateTime.UtcNow;
         var proc = System.Diagnostics.Process.GetCurrentProcess();
@@ -44,8 +45,6 @@ public class HealthController(IDbContextFactory<BankDbContext> dbFactory) : Cont
             Database: dbOk
         );
 
-        // サービス自体は起動しているため 200 固定。DB可否は payload の Database.Connected を参照。
-        return StatusCode(200, ApiResult<HealthPayload>.Ok(payload));
+        return Ok(payload);
     }
 }
-

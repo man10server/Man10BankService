@@ -1,3 +1,4 @@
+using Man10BankService.Models.Database;
 using Man10BankService.Models.Requests;
 using Man10BankService.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -9,25 +10,51 @@ namespace Man10BankService.Controllers;
 public class ChequesController(ChequeService service) : ControllerBase
 {
     [HttpPost]
-    public async Task<IActionResult> Create([FromBody] ChequeCreateRequest request)
+    [Consumes("application/json")]
+    [Produces("application/json")]
+    [ProducesResponseType(typeof(Cheque), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<Cheque>> Create([FromBody] ChequeCreateRequest request)
     {
         if (!ModelState.IsValid) return ValidationProblem(ModelState);
         var res = await service.CreateAsync(request);
-        return StatusCode(res.StatusCode, res);
+        if (res.StatusCode == 200) return Ok(res.Data);
+        return ToProblem(res);
     }
 
     [HttpGet("{id:int}")]
-    public async Task<IActionResult> Get([FromRoute] int id)
+    [Produces("application/json")]
+    [ProducesResponseType(typeof(Cheque), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<Cheque>> Get([FromRoute] int id)
     {
         var res = await service.GetAsync(id);
-        return StatusCode(res.StatusCode, res);
+        if (res.StatusCode == 200) return Ok(res.Data);
+        return ToProblem(res);
     }
 
     [HttpPost("{id:int}/use")]
-    public async Task<IActionResult> Use([FromRoute] int id, [FromBody] ChequeUseRequest request)
+    [Consumes("application/json")]
+    [Produces("application/json")]
+    [ProducesResponseType(typeof(Cheque), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<Cheque>> Use([FromRoute] int id, [FromBody] ChequeUseRequest request)
     {
         if (!ModelState.IsValid) return ValidationProblem(ModelState);
         var res = await service.UseAsync(id, request);
-        return StatusCode(res.StatusCode, res);
+        if (res.StatusCode == 200) return Ok(res.Data);
+        return ToProblem(res);
+    }
+
+    private ActionResult ToProblem<T>(ApiResult<T> res)
+    {
+        var pd = new ProblemDetails { Title = res.Code.ToString(), Status = res.StatusCode };
+        pd.Extensions["code"] = res.Code.ToString();
+        return StatusCode(res.StatusCode, pd);
     }
 }

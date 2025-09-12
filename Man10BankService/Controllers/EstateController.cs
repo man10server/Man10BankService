@@ -1,3 +1,4 @@
+using Man10BankService.Models.Database;
 using Man10BankService.Models.Requests;
 using Man10BankService.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -9,30 +10,58 @@ namespace Man10BankService.Controllers;
 public class EstateController(EstateService service) : ControllerBase
 {
     [HttpGet]
-    public async Task<IActionResult> GetLatest([FromRoute] string uuid)
+    [Produces("application/json")]
+    [ProducesResponseType(typeof(Estate), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<Estate>> GetLatest([FromRoute] string uuid)
     {
         var res = await service.GetLatestAsync(uuid);
-        return StatusCode(res.StatusCode, res);
+        if (res.StatusCode == 200) return Ok(res.Data);
+        return ToProblem(res);
     }
 
     [HttpGet("history")]
-    public async Task<IActionResult> GetHistory([FromRoute] string uuid, [FromQuery] int limit = 100, [FromQuery] int offset = 0)
+    [Produces("application/json")]
+    [ProducesResponseType(typeof(List<EstateHistory>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<List<EstateHistory>>> GetHistory([FromRoute] string uuid, [FromQuery] int limit = 100, [FromQuery] int offset = 0)
     {
         var res = await service.GetHistoryAsync(uuid, limit, offset);
-        return StatusCode(res.StatusCode, res);
+        if (res.StatusCode == 200) return Ok(res.Data);
+        return ToProblem(res);
     }
 
     [HttpPost("snapshot")]
-    public async Task<IActionResult> UpdateSnapshot([FromRoute] string uuid, [FromBody] EstateUpdateRequest request)
+    [Consumes("application/json")]
+    [Produces("application/json")]
+    [ProducesResponseType(typeof(bool), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<bool>> UpdateSnapshot([FromRoute] string uuid, [FromBody] EstateUpdateRequest request)
     {
         var res = await service.UpdateSnapshotAsync(uuid, request);
-        return StatusCode(res.StatusCode, res);
+        if (res.StatusCode == 200) return Ok(res.Data);
+        return ToProblem(res);
     }
 
     [HttpGet("~/api/[controller]/ranking")]
-    public async Task<IActionResult> GetRanking([FromQuery] int limit = 100, [FromQuery] int offset = 0)
+    [Produces("application/json")]
+    [ProducesResponseType(typeof(List<Estate>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<List<Estate>>> GetRanking([FromQuery] int limit = 100, [FromQuery] int offset = 0)
     {
         var res = await service.GetRankingAsync(limit, offset);
-        return StatusCode(res.StatusCode, res);
+        if (res.StatusCode == 200) return Ok(res.Data);
+        return ToProblem(res);
+    }
+
+    private ActionResult ToProblem<T>(ApiResult<T> res)
+    {
+        var pd = new ProblemDetails { Title = res.Code.ToString(), Status = res.StatusCode };
+        pd.Extensions["code"] = res.Code.ToString();
+        return StatusCode(res.StatusCode, pd);
     }
 }

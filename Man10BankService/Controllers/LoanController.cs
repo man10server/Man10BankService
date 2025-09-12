@@ -1,3 +1,4 @@
+using Man10BankService.Models.Database;
 using Man10BankService.Models.Requests;
 using Man10BankService.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -9,42 +10,78 @@ namespace Man10BankService.Controllers;
 public class LoanController(LoanService service) : ControllerBase
 {
     [HttpGet("borrower/{uuid}")]
-    public async Task<IActionResult> GetByBorrower([FromRoute] string uuid, [FromQuery] int limit = 100, [FromQuery] int offset = 0)
+    [Produces("application/json")]
+    [ProducesResponseType(typeof(List<Loan>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<List<Loan>>> GetByBorrower([FromRoute] string uuid, [FromQuery] int limit = 100, [FromQuery] int offset = 0)
     {
         var res = await service.GetByBorrowerUuidAsync(uuid, limit, offset);
-        return StatusCode(res.StatusCode, res);
+        if (res.StatusCode == 200) return Ok(res.Data);
+        return ToProblem(res);
     }
 
     [HttpPost]
-    public async Task<IActionResult> Create([FromBody] LoanCreateRequest request)
+    [Consumes("application/json")]
+    [Produces("application/json")]
+    [ProducesResponseType(typeof(Loan), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<Loan?>> Create([FromBody] LoanCreateRequest request)
     {
         if (!ModelState.IsValid) return ValidationProblem(ModelState);
         var res = await service.CreateAsync(request);
-        return StatusCode(res.StatusCode, res);
+        if (res.StatusCode == 200) return Ok(res.Data);
+        return ToProblem(res);
     }
 
     [HttpGet("{id:int}")]
-    public async Task<IActionResult> GetById([FromRoute] int id)
+    [Produces("application/json")]
+    [ProducesResponseType(typeof(Loan), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<Loan>> GetById([FromRoute] int id)
     {
         var res = await service.GetByIdAsync(id);
-        return StatusCode(res.StatusCode, res);
+        if (res.StatusCode == 200) return Ok(res.Data);
+        return ToProblem(res);
     }
 
     [HttpPost("{id:int}/repay")] 
-    public async Task<IActionResult> Repay([FromRoute] int id, [FromQuery] string collectorUuid)
+    [Produces("application/json")]
+    [ProducesResponseType(typeof(Loan), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<Loan?>> Repay([FromRoute] int id, [FromQuery] string collectorUuid)
     {
         if (string.IsNullOrWhiteSpace(collectorUuid))
-            return BadRequest("collectorUuid を指定してください。");
+            return ValidationProblem(new() { Title = "collectorUuid を指定してください。" });
         var res = await service.RepayAsync(id, collectorUuid);
-        return StatusCode(res.StatusCode, res);
+        if (res.StatusCode == 200) return Ok(res.Data);
+        return ToProblem(res);
     }
 
     [HttpPost("{id:int}/collateral/release")] 
-    public async Task<IActionResult> ReleaseCollateral([FromRoute] int id, [FromQuery] string borrowerUuid)
+    [Produces("application/json")]
+    [ProducesResponseType(typeof(Loan), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<Loan?>> ReleaseCollateral([FromRoute] int id, [FromQuery] string borrowerUuid)
     {
         if (string.IsNullOrWhiteSpace(borrowerUuid))
-            return BadRequest("borrowerUuid を指定してください。");
+            return ValidationProblem(new() { Title = "borrowerUuid を指定してください。" });
         var res = await service.ReleaseCollateralAsync(id, borrowerUuid);
-        return StatusCode(res.StatusCode, res);
+        if (res.StatusCode == 200) return Ok(res.Data);
+        return ToProblem(res);
+    }
+
+    private ActionResult ToProblem<T>(ApiResult<T> res)
+    {
+        var pd = new ProblemDetails { Title = res.Code.ToString(), Status = res.StatusCode };
+        pd.Extensions["code"] = res.Code.ToString();
+        return StatusCode(res.StatusCode, pd);
     }
 }
