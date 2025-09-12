@@ -6,7 +6,21 @@ namespace Man10BankService.Repositories;
 
 public class ServerEstateRepository(IDbContextFactory<BankDbContext> factory)
 {
-    public async Task<ServerEstateHistory> RecordSnapshotAsync(DateTime? hourUtc = null)
+    public async Task<List<ServerEstateHistory>> GetHistoryAsync(int limit = 100, int offset = 0)
+    {
+        limit = Math.Clamp(limit, 1, 1000);
+        if (offset < 0) offset = 0;
+
+        await using var db = await factory.CreateDbContextAsync();
+        return await db.ServerEstateHistories
+            .AsNoTracking()
+            .OrderByDescending(x => x.Date).ThenByDescending(x => x.Id)
+            .Skip(offset)
+            .Take(limit)
+            .ToListAsync();
+    }
+
+    public async Task RecordSnapshotAsync(DateTime? hourUtc = null)
     {
         var nowUtc = hourUtc ?? DateTime.UtcNow;
         var ts = new DateTime(nowUtc.Year, nowUtc.Month, nowUtc.Day, nowUtc.Hour, 0, 0, DateTimeKind.Utc);
@@ -48,7 +62,5 @@ public class ServerEstateRepository(IDbContextFactory<BankDbContext> factory)
 
         await db.ServerEstateHistories.AddAsync(entity);
         await db.SaveChangesAsync();
-        return entity;
     }
 }
-
