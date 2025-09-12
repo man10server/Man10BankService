@@ -68,18 +68,18 @@ public class ChequesControllerTests
             Server = "dev"
         })).StatusCode.Should().Be(200);
 
-        var post = await ctrl.Create(create) as ObjectResult;
-        post!.StatusCode.Should().Be(200);
-        var created = (post.Value as Cheque)!;
+        var post = await ctrl.Create(create);
+        (post.Result as OkObjectResult).Should().NotBeNull();
+        var created = post.Value!;
         created.Id.Should().BeGreaterThan(0);
         created.Uuid.Should().Be(create.Uuid);
         // Player 名は外部解決のためここでは検証しない
         created.Amount.Should().Be(500);
         created.Used.Should().BeFalse();
 
-        var get = await ctrl.Get(created.Id) as ObjectResult;
-        get!.StatusCode.Should().Be(200);
-        var fetched = (get.Value as Cheque)!;
+        var get = await ctrl.Get(created.Id);
+        (get.Result as OkObjectResult).Should().NotBeNull();
+        var fetched = get.Value!;
         fetched.Id.Should().Be(created.Id);
         fetched.Used.Should().BeFalse();
     }
@@ -110,24 +110,24 @@ public class ChequesControllerTests
             Server = "dev"
         })).StatusCode.Should().Be(200);
 
-        var createdRes = await ctrl.Create(create) as ObjectResult;
-        createdRes!.StatusCode.Should().Be(200);
+        var createdRes = await ctrl.Create(create);
+        (createdRes.Result as OkObjectResult).Should().NotBeNull();
         var id = (createdRes.Value as Cheque)!.Id;
 
         // 1回目使用
-        var ok = await ctrl.Use(id, new ChequeUseRequest { Uuid = TestConstants.Uuid }) as ObjectResult;
-        ok!.StatusCode.Should().Be(200);
+        var ok = await ctrl.Use(id, new ChequeUseRequest { Uuid = TestConstants.Uuid });
+        (ok.Result as OkObjectResult).Should().NotBeNull();
         var used = (ok.Value as Cheque)!;
         used.Used.Should().BeTrue();
         // UsePlayer の具体名は外部解決のため省略
 
         // 2回目（別プレイヤー）→ 409
-        var ng = await ctrl.Use(id, new ChequeUseRequest { Uuid = TestConstants.Uuid }) as ObjectResult;
-        ng!.StatusCode.Should().Be(409);
+        var ng = await ctrl.Use(id, new ChequeUseRequest { Uuid = TestConstants.Uuid });
+        ((ng.Result as ObjectResult)!.StatusCode).Should().Be(409);
 
         // 参照
-        var get = await ctrl.Get(id) as ObjectResult;
-        var current = (get!.Value as Cheque)!;
+        var get = await ctrl.Get(id);
+        var current = get!.Value!;
         current.Used.Should().BeTrue();
     }
 
@@ -137,8 +137,8 @@ public class ChequesControllerTests
         using var host = BuildController();
         var ctrl = (ChequesController)host.Controller;
 
-        (await ctrl.Get(999999) as ObjectResult)!.StatusCode.Should().Be(404);
-        (await ctrl.Use(999999, new ChequeUseRequest { Uuid = TestConstants.Uuid }) as ObjectResult)!.StatusCode.Should().Be(404);
+        ((await ctrl.Get(999999)).Result as ObjectResult)!.StatusCode.Should().Be(404);
+        ((await ctrl.Use(999999, new ChequeUseRequest { Uuid = TestConstants.Uuid })).Result as ObjectResult)!.StatusCode.Should().Be(404);
     }
 
     [Fact(DisplayName = "小切手作成: 金額0は400で拒否")]
@@ -153,9 +153,8 @@ public class ChequesControllerTests
             Note = "bad"
         };
         ctrl.TryValidateModel(req).Should().BeFalse();
-        var res = await ctrl.Create(req) as ObjectResult;
-        res.Should().NotBeNull();
-        res!.Value.Should().BeOfType<ValidationProblemDetails>();
+        var res = await ctrl.Create(req);
+        (res.Result as ObjectResult)!.Value.Should().BeOfType<ValidationProblemDetails>();
     }
 
     [Fact(DisplayName = "小切手使用: 並列実行でも先着のみ成功（FIFO直列化）")]
@@ -182,15 +181,15 @@ public class ChequesControllerTests
             DisplayNote = "初期入金",
             Server = "dev"
         })).StatusCode.Should().Be(200);
-        var created = ((await ctrl.Create(create) as ObjectResult)!.Value as Cheque)!;
+        var created = (await ctrl.Create(create)).Value!;
         var id = created.Id;
 
         var players = Enumerable.Range(1, 10).Select(i => (uuid: TestConstants.Uuid, player: $"p{i}" )).ToArray();
         var statuses = new ConcurrentBag<int?>();
         var tasks = players.Select(async p =>
         {
-            var res = await ctrl.Use(id, new ChequeUseRequest { Uuid = p.uuid }) as ObjectResult;
-            statuses.Add(res!.StatusCode);
+            var res = await ctrl.Use(id, new ChequeUseRequest { Uuid = p.uuid });
+            statuses.Add(((res.Result as ObjectResult)!.StatusCode));
         }).ToArray();
 
         await Task.WhenAll(tasks);
@@ -199,7 +198,7 @@ public class ChequesControllerTests
         statuses.Count(s => s == 200).Should().Be(1);
         statuses.Count(s => s == 409).Should().Be(players.Length - 1);
 
-        var state = ((await ctrl.Get(id) as ObjectResult)!.Value as Cheque)!;
+        var state = (await ctrl.Get(id)).Value!;
         state.Used.Should().BeTrue();
         // 使用者名は環境依存のため検証しない
     }

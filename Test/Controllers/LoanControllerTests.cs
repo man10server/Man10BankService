@@ -67,17 +67,17 @@ public class LoanControllerTests
             CollateralItem = string.Empty
         };
 
-        var createRes = await ctrl.Create(createReq) as ObjectResult;
-        createRes!.StatusCode.Should().Be(200);
+        var createRes = await ctrl.Create(createReq);
+        (createRes.Result as OkObjectResult).Should().NotBeNull();
         var created = (createRes.Value as Loan)!;
 
-        var listRes = await ctrl.GetByBorrower(borrowUuid) as ObjectResult;
-        listRes!.StatusCode.Should().Be(200);
+        var listRes = await ctrl.GetByBorrower(borrowUuid);
+        (listRes.Result as OkObjectResult).Should().NotBeNull();
         var list = (listRes.Value as List<Loan>)!;
         list.Any(l => l.Id == created.Id).Should().BeTrue();
 
-        var getRes = await ctrl.GetById(created.Id) as ObjectResult;
-        getRes!.StatusCode.Should().Be(200);
+        var getRes = await ctrl.GetById(created.Id);
+        (getRes.Result as OkObjectResult).Should().NotBeNull();
         var got = (getRes.Value as Loan)!;
         got.Id.Should().Be(created.Id);
         got.Amount.Should().Be(created.Amount);

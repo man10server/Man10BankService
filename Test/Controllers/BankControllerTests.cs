@@ -50,9 +50,9 @@ public class BankControllerTests
         var db = host.Resources.OfType<TestDbFactory>().First();
         db.Connection.Close();
 
-        var res = await ctrl.GetBalance(TestConstants.Uuid) as ObjectResult;
-        res!.StatusCode.Should().Be(500);
-        res.Value.Should().BeOfType<ProblemDetails>();
+        var res = await ctrl.GetBalance(TestConstants.Uuid);
+        ((res.Result as ObjectResult)!.StatusCode).Should().Be(500);
+        (res.Result as ObjectResult)!.Value.Should().BeOfType<ProblemDetails>();
     }
     
     [Fact(DisplayName = "入金成功: 残高が増加しログが記録される")]
@@ -70,15 +70,17 @@ public class BankControllerTests
             Server = "dev"
         };
         ctrl.TryValidateModel(req).Should().BeTrue();
-        var result = await ctrl.Deposit(req) as ObjectResult;
-        result!.StatusCode.Should().Be(200);
+        var result = await ctrl.Deposit(req);
+        (result.Result as OkObjectResult).Should().NotBeNull();
         ((decimal)result.Value!).Should().Be(500m);
 
-        var balRes = await ctrl.GetBalance(req.Uuid) as ObjectResult;
-        ((decimal)balRes!.Value!).Should().Be(500m);
+        var balRes = await ctrl.GetBalance(req.Uuid);
+        (balRes.Result as OkObjectResult).Should().NotBeNull();
+        ((decimal)balRes.Value!).Should().Be(500m);
 
-        var logsRes = await ctrl.GetLogs(req.Uuid, 10) as ObjectResult;
-        var logs = (logsRes!.Value as List<MoneyLog>)!;
+        var logsRes = await ctrl.GetLogs(req.Uuid, 10);
+        (logsRes.Result as OkObjectResult).Should().NotBeNull();
+        var logs = (logsRes.Value as List<MoneyLog>)!;
         logs[0].Should().BeEquivalentTo(new
         {
             Amount = 500m,
@@ -106,15 +108,16 @@ public class BankControllerTests
             Server = "dev"
         };
         ctrl.TryValidateModel(req).Should().BeFalse();
-        var result = await ctrl.Deposit(req) as ObjectResult;
-        result.Should().NotBeNull();
-        result!.Value.Should().BeOfType<ValidationProblemDetails>();
+        var result = await ctrl.Deposit(req);
+        (result.Result as ObjectResult)!.Value.Should().BeOfType<ValidationProblemDetails>();
 
-        var balRes = await ctrl.GetBalance(req.Uuid) as ObjectResult;
-        ((decimal)balRes!.Value!).Should().Be(0m);
+        var balRes = await ctrl.GetBalance(req.Uuid);
+        (balRes.Result as OkObjectResult).Should().NotBeNull();
+        ((decimal)balRes.Value!).Should().Be(0m);
 
-        var logsRes = await ctrl.GetLogs(req.Uuid, 10, 0) as ObjectResult;
-        ((List<MoneyLog>)logsRes!.Value!).Count.Should().Be(0);
+        var logsRes = await ctrl.GetLogs(req.Uuid, 10, 0);
+        (logsRes.Result as OkObjectResult).Should().NotBeNull();
+        ((List<MoneyLog>)logsRes.Value!).Count.Should().Be(0);
     }
 
     [Fact(DisplayName = "入金失敗: 入金は500エラー")]
@@ -138,9 +141,9 @@ public class BankControllerTests
         var db = host.Resources.OfType<TestDbFactory>().First();
         db.Connection.Close();
 
-        var res = await ctrl.Deposit(req) as ObjectResult;
-        res!.StatusCode.Should().Be(500);
-        res.Value.Should().BeOfType<ProblemDetails>();
+        var res = await ctrl.Deposit(req);
+        ((res.Result as ObjectResult)!.StatusCode).Should().Be(500);
+        (res.Result as ObjectResult)!.Value.Should().BeOfType<ProblemDetails>();
     }
     
     [Fact(DisplayName = "出金成功: 残高が減少しログが記録される")]
@@ -169,13 +172,15 @@ public class BankControllerTests
             DisplayNote = "出金1",
             Server = "dev"
         }) as ObjectResult;
-        ok!.StatusCode.Should().Be(200);
+        (ok.Result as OkObjectResult).Should().NotBeNull();
 
-        var balRes = await ctrl.GetBalance(uuid) as ObjectResult;
-        ((decimal)balRes!.Value!).Should().Be(400m);
+        var balRes2 = await ctrl.GetBalance(uuid);
+        (balRes2.Result as OkObjectResult).Should().NotBeNull();
+        ((decimal)balRes2.Value!).Should().Be(400m);
 
-        var logsRes = await ctrl.GetLogs(uuid, 10) as ObjectResult;
-        var logs = (logsRes!.Value as List<MoneyLog>)!;
+        var logsRes2 = await ctrl.GetLogs(uuid, 10);
+        (logsRes2.Result as OkObjectResult).Should().NotBeNull();
+        var logs = (logsRes2.Value as List<MoneyLog>)!;
         logs[0].Should().BeEquivalentTo(new
         {
             Amount = -600m,
@@ -214,9 +219,10 @@ public class BankControllerTests
             DisplayNote = "出金1",
             Server = "dev"
         }) as ObjectResult;
-        ok!.StatusCode.Should().Be(200);
-        var bal1 = await ctrl.GetBalance(uuid) as ObjectResult;
-        ((decimal)bal1!.Value!).Should().Be(400m);
+        (ok.Result as OkObjectResult).Should().NotBeNull();
+        var bal1 = await ctrl.GetBalance(uuid);
+        (bal1.Result as OkObjectResult).Should().NotBeNull();
+        ((decimal)bal1.Value!).Should().Be(400m);
 
         var ng = await ctrl.Withdraw(new WithdrawRequest
         {
@@ -227,10 +233,11 @@ public class BankControllerTests
             DisplayNote = "出金2",
             Server = "dev"
         }) as ObjectResult;
-        ng!.StatusCode.Should().Be(409);
+        ((ng.Result as ObjectResult)!.StatusCode).Should().Be(409);
 
-        var bal2 = await ctrl.GetBalance(uuid) as ObjectResult;
-        ((decimal)bal2!.Value!).Should().Be(400m);
+        var bal2 = await ctrl.GetBalance(uuid);
+        (bal2.Result as OkObjectResult).Should().NotBeNull();
+        ((decimal)bal2.Value!).Should().Be(400m);
     }
 
 
@@ -255,9 +262,9 @@ public class BankControllerTests
         var db = host.Resources.OfType<TestDbFactory>().First();
         db.Connection.Close();
 
-        var res = await ctrl.Withdraw(req) as ObjectResult;
-        res!.StatusCode.Should().Be(500);
-        res.Value.Should().BeOfType<ProblemDetails>();
+        var res2 = await ctrl.Withdraw(req);
+        ((res2.Result as ObjectResult)!.StatusCode).Should().Be(500);
+        (res2.Result as ObjectResult)!.Value.Should().BeOfType<ProblemDetails>();
     }
 
     [Fact(DisplayName = "MoneyLog取得: 100件の入金後に limit/offset で中間10件を取得")]
@@ -352,13 +359,14 @@ public class BankControllerTests
 
         await Task.WhenAll(tasks);
 
-        var get = await ctrl.GetLogs(uuid, limit: 1000) as ObjectResult;
-        get!.StatusCode.Should().Be(200);
+        var get = await ctrl.GetLogs(uuid, limit: 1000);
+        (get.Result as OkObjectResult).Should().NotBeNull();
         var logs = (get.Value as List<MoneyLog>)!;
         var sum = logs.Sum(l => l.Amount);
 
-        var balRes2 = await ctrl.GetBalance(uuid) as ObjectResult;
-        var balance = (decimal)balRes2!.Value!;
+        var balRes3 = await ctrl.GetBalance(uuid);
+        (balRes3.Result as OkObjectResult).Should().NotBeNull();
+        var balance = (decimal)balRes3!.Value!;
         balance.Should().Be(sum);
 
         logs.All(l => l.Amount >= 0m == l.Deposit).Should().BeTrue();

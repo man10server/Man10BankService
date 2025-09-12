@@ -55,17 +55,15 @@ public class AtmControllerTests
         };
         ctrl.TryValidateModel(req).Should().BeTrue();
 
-        var post = await ctrl.AddLog(req) as ObjectResult;
-        post!.StatusCode.Should().Be(200);
-        var created = (post.Value as AtmLog)!;
+        var post = await ctrl.AddLog(req);
+        var created = post.Value!;
         created.Uuid.Should().Be(uuid);
-        // Player 名は外部解決のためここでは検証しない
         created.Amount.Should().Be(700);
         created.Deposit.Should().BeTrue();
 
-        var get = await ctrl.GetLogs(uuid, 10) as ObjectResult;
-        get!.StatusCode.Should().Be(200);
-        var logs = (get.Value as List<AtmLog>)!;
+        var get = await ctrl.GetLogs(uuid, 10);
+        (get.Result as OkObjectResult).Should().NotBeNull();
+        var logs = get.Value!;
         logs.Should().NotBeEmpty();
         logs[0].Should().BeEquivalentTo(new
         {
@@ -90,13 +88,12 @@ public class AtmControllerTests
         };
         ctrl.TryValidateModel(req).Should().BeFalse();
 
-        var post = await ctrl.AddLog(req) as ObjectResult;
-        post.Should().NotBeNull();
-        post!.Value.Should().BeOfType<ValidationProblemDetails>();
+        var post = await ctrl.AddLog(req);
+        (post.Result as ObjectResult)!.Value.Should().BeOfType<ValidationProblemDetails>();
 
-        var get = await ctrl.GetLogs(uuid, 10) as ObjectResult;
-        get!.StatusCode.Should().Be(200);
-        var logs = (get.Value as List<AtmLog>)!;
+        var get = await ctrl.GetLogs(uuid, 10);
+        (get.Result as OkObjectResult).Should().NotBeNull();
+        var logs = get.Value!;
         logs.Should().BeEmpty();
     }
 
@@ -109,9 +106,9 @@ public class AtmControllerTests
         var db = host.Resources.OfType<TestDbFactory>().First();
         db.Connection.Close();
 
-        var res = await ctrl.GetLogs(TestConstants.Uuid, 10) as ObjectResult;
-        res!.StatusCode.Should().Be(500);
-        res.Value.Should().BeOfType<ProblemDetails>();
+        var res = await ctrl.GetLogs(TestConstants.Uuid, 10);
+        ((res.Result as ObjectResult)!.StatusCode).Should().Be(500);
+        (res.Result as ObjectResult)!.Value.Should().BeOfType<ProblemDetails>();
     }
 
     [Fact(DisplayName = "DBダウン時: ATMログ追加は500エラー")]
@@ -131,9 +128,9 @@ public class AtmControllerTests
         var db = host.Resources.OfType<TestDbFactory>().First();
         db.Connection.Close();
 
-        var res = await ctrl.AddLog(req) as ObjectResult;
-        res!.StatusCode.Should().Be(500);
-        res.Value.Should().BeOfType<ProblemDetails>();
+        var res = await ctrl.AddLog(req);
+        ((res.Result as ObjectResult)!.StatusCode).Should().Be(500);
+        (res.Result as ObjectResult)!.Value.Should().BeOfType<ProblemDetails>();
     }
 
     [Fact(DisplayName = "ATMログ取得: 100件投入し limit/offset で中間10件を取得")]
@@ -147,12 +144,12 @@ public class AtmControllerTests
         {
             var req = new AtmLogRequest { Uuid = uuid, Amount = i, Deposit = true };
             ctrl.TryValidateModel(req).Should().BeTrue();
-            var res = await ctrl.AddLog(req) as ObjectResult;
-            res!.StatusCode.Should().Be(200);
+        var res = await ctrl.AddLog(req);
+        (res.Result as OkObjectResult).Should().NotBeNull();
         }
 
-        var get = await ctrl.GetLogs(uuid, limit: 10, offset: 30) as ObjectResult;
-        get!.StatusCode.Should().Be(200);
+        var get = await ctrl.GetLogs(uuid, limit: 10, offset: 30);
+        (get.Result as OkObjectResult).Should().NotBeNull();
         var logs = (get.Value as List<AtmLog>)!;
         logs.Should().HaveCount(10);
         var amounts = logs.Select(x => x.Amount).ToArray();

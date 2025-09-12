@@ -62,12 +62,12 @@ public class EstateControllerTests
             Shop = 50m
         };
 
-        var post = await ctrl.UpdateSnapshot(uuid, req) as ObjectResult;
-        post!.StatusCode.Should().Be(200);
+        var post = await ctrl.UpdateSnapshot(uuid, req);
+        (post.Result as OkObjectResult).Should().NotBeNull();
         ((bool)post.Value!).Should().BeTrue();
 
-        var get = await ctrl.GetLatest(uuid) as ObjectResult;
-        get!.StatusCode.Should().Be(200);
+        var get = await ctrl.GetLatest(uuid);
+        (get.Result as OkObjectResult).Should().NotBeNull();
         var latest = (get.Value as Estate)!;
 
         latest.Should().BeEquivalentTo(new
@@ -82,8 +82,8 @@ public class EstateControllerTests
             Total = 100m + 200m + 300m + 50m
         },options => options.IncludingAllDeclaredProperties());
         
-        var histRes = await ctrl.GetHistory(uuid) as ObjectResult;
-        histRes!.StatusCode.Should().Be(200);
+        var histRes = await ctrl.GetHistory(uuid);
+        (histRes.Result as OkObjectResult).Should().NotBeNull();
         var history = (histRes.Value as List<EstateHistory>)!;
         history.Count.Should().Be(1);
     }
@@ -103,26 +103,26 @@ public class EstateControllerTests
             Shop = 40m
         };
 
-        var firstUpdate = await ctrl.UpdateSnapshot(uuid, req) as ObjectResult;
-        firstUpdate!.StatusCode.Should().Be(200);
+        var firstUpdate = await ctrl.UpdateSnapshot(uuid, req);
+        (firstUpdate.Result as OkObjectResult).Should().NotBeNull();
         ((bool)firstUpdate.Value!).Should().BeTrue();
 
-        var firstHistory = await ctrl.GetHistory(uuid) as ObjectResult;
-        firstHistory!.StatusCode.Should().Be(200);
+        var firstHistory = await ctrl.GetHistory(uuid);
+        (firstHistory.Result as OkObjectResult).Should().NotBeNull();
         var history1 = (firstHistory.Value as List<EstateHistory>)!;
         history1.Count.Should().Be(1);
 
-        var secondUpdate = await ctrl.UpdateSnapshot(uuid, req) as ObjectResult;
-        secondUpdate!.StatusCode.Should().Be(200);
+        var secondUpdate = await ctrl.UpdateSnapshot(uuid, req);
+        (secondUpdate.Result as OkObjectResult).Should().NotBeNull();
         ((bool)secondUpdate.Value!).Should().BeFalse();
 
-        var secondHistory = await ctrl.GetHistory(uuid) as ObjectResult;
-        secondHistory!.StatusCode.Should().Be(200);
+        var secondHistory = await ctrl.GetHistory(uuid);
+        (secondHistory.Result as OkObjectResult).Should().NotBeNull();
         var history2 = (secondHistory.Value as List<EstateHistory>)!;
         history2.Count.Should().Be(1);
 
-        var latestResult = await ctrl.GetLatest(uuid) as ObjectResult;
-        latestResult!.StatusCode.Should().Be(200);
+        var latestResult = await ctrl.GetLatest(uuid);
+        (latestResult.Result as OkObjectResult).Should().NotBeNull();
         var latest = (latestResult.Value as Estate)!;
         latest.Should().BeEquivalentTo(new
         {
