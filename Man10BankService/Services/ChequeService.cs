@@ -20,7 +20,7 @@ public class ChequeService
     {
         _dbFactory = dbFactory;
         _bank = bank;
-        Task.Run(WorkerAsync);
+        Task.Run(WorkerLoopAsync);
     }
 
     public async Task<ApiResult<Cheque>> CreateAsync(ChequeCreateRequest req)
@@ -135,15 +135,6 @@ public class ChequeService
         }
     }
     
-    private async Task WorkerAsync()
-    {
-        await foreach (var job in _queue.Reader.ReadAllAsync())
-        {
-            try { await job(); }
-            catch { /* ジョブ内で完結 */ }
-        }
-    }
-
     private Task<T> Enqueue<T>(Func<Task<T>> work)
     {
         var tcs = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -153,5 +144,14 @@ public class ChequeService
             catch (Exception ex) { tcs.SetException(ex); }
         });
         return tcs.Task;
+    }
+    
+    private async Task WorkerLoopAsync()
+    {
+        await foreach (var job in _queue.Reader.ReadAllAsync())
+        {
+            try { await job(); }
+            catch { /* ジョブ内で完結 */ }
+        }
     }
 }

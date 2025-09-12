@@ -55,7 +55,7 @@ public class BankService
 
     public Task<ApiResult<decimal>> DepositAsync(DepositRequest req)
     {
-        return EnqueueBalanceChange(async () =>
+        return Enqueue(async () =>
         {
             try
             {
@@ -77,7 +77,7 @@ public class BankService
 
     public Task<ApiResult<decimal>> WithdrawAsync(WithdrawRequest req)
     {
-        return EnqueueBalanceChange(async () =>
+        return Enqueue(async () =>
         {
             try
             {
@@ -101,7 +101,7 @@ public class BankService
         });
     }
 
-    private Task<ApiResult<decimal>> EnqueueBalanceChange(Func<Task<ApiResult<decimal>>> work)
+    private Task<ApiResult<decimal>> Enqueue(Func<Task<ApiResult<decimal>>> work)
     {
         var tcs = new TaskCompletionSource<ApiResult<decimal>>(TaskCreationOptions.RunContinuationsAsynchronously);
         _txChannel.Writer.TryWrite(new TxWorkItem(work, tcs));
