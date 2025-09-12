@@ -14,9 +14,7 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
         {
             var repo = new LoanRepository(dbFactory);
             var loan = await repo.GetByIdAsync(id);
-            if (loan == null)
-                return ApiResult<Loan>.NotFound(ErrorCode.LoanNotFound);
-            return ApiResult<Loan>.Ok(loan);
+            return loan == null ? ApiResult<Loan>.NotFound(ErrorCode.LoanNotFound) : ApiResult<Loan>.Ok(loan);
         }
         catch (Exception)
         {
@@ -128,7 +126,7 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
                 return ApiResult<Loan?>.NotFound(ErrorCode.LoanNotFound);
             
             if (loan.PaybackDate > DateTime.UtcNow)
-                return ApiResult<Loan?>.BadRequest(ErrorCode.ValidationError);
+                return ApiResult<Loan?>.Conflict(ErrorCode.BeforePaybackDate);
 
             if (string.IsNullOrWhiteSpace(loan.CollateralItem))
                 return await RepayWithoutCollateralAsync(loan, collectorUuid);
@@ -168,7 +166,7 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
             Server = "system"
         });
         if (w.StatusCode != 200)
-            return new ApiResult<Loan?>(w.StatusCode, w.Code);
+            return ApiResult<Loan?>.Conflict(ErrorCode.InsufficientFunds);
 
         try
         {
@@ -186,9 +184,7 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
                 Server = "system"
             });
 
-            if (deposit.StatusCode != 200) throw new Exception("collector_deposit_failed");
-            
-            return ApiResult<Loan?>.Ok(updated);
+            return deposit.StatusCode == 200 ? ApiResult<Loan?>.Ok(updated) : ApiResult<Loan?>.Error(ErrorCode.UnexpectedError);
         }
         catch (Exception)
         {
@@ -228,9 +224,7 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
         {
             var repo = new LoanRepository(dbFactory);
             var afterCollateral = await repo.ClearDebtAndCollectCollateralAsync(loan.Id);
-            if (afterCollateral == null)
-                return ApiResult<Loan?>.Error(ErrorCode.UnexpectedError);
-            return ApiResult<Loan?>.Ok(afterCollateral, ErrorCode.Conflict);
+            return afterCollateral == null ? ApiResult<Loan?>.Error(ErrorCode.UnexpectedError) : ApiResult<Loan?>.Ok(afterCollateral, ErrorCode.Conflict);
         }
 
         // その他のエラーはそのまま返す

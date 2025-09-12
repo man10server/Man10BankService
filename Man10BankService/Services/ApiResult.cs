@@ -23,7 +23,8 @@ public enum ErrorCode
     PaymentAmountNotSet,
     PaymentAmountZero,
     InterestStopped,
-    InterestZero
+    InterestZero,
+    BeforePaybackDate
 }
 
 public sealed record ApiResult<T>(int StatusCode, ErrorCode Code = ErrorCode.None, T? Data = default)

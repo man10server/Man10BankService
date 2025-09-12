@@ -110,7 +110,7 @@ public class LoanControllerTests
             .Should().BeOfType<Loan>().Which;
 
         var repay = await ctrl.Repay(loan.Id, collectorUuid: lendUuid);
-        repay.Result.Should().BeOfType<BadRequestObjectResult>();
+        repay.Result.Should().BeOfType<ConflictObjectResult>();
         var after = await GetLoanAsync(env.DbFactory, loan.Id);
         after!.Amount.Should().Be(1000m);
     }
@@ -144,7 +144,7 @@ public class LoanControllerTests
         after!.Amount.Should().Be(0m);
     }
 
-    [Fact(DisplayName = "loan: 担保なし 所持金なしは回収不可(400)")]
+    [Fact(DisplayName = "loan: 担保なし 所持金なしは回収不可")]
     public async Task Repay_NoCollateral_NoBalance_BadRequest()
     {
         using var env = BuildController();
@@ -171,7 +171,7 @@ public class LoanControllerTests
             await env.Bank.WithdrawAsync(new WithdrawRequest { Uuid = borrowUuid, Amount = bal.Data, PluginName = "test", Note = "zero", DisplayNote = "zero", Server = "dev" });
         }
         var repay = await ctrl.Repay(loan.Id, collectorUuid: lendUuid);
-        repay.Result.Should().BeOfType<BadRequestObjectResult>();
+        repay.Result.Should().BeOfType<ConflictObjectResult>();
     }
 
     [Fact(DisplayName = "loan: 担保あり 所持金十分は全額回収(担保は残る)")]
