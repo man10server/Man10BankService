@@ -11,30 +11,60 @@
 FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
 WORKDIR /src
 
+ARG TARGETARCH
+
 # 依存復元（レイヤキャッシュ最適化のため .csproj のみ先にコピー）
 COPY Man10BankService/Man10BankService.csproj Man10BankService/
-RUN dotnet restore Man10BankService/Man10BankService.csproj
 
-# 残りのソースをコピーして発行
+# TARGETARCHに応じたRIDをでrestore実行
+RUN set -eux; \
+  case "${TARGETARCH:-amd64}" in \
+    amd64) RID=linux-x64 ;; \
+    arm64) RID=linux-arm64 ;; \
+    *) echo "Unsupported TARGETARCH=${TARGETARCH}"; exit 1 ;; \
+  esac; \
+  dotnet restore Man10BankService/Man10BankService.csproj -r "$RID"
+
+# 残りのソースをコピー
 COPY . .
-RUN dotnet publish Man10BankService/Man10BankService.csproj -c Release -o /app/out
+
+# 単一バイナリ発行
+RUN set -eux; \
+  case "${TARGETARCH:-amd64}" in \
+    amd64) RID=linux-x64 ;; \
+    arm64) RID=linux-arm64 ;; \
+    *) echo "Unsupported TARGETARCH=${TARGETARCH}"; exit 1 ;; \
+  esac; \
+  dotnet publish Man10BankService/Man10BankService.csproj \
+    -c Release \
+    -r "$RID" \
+    -p:PublishSingleFile=true \
+    -p:SelfContained=true \
+    -p:EnableCompressionInSingleFile=true \
+    -p:DebugType=None \
+    -p:StripSymbols=true \
+    -o /app/out
+
+###############################################
+# Getting libicu stage
+###############################################
+FROM mcr.microsoft.com/dotnet/runtime-deps:9.0 AS icu
 
 ###############################################
 # Runtime stage
 ###############################################
-FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS final
+FROM gcr.io/distroless/cc-debian12:nonroot AS final
 WORKDIR /app
 
 # Kestrel を 8080 で待ち受け
 ENV ASPNETCORE_URLS=http://0.0.0.0:8080
 EXPOSE 8080
 
-# appsettings の上書き例（必要に応じて docker run -e で指定）
-# 例: -e "Database__Host=db" -e "Database__User=app"
+# libicu をコピー
+COPY --from=icu /usr/lib/*-linux-gnu/libicu*.so.* /usr/lib/
 
-# 発行成果物をコピー
-COPY --from=build /app/out .
+# ビルド成果物をコピー
+COPY --from=build /app/out/Man10BankService /app/Man10BankService
 
 # 実行
-ENTRYPOINT ["dotnet", "Man10BankService.dll"]
-
+ENTRYPOINT ["/app/Man10BankService"]
