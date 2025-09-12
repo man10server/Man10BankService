@@ -4,14 +4,12 @@ using Man10BankService.Models.Requests;
 using Man10BankService.Repositories;
 using Man10BankService.Data;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Man10BankService.Services;
 
 public class BankService
 {
     private readonly IDbContextFactory<BankDbContext> _dbFactory;
-    private readonly IServiceProvider? _services;
     private readonly Channel<TxWorkItem> _txChannel = Channel.CreateUnbounded<TxWorkItem>(
         new UnboundedChannelOptions { SingleReader = true, SingleWriter = false });
     
@@ -20,14 +18,6 @@ public class BankService
     public BankService(IDbContextFactory<BankDbContext> dbFactory)
     {
         _dbFactory = dbFactory;
-        Task.Run(WorkerLoopAsync);
-    }
-
-    // For DI: allow resolving EstateService lazily without constructor cycle
-    public BankService(IDbContextFactory<BankDbContext> dbFactory, IServiceProvider services)
-    {
-        _dbFactory = dbFactory;
-        _services = services;
         Task.Run(WorkerLoopAsync);
     }
 
@@ -72,16 +62,6 @@ public class BankService
                 var repo = new BankRepository(_dbFactory);
                 var player = await MinecraftProfileService.GetNameByUuidAsync(req.Uuid) ?? string.Empty;
                 var bal = await repo.ChangeBalanceAsync(req.Uuid, player, req.Amount, req.PluginName, req.Note, req.DisplayNote, req.Server);
-                // Update estate snapshot after successful deposit
-                try
-                {
-                    var estate = _services?.GetService<EstateService>();
-                    if (estate != null)
-                    {
-                        await estate.UpdateSnapshotAsync(req.Uuid, new EstateUpdateRequest());
-                    }
-                }
-                catch { /* ignore snapshot errors */ }
                 return ApiResult<decimal>.Ok(bal);
             }
             catch (ArgumentException)
@@ -108,16 +88,6 @@ public class BankService
 
                 var player = await MinecraftProfileService.GetNameByUuidAsync(req.Uuid) ?? string.Empty;
                 var bal = await repo.ChangeBalanceAsync(req.Uuid, player, -req.Amount, req.PluginName, req.Note, req.DisplayNote, req.Server);
-                // Update estate snapshot after successful withdrawal
-                try
-                {
-                    var estate = _services?.GetService<EstateService>();
-                    if (estate != null)
-                    {
-                        await estate.UpdateSnapshotAsync(req.Uuid, new EstateUpdateRequest());
-                    }
-                }
-                catch { /* ignore snapshot errors */ }
                 return ApiResult<decimal>.Ok(bal);
             }
             catch (ArgumentException)
