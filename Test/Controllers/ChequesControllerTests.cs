@@ -123,7 +123,7 @@ public class ChequesControllerTests
 
         // 2回目（別プレイヤー）→ 409
         var ng = await ctrl.Use(id, new ChequeUseRequest { Uuid = TestConstants.Uuid });
-        ((ng.Result as ObjectResult)!.StatusCode).Should().Be(409);
+        ng.Result.Should().BeOfType<ConflictObjectResult>();
 
         // 参照
         var get = await ctrl.Get(id);
@@ -137,8 +137,8 @@ public class ChequesControllerTests
         using var host = BuildController();
         var ctrl = (ChequesController)host.Controller;
 
-        ((await ctrl.Get(999999)).Result as ObjectResult)!.StatusCode.Should().Be(404);
-        ((await ctrl.Use(999999, new ChequeUseRequest { Uuid = TestConstants.Uuid })).Result as ObjectResult)!.StatusCode.Should().Be(404);
+        (await ctrl.Get(999999)).Result.Should().BeOfType<NotFoundObjectResult>();
+        (await ctrl.Use(999999, new ChequeUseRequest { Uuid = TestConstants.Uuid })).Result.Should().BeOfType<NotFoundObjectResult>();
     }
 
     [Fact(DisplayName = "小切手作成: 金額0は400で拒否")]

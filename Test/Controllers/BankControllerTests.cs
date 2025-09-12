@@ -233,7 +233,7 @@ public class BankControllerTests
             DisplayNote = "出金2",
             Server = "dev"
         }) as ObjectResult;
-        ((ng.Result as ObjectResult)!.StatusCode).Should().Be(409);
+        ng.Result.Should().BeOfType<ConflictObjectResult>();
 
         var bal2 = await ctrl.GetBalance(uuid);
         (bal2.Result as OkObjectResult).Should().NotBeNull();

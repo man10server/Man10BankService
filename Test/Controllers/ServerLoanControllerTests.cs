@@ -95,8 +95,8 @@ public class ServerLoanControllerTests
         (limitRes.Result as OkObjectResult).Should().NotBeNull();
         
         var limit = (decimal)limitRes.Value!;
-        var res = await ctrl.Borrow(uuid, new ServerLoanBorrowBodyRequest { Amount = limit * 2 }) as ObjectResult;
-        res!.StatusCode.Should().Be(409);
+        var res = await ctrl.Borrow(uuid, new ServerLoanBorrowBodyRequest { Amount = limit * 2 });
+        res.Result.Should().BeOfType<ConflictObjectResult>();
     }
 
     [Fact(DisplayName = "borrow: 2回に分けて借入し、合計が反映されログも2件記録される")]
@@ -142,8 +142,8 @@ public class ServerLoanControllerTests
         var afterFirst = await GetLoanAsync(env.DbFactory, uuid);
         afterFirst!.BorrowAmount.Should().Be(first);
 
-        var secondRes = await ctrl.Borrow(uuid, new ServerLoanBorrowBodyRequest { Amount = second }) as ObjectResult;
-        secondRes!.StatusCode.Should().Be(409);
+        var secondRes = await ctrl.Borrow(uuid, new ServerLoanBorrowBodyRequest { Amount = second });
+        secondRes.Result.Should().BeOfType<ConflictObjectResult>();
 
         var afterSecond = await GetLoanAsync(env.DbFactory, uuid);
         afterSecond!.BorrowAmount.Should().Be(first);
@@ -168,7 +168,7 @@ public class ServerLoanControllerTests
         });
 
         var res2 = await ctrl.Repay(uuid, amount: 100m);
-        ((res2.Result as ObjectResult)!.StatusCode).Should().Be(409);
+        res2.Result.Should().BeOfType<ConflictObjectResult>();
 
         var moneyLogs = await GetMoneyLogsAsync(env.DbFactory, uuid);
         moneyLogs.First().Note.Should().NotBe("loan_repay");
