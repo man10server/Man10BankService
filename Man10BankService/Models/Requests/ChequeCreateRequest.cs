@@ -14,6 +14,7 @@ public class ChequeCreateRequest : IValidatableObject
 
     [StringLength(64)]
     public string Note { get; set; } = string.Empty;
+    public bool Op { get; set; } = false;
 
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {

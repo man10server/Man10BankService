@@ -23,7 +23,8 @@ create table cheque_tbl
     used       tinyint      default 0                 not null,
     use_date   datetime     default CURRENT_TIMESTAMP not null,
     use_player varchar(16)  default ''                not null,
-    amount     decimal(20)                            not null
+    amount     decimal(20)                            not null,
+    op         tinyint      default 0                 not null
 );
 
 create index cheque_tbl_player_uuid_index
@@ -179,4 +180,3 @@ create table user_bank
 
 create index user_bank_player_uuid_index
     on user_bank (player, uuid);
-

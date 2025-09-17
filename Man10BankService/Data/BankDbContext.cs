@@ -76,6 +76,7 @@ public class BankDbContext : DbContext
             e.Property(x => x.Note).HasDefaultValue("");
             e.Property(x => x.UsePlayer).HasDefaultValue("");
             e.Property(x => x.Used).HasDefaultValue(false);
+            e.Property(x => x.Op).HasColumnName("op").HasDefaultValue(false);
             e.Property(x => x.Date).HasDefaultValueSql("CURRENT_TIMESTAMP").ValueGeneratedOnAdd();
             e.Property(x => x.UseDate).HasDefaultValueSql("CURRENT_TIMESTAMP");
         });

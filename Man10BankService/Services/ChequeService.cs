@@ -30,37 +30,45 @@ public class ChequeService
             try
             {
                 var player = await MinecraftProfileService.GetNameByUuidAsync(req.Uuid) ?? string.Empty;
-                // 先に残高を引き落とし
-                var wres = await _bank.WithdrawAsync(new WithdrawRequest
+                var withdrew = false;
+                // Op が false の場合のみ残高を引き落とし
+                if (!req.Op)
                 {
-                    Uuid = req.Uuid,
-                    Amount = req.Amount,
-                    PluginName = PluginName,
-                    Note = $"create_cheque: {req.Note}",
-                    DisplayNote = $"小切手作成: {req.Note}",
-                    Server = "system"
-                });
-                if (wres.StatusCode != 200)
-                    return new ApiResult<Cheque>(wres.StatusCode, wres.Code);
+                    var wres = await _bank.WithdrawAsync(new WithdrawRequest
+                    {
+                        Uuid = req.Uuid,
+                        Amount = req.Amount,
+                        PluginName = PluginName,
+                        Note = $"create_cheque: {req.Note}",
+                        DisplayNote = $"小切手作成: {req.Note}",
+                        Server = "system"
+                    });
+                    if (wres.StatusCode != 200)
+                        return new ApiResult<Cheque>(wres.StatusCode, wres.Code);
+                    withdrew = true;
+                }
 
                 var repo = new ChequeRepository(_dbFactory);
                 Cheque cheque;
                 try
                 {
-                    cheque = await repo.CreateChequeAsync(req.Uuid, player, req.Amount, req.Note);
+                    cheque = await repo.CreateChequeAsync(req.Uuid, player, req.Amount, req.Note, req.Op);
                 }
                 catch (Exception)
                 {
-                    // 失敗時は補償で返金
-                    await _bank.DepositAsync(new DepositRequest
+                    // 失敗時は補償で返金（引き落としている場合のみ）
+                    if (withdrew)
                     {
-                        Uuid = req.Uuid,
-                        Amount = req.Amount,
-                        PluginName = PluginName,
-                        Note = "cheque_refund",
-                        DisplayNote = "小切手作成失敗の返金",
-                        Server = "system"
-                    });
+                        await _bank.DepositAsync(new DepositRequest
+                        {
+                            Uuid = req.Uuid,
+                            Amount = req.Amount,
+                            PluginName = PluginName,
+                            Note = "cheque_refund",
+                            DisplayNote = "小切手作成失敗の返金",
+                            Server = "system"
+                        });
+                    }
                     throw new Exception("create_cheque_failed");
                 }
                 return ApiResult<Cheque>.Ok(cheque);

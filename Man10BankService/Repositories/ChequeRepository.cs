@@ -6,7 +6,7 @@ namespace Man10BankService.Repositories;
 
 public class ChequeRepository(IDbContextFactory<BankDbContext> factory)
 {
-    public async Task<Cheque> CreateChequeAsync(string uuid, string player, decimal amount, string note)
+    public async Task<Cheque> CreateChequeAsync(string uuid, string player, decimal amount, string note, bool op)
     {
         await using var db = await factory.CreateDbContextAsync();
         var cheque = new Cheque
@@ -16,6 +16,7 @@ public class ChequeRepository(IDbContextFactory<BankDbContext> factory)
             Amount = amount,
             Note = note,
             Used = false,
+            Op = op,
         };
         await db.Cheques.AddAsync(cheque);
         await db.SaveChangesAsync();

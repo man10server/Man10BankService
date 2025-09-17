@@ -17,4 +17,5 @@ public class Cheque
     [StringLength(16)]
     public string UsePlayer { get; set; } = string.Empty;
     public bool Used { get; set; }
+    public bool Op { get; set; }
 }
