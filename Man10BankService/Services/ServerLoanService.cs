@@ -234,6 +234,29 @@ public class ServerLoanService
         }
     }
     
+    // 金利の丸め規則をサービス内で一元化
+    public static decimal CalculateDailyInterestAmount(decimal borrowAmount)
+    {
+        if (borrowAmount <= 0m) return 0m;
+        var interest = borrowAmount * DailyInterestRate;
+        var rounded = Math.Round(interest, 0, MidpointRounding.AwayFromZero);
+        return rounded < 0m ? 0m : rounded;
+    }
+
+    // 次回の週次返済日時を計算（ローカル時刻基準）
+    public static DateTime GetNextWeeklyRepayDateTime(DateTime? now = null)
+    {
+        var baseNow = now ?? DateTime.Now;
+        var todayStart = baseNow.Date;
+        var daysAhead = ((int)WeeklyRepayDay - (int)baseNow.DayOfWeek + 7) % 7;
+        var candidate = todayStart.AddDays(daysAhead).Add(WeeklyRepayTime);
+        if (candidate <= baseNow)
+        {
+            candidate = candidate.AddDays(7);
+        }
+        return candidate;
+    }
+    
     private async Task<ApiResult<ServerLoan?>> AddDailyInterestAsync(string uuid, string player)
     {
         try
@@ -249,9 +272,7 @@ public class ServerLoanService
             if (loan.BorrowAmount <= 0m)
                 return ApiResult<ServerLoan?>.Ok(loan, ErrorCode.InterestZero);
 
-            var interest = loan.BorrowAmount * DailyInterestRate;
-
-            var rounded = Math.Round(interest, 0, MidpointRounding.AwayFromZero);
+            var rounded = CalculateDailyInterestAmount(loan.BorrowAmount);
             if (rounded <= 0m)
                 return ApiResult<ServerLoan?>.Ok(loan, ErrorCode.InterestZero);
 
