@@ -1,6 +1,7 @@
 using Man10BankService.Data;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Man10BankService.Models.Responses;
 
 namespace Man10BankService.Controllers;
 
@@ -8,13 +9,6 @@ namespace Man10BankService.Controllers;
 [Route("api/[controller]")]
 public class HealthController(IDbContextFactory<BankDbContext> dbFactory) : ControllerBase
 {
-    public sealed record HealthPayload(
-        string Service,
-        DateTime ServerTimeUtc,
-        DateTime StartedAtUtc,
-        long UptimeSeconds,
-        bool Database
-    );
 
     [HttpGet]
     [Produces("application/json")]

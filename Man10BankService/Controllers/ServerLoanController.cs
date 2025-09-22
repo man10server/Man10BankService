@@ -1,6 +1,7 @@
 using Man10BankService.Models.Database;
 using Man10BankService.Models.Requests;
 using Man10BankService.Services;
+using Man10BankService.Models.Responses;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Man10BankService.Controllers;
@@ -9,7 +10,6 @@ namespace Man10BankService.Controllers;
 [Route("api/[controller]/{uuid}")]
 public class ServerLoanController(ServerLoanService service) : ControllerBase
 {
-    public sealed record PaymentInfoResponse(DateTime NextRepayDate, decimal DailyInterestPerDay);
 
     [HttpGet("")]
     [Produces("application/json")]
