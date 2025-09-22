@@ -1,5 +1,6 @@
 using Man10BankService.Models.Database;
 using Man10BankService.Models.Requests;
+using Man10BankService.Models.Responses;
 using Man10BankService.Services;
 using Microsoft.AspNetCore.Mvc;
 
@@ -46,12 +47,12 @@ public class LoanController(LoanService service) : ControllerBase
 
     [HttpPost("{id:int}/repay")] 
     [Produces("application/json")]
-    [ProducesResponseType(typeof(Loan), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(LoanRepayResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
-    public async Task<ActionResult<Loan?>> Repay([FromRoute] int id, [FromQuery] string collectorUuid)
+    public async Task<ActionResult<LoanRepayResponse>> Repay([FromRoute] int id, [FromQuery] string collectorUuid)
     {
         var res = await service.RepayAsync(id, collectorUuid);
         return this.ToActionResult(res);
