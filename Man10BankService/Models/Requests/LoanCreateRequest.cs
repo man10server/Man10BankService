@@ -20,7 +20,6 @@ public class LoanCreateRequest : IValidatableObject
     [Required]
     public DateTime PaybackDate { get; set; }
 
-    [StringLength(128)]
     public string CollateralItem { get; set; } = string.Empty;
 
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)

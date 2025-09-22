@@ -14,7 +14,7 @@ public class EstateController(EstateService service) : ControllerBase
     [ProducesResponseType(typeof(Estate), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
-    public async Task<ActionResult<Estate>> GetLatest([FromRoute] string uuid)
+    public async Task<ActionResult<Estate?>> GetLatest([FromRoute] string uuid)
     {
         var res = await service.GetLatestAsync(uuid);
         return this.ToActionResult(res);
