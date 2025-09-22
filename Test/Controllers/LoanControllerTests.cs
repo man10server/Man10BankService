@@ -3,6 +3,7 @@ using Man10BankService.Controllers;
 using Man10BankService.Data;
 using Man10BankService.Models.Database;
 using Man10BankService.Models.Requests;
+using Man10BankService.Models.Responses;
 using Man10BankService.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -139,7 +140,14 @@ public class LoanControllerTests
 
         await env.Bank.DepositAsync(new DepositRequest { Uuid = borrowUuid, Amount = 1000m, PluginName = "test", Note = "seed", DisplayNote = "seed", Server = "dev" });
         var repay = await ctrl.Repay(loan.Id, collectorUuid: lendUuid);
-        repay.Result.Should().BeOfType<OkObjectResult>();
+        var okRes = repay.Result
+            .Should().BeOfType<OkObjectResult>().Which.Value
+            .Should().BeOfType<LoanRepayResponse>().Which;
+        okRes.LoanId.Should().Be(loan.Id);
+        okRes.Outcome.Should().Be(LoanRepayOutcome.Paid);
+        okRes.CollectedAmount.Should().Be(loan.Amount);
+        okRes.RemainingAmount.Should().Be(0m);
+        okRes.CollateralItem.Should().BeNull();
         var after = await GetLoanAsync(env.DbFactory, loan.Id);
         after!.Amount.Should().Be(0m);
     }
@@ -162,8 +170,9 @@ public class LoanControllerTests
             PaybackDate = DateTime.UtcNow.AddDays(3),
             CollateralItem = string.Empty
         });
-        create.Result.Should().BeOfType<OkObjectResult>();
-        var loan = create.Value!;
+        var loan = create.Result
+            .Should().BeOfType<OkObjectResult>().Which.Value
+            .Should().BeOfType<Loan>().Which;
 
         var bal = await env.Bank.GetBalanceAsync(borrowUuid);
         if (bal.Data > 0)
@@ -198,7 +207,14 @@ public class LoanControllerTests
 
         await env.Bank.DepositAsync(new DepositRequest { Uuid = borrowUuid, Amount = 2000m, PluginName = "test", Note = "seed", DisplayNote = "seed", Server = "dev" });
         var repay = await ctrl.Repay(loan.Id, collectorUuid: lendUuid);
-        repay.Result.Should().BeOfType<OkObjectResult>();
+        var okRes = repay.Result
+            .Should().BeOfType<OkObjectResult>().Which.Value
+            .Should().BeOfType<LoanRepayResponse>().Which;
+        okRes.LoanId.Should().Be(loan.Id);
+        okRes.Outcome.Should().Be(LoanRepayOutcome.Paid);
+        okRes.CollectedAmount.Should().Be(loan.Amount);
+        okRes.RemainingAmount.Should().Be(0m);
+        okRes.CollateralItem.Should().BeNull();
         var after = await GetLoanAsync(env.DbFactory, loan.Id);
         after!.Amount.Should().Be(0m);
         after.CollateralItem.Should().Be("diamond");
@@ -267,7 +283,14 @@ public class LoanControllerTests
 
         var lenderBefore = await env.Bank.GetBalanceAsync(lendUuid);
         var repay = await ctrl.Repay(loan.Id, collectorUuid: lendUuid);
-        repay.Result.Should().BeOfType<OkObjectResult>();
+        var okRes = repay.Result
+            .Should().BeOfType<OkObjectResult>().Which.Value
+            .Should().BeOfType<LoanRepayResponse>().Which;
+        okRes.LoanId.Should().Be(loan.Id);
+        okRes.Outcome.Should().Be(LoanRepayOutcome.CollateralCollected);
+        okRes.CollectedAmount.Should().Be(0m);
+        okRes.RemainingAmount.Should().Be(0m);
+        okRes.CollateralItem.Should().Be("emerald");
         
         var lenderAfter = await env.Bank.GetBalanceAsync(lendUuid);
         lenderAfter.Data.Should().Be(lenderBefore.Data);
