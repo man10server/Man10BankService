@@ -29,11 +29,7 @@ public class ChequeService
         {
             try
             {
-                var player = await MinecraftProfileService.GetNameByUuidAsync(req.Uuid);
-                if (player == null)
-                {
-                    return ApiResult<Cheque>.NotFound(ErrorCode.PlayerNotFound);
-                }
+                var player = await MinecraftProfileService.GetNameByUuidAsync(req.Uuid) ?? string.Empty;
                 var withdrew = false;
                 // Op が false の場合のみ残高を引き落とし
                 if (!req.Op)
@@ -94,11 +90,7 @@ public class ChequeService
         {
             try
             {
-                var player = await MinecraftProfileService.GetNameByUuidAsync(req.Uuid);
-                if (player == null)
-                {
-                    return ApiResult<Cheque>.NotFound(ErrorCode.PlayerNotFound);
-                }
+                var player = await MinecraftProfileService.GetNameByUuidAsync(req.Uuid) ?? string.Empty;
                 var repo = new ChequeRepository(_dbFactory);
                 var cheque = await repo.GetChequeAsync(id);
                 if (cheque == null)

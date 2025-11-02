@@ -55,10 +55,8 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
             if (request.Amount <= 0m)
                 return ApiResult<Loan?>.BadRequest(ErrorCode.ValidationError);
 
-            var lendName = await MinecraftProfileService.GetNameByUuidAsync(request.LendUuid);
-            var borrowName = await MinecraftProfileService.GetNameByUuidAsync(request.BorrowUuid);
-            if (lendName == null || borrowName == null)
-                return ApiResult<Loan?>.NotFound(ErrorCode.PlayerNotFound);
+            var lendName = await MinecraftProfileService.GetNameByUuidAsync(request.LendUuid) ?? string.Empty;
+            var borrowName = await MinecraftProfileService.GetNameByUuidAsync(request.BorrowUuid) ?? string.Empty;
 
             var w = await bank.WithdrawAsync(new WithdrawRequest
             {
@@ -156,12 +154,9 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
             return ApiResult<LoanRepayResponse>.BadRequest(ErrorCode.ValidationError);
 
         // 名前解決はロギング用途のみ。取得失敗時は空文字で続行。
-        var borrowPlayer = await MinecraftProfileService.GetNameByUuidAsync(loan.BorrowUuid);
-        var collectPlayer = await MinecraftProfileService.GetNameByUuidAsync(collectorUuid);
-        if (borrowPlayer == null || collectPlayer == null)
-        {
-            return ApiResult<LoanRepayResponse>.NotFound(ErrorCode.PlayerNotFound);
-        }
+        _ = await MinecraftProfileService.GetNameByUuidAsync(loan.BorrowUuid) ?? loan.BorrowPlayer;
+        _ = await MinecraftProfileService.GetNameByUuidAsync(collectorUuid) ?? string.Empty;
+
         var w = await bank.WithdrawAsync(new WithdrawRequest
         {
             Uuid = loan.BorrowUuid,
@@ -222,12 +217,9 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
         if (loan.Amount <= 0m)
             return ApiResult<LoanRepayResponse>.BadRequest(ErrorCode.NoRepaymentNeeded);
 
-        var borrowPlayer = await MinecraftProfileService.GetNameByUuidAsync(loan.BorrowUuid);
-        var lendPlayer = await MinecraftProfileService.GetNameByUuidAsync(collectorUuid);
-        if (borrowPlayer == null || lendPlayer == null)
-        {
-            return ApiResult<LoanRepayResponse>.NotFound(ErrorCode.PlayerNotFound);
-        }
+        _ = await MinecraftProfileService.GetNameByUuidAsync(loan.BorrowUuid) ?? loan.BorrowPlayer;
+        _ = await MinecraftProfileService.GetNameByUuidAsync(collectorUuid) ?? string.Empty;
+
         var withdraw = await bank.WithdrawAsync(new WithdrawRequest
         {
             Uuid = loan.BorrowUuid,
