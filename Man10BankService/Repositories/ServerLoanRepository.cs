@@ -1,6 +1,7 @@
 using Man10BankService.Data;
 using Man10BankService.Models;
 using Man10BankService.Models.Database;
+using Man10BankService.Services;
 using Microsoft.EntityFrameworkCore;
 
 namespace Man10BankService.Repositories;
@@ -15,10 +16,28 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory)
         Interest,
     }
 
-    public async Task<ServerLoan?> GetByUuidAsync(string uuid)
+    public async Task<ServerLoan> GetOrCreateByUuidAsync(string uuid)
     {
         await using var db = await factory.CreateDbContextAsync();
-        return await db.ServerLoans.AsNoTracking().FirstOrDefaultAsync(x => x.Uuid == uuid);
+        var loan = await db.ServerLoans.AsNoTracking().FirstOrDefaultAsync(x => x.Uuid == uuid);
+        if (loan != null) return loan;
+        
+        var player = await MinecraftProfileService.GetNameByUuidAsync(uuid);
+        if (player == null) throw new ArgumentException("指定された UUID のプレイヤーが見つかりません。", nameof(uuid));
+        loan = new ServerLoan
+        {
+            Uuid = uuid,
+            Player = player,
+            BorrowAmount = 0m,
+            PaymentAmount = 0m,
+            LastPayDate = DateTime.UtcNow,
+            FailedPayment = 0,
+            StopInterest = false,
+        };
+        await db.ServerLoans.AddAsync(loan);
+        await db.SaveChangesAsync();
+
+        return loan;
     }
 
     public async Task<List<ServerLoan>> GetAllAsync()
@@ -32,29 +51,7 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory)
         await using var db = await factory.CreateDbContextAsync();
         await using var tx = await db.Database.BeginTransactionAsync();
 
-        var loan = await db.ServerLoans.FirstOrDefaultAsync(x => x.Uuid == uuid);
-        if (loan == null)
-        {
-            if (action != ServerLoanLogAction.Borrow || delta <= 0m)
-                return null;
-
-            loan = new ServerLoan
-            {
-                Uuid = uuid,
-                Player = string.IsNullOrWhiteSpace(player) ? string.Empty : player,
-                BorrowAmount = delta,
-                PaymentAmount = 0m,
-                FailedPayment = 0,
-                StopInterest = false,
-                BorrowDate = DateTime.UtcNow,
-                LastPayDate = DateTime.UtcNow,
-            };
-            await db.ServerLoans.AddAsync(loan);
-            await AddLogAsync(db, loan.Uuid, loan.Player, action, delta);
-            await db.SaveChangesAsync();
-            await tx.CommitAsync();
-            return loan;
-        }
+        var loan = await GetOrCreateByUuidAsync(uuid);
         switch (action)
         {
             case ServerLoanLogAction.Borrow:
@@ -80,6 +77,7 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory)
             default:
                 throw new ArgumentOutOfRangeException(nameof(action), action, null);
         }
+        db.Update(loan);
         await AddLogAsync(db, loan.Uuid, loan.Player, action, delta);
         await db.SaveChangesAsync();
         await tx.CommitAsync();
@@ -109,10 +107,10 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory)
         await using var db = await factory.CreateDbContextAsync();
         await using var tx = await db.Database.BeginTransactionAsync();
 
-        var loan = await db.ServerLoans.FirstOrDefaultAsync(x => x.Uuid == uuid);
-        if (loan == null) return null;
+        var loan = await GetOrCreateByUuidAsync(uuid);
 
         loan.PaymentAmount = paymentAmount;
+        db.Update(loan);
         await db.SaveChangesAsync();
         await tx.CommitAsync();
         return loan;
