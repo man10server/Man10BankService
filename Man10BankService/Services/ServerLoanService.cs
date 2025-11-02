@@ -81,7 +81,9 @@ public class ServerLoanService
             if (outstanding + amount > limit)
                 return ApiResult<ServerLoan?>.Conflict(ErrorCode.BorrowLimitExceeded);
 
-            var resolvedPlayer = await MinecraftProfileService.GetNameByUuidAsync(uuid) ?? string.Empty;
+            var resolvedPlayer = await MinecraftProfileService.GetNameByUuidAsync(uuid);
+            if (resolvedPlayer == null)
+                return ApiResult<ServerLoan?>.NotFound(ErrorCode.PlayerNotFound);
             var updated = await repo.AdjustLoanAsync(uuid, resolvedPlayer, amount, ServerLoanRepository.ServerLoanLogAction.Borrow);
 
             var dp = await _bank.DepositAsync(new DepositRequest
