@@ -59,13 +59,11 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory)
         {
             case ServerLoanLogAction.Borrow:
                 loan.BorrowAmount += delta;
-                loan.LastPayDate = DateTime.UtcNow;
                 break;
             case ServerLoanLogAction.Interest:
                 if (!loan.StopInterest)
                 {
                     loan.BorrowAmount += delta;
-                    loan.LastPayDate = DateTime.UtcNow;
                 }
                 break;
             case ServerLoanLogAction.RepaySuccess:
