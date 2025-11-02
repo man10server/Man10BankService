@@ -112,7 +112,7 @@ public class EstateService(IDbContextFactory<BankDbContext> dbFactory)
     private async Task<decimal> GetServerLoanBorrowAmountAsync(string uuid)
     {
         var repo = new ServerLoanRepository(dbFactory);
-        var loan = await repo.GetByUuidAsync(uuid);
+        var loan = await repo.GetOrCreateByUuidAsync(uuid);
         return loan?.BorrowAmount ?? 0m;
     }
 
