@@ -52,7 +52,7 @@ public class EstateControllerTests
     {
         using var env = BuildController();
         var ctrl = (EstateController)env.Host.Controller;
-        const string uuid = "not32hex"; // 外部解決を避けるため意図的に不正なUUID
+        const string uuid = TestConstants.Uuid;
 
         var req = new EstateUpdateRequest
         {
@@ -95,7 +95,7 @@ public class EstateControllerTests
     {
         using var env = BuildController();
         var ctrl = (EstateController)env.Host.Controller;
-        const string uuid = "not32hex2";
+        const string uuid = TestConstants.Uuid;
 
         var req = new EstateUpdateRequest
         {
