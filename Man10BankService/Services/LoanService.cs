@@ -155,7 +155,6 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
         if (toCollect <= 0m)
             return ApiResult<LoanRepayResponse>.BadRequest(ErrorCode.ValidationError);
 
-        // 名前解決はロギング用途のみ。取得失敗時は空文字で続行。
         var borrowPlayer = await MinecraftProfileService.GetNameByUuidAsync(loan.BorrowUuid);
         var collectPlayer = await MinecraftProfileService.GetNameByUuidAsync(collectorUuid);
         if (borrowPlayer == null || collectPlayer == null)
