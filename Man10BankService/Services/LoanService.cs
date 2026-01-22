@@ -318,8 +318,7 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
             if (!ok)
                 return ApiResult<Loan?>.Error(ErrorCode.UnexpectedError);
 
-            var updated = await repo.GetByIdAsync(id);
-            return ApiResult<Loan?>.Ok(updated);
+            return ApiResult<Loan?>.Ok(loan);
         }
         catch (Exception)
         {
