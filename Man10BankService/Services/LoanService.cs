@@ -309,10 +309,10 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
                 return ApiResult<Loan?>.BadRequest(ErrorCode.ValidationError);
 
             if (loan.Amount > 0m)
-                return ApiResult<Loan?>.BadRequest(ErrorCode.ValidationError);
+                return ApiResult<Loan?>.Conflict(ErrorCode.LoanNotRepaid);
 
             if (string.IsNullOrWhiteSpace(loan.CollateralItem))
-                return ApiResult<Loan?>.BadRequest(ErrorCode.ValidationError);
+                return ApiResult<Loan?>.Conflict(ErrorCode.CollateralNotFound);
 
             var ok = await repo.CollectCollateralAsync(id);
             if (!ok)

@@ -18,6 +18,8 @@ public enum ErrorCode
     EstateUpdated,
     EstateNoChange,
     LoanNotFound,
+    LoanNotRepaid,
+    CollateralNotFound,
     BorrowLimitExceeded,
     NoRepaymentNeeded,
     PaymentAmountNotSet,

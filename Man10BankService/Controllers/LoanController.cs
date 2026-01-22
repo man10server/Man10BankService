@@ -63,6 +63,7 @@ public class LoanController(LoanService service) : ControllerBase
     [ProducesResponseType(typeof(Loan), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<Loan?>> ReleaseCollateral([FromRoute] int id, [FromQuery] string borrowerUuid)
     {
