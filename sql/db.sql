@@ -85,6 +85,7 @@ create table loan_table
     borrow_date     datetime    default CURRENT_TIMESTAMP not null,
     payback_date    datetime    default CURRENT_TIMESTAMP not null,
     collateral_item text                                  not null,
+    collateral_released tinyint(1) default 0              not null,
     amount          decimal(20)                           not null
 );
 

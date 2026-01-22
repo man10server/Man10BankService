@@ -314,10 +314,14 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
             if (string.IsNullOrWhiteSpace(loan.CollateralItem))
                 return ApiResult<Loan?>.Conflict(ErrorCode.CollateralNotFound);
 
+            if (loan.CollateralReleased)
+                return ApiResult<Loan?>.Conflict(ErrorCode.CollateralNotFound);
+
             var ok = await repo.CollectCollateralAsync(id);
             if (!ok)
                 return ApiResult<Loan?>.Error(ErrorCode.UnexpectedError);
 
+            loan.CollateralReleased = true;
             return ApiResult<Loan?>.Ok(loan);
         }
         catch (Exception)

@@ -51,6 +51,7 @@ public class LoanRepository(IDbContextFactory<BankDbContext> factory)
             BorrowDate = DateTime.UtcNow,
             PaybackDate = paybackDate,
             CollateralItem = collateralItem ?? string.Empty,
+            CollateralReleased = false,
         };
 
         await db.Loans.AddAsync(entity);
@@ -99,10 +100,13 @@ public class LoanRepository(IDbContextFactory<BankDbContext> factory)
         if (loan == null)
             return false;
 
+        if (loan.CollateralReleased)
+            return true;
+
         if (string.IsNullOrWhiteSpace(loan.CollateralItem))
             return false; // すでに担保なし
 
-        loan.CollateralItem = string.Empty;
+        loan.CollateralReleased = true;
         await db.SaveChangesAsync();
         await tx.CommitAsync();
         return true;

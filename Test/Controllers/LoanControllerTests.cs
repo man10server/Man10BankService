@@ -249,7 +249,8 @@ public class LoanControllerTests
         var release = await ctrl.ReleaseCollateral(loan.Id, borrowerUuid: borrowUuid);
         release.Result.Should().BeOfType<OkObjectResult>();
         var after = await GetLoanAsync(env.DbFactory, loan.Id);
-        after!.CollateralItem.Should().Be("");
+        after!.CollateralItem.Should().Be("gold");
+        after.CollateralReleased.Should().BeTrue();
     }
 
     [Fact(DisplayName = "loan: 担保あり 期限後・所持金なしは担保回収になる")]

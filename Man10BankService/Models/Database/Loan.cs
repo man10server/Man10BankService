@@ -18,4 +18,5 @@ public class Loan
     public decimal Amount { get; set; }
     [StringLength(128)]
     public string? CollateralItem { get; set; }
+    public bool CollateralReleased { get; set; }
 }
