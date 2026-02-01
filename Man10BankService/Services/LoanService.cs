@@ -315,14 +315,17 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
                 return ApiResult<Loan?>.Conflict(ErrorCode.CollateralNotFound);
 
             if (loan.CollateralReleased)
-                return ApiResult<Loan?>.Conflict(ErrorCode.CollateralNotFound);
+                return ApiResult<Loan?>.Conflict(ErrorCode.CollateralAlreadyReleased);
 
             var ok = await repo.CollectCollateralAsync(id);
             if (!ok)
                 return ApiResult<Loan?>.Error(ErrorCode.UnexpectedError);
 
-            loan.CollateralReleased = true;
-            return ApiResult<Loan?>.Ok(loan);
+            var updatedLoan = await repo.GetByIdAsync(id);
+            if (updatedLoan == null)
+                return ApiResult<Loan?>.Error(ErrorCode.UnexpectedError);
+
+            return ApiResult<Loan?>.Ok(updatedLoan);
         }
         catch (Exception)
         {

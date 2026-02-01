@@ -20,6 +20,7 @@ public enum ErrorCode
     LoanNotFound,
     LoanNotRepaid,
     CollateralNotFound,
+    CollateralAlreadyReleased,
     BorrowLimitExceeded,
     NoRepaymentNeeded,
     PaymentAmountNotSet,
