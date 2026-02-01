@@ -65,7 +65,11 @@ public class EstateService(IDbContextFactory<BankDbContext> dbFactory)
             var current = await repo.GetLatestAsync(uuid);
             
             // player 推定
-            var player = await MinecraftProfileService.GetNameByUuidAsync(uuid) ?? current?.Player ?? string.Empty;
+            var player = await MinecraftProfileService.GetNameByUuidAsync(uuid) ?? current?.Player;
+            if (player == null)
+            {
+                return ApiResult<bool>.NotFound(ErrorCode.PlayerNotFound);
+            }
 
             // サーバーローンの残債（BorrowAmount が残債）
             var loanOutstanding = await GetServerLoanBorrowAmountAsync(uuid);
