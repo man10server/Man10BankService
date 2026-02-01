@@ -235,7 +235,7 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
         {
             var repo = new LoanRepository(dbFactory);
             var collateral = loan.CollateralItem;
-            var afterCollateral = await repo.ClearDebtAndCollectCollateralAsync(loan.Id);
+            var afterCollateral = await repo.ClearDebtAndReleaseCollateralAsync(loan.Id);
             if (afterCollateral == null)
                 return ApiResult<LoanRepayResponse>.Error(ErrorCode.UnexpectedError);
 

@@ -298,7 +298,8 @@ public class LoanControllerTests
 
         var after = await GetLoanAsync(env.DbFactory, loan.Id);
         after!.Amount.Should().Be(0m);
-        after.CollateralItem.Should().Be("");
+        after.CollateralItem.Should().Be("emerald");
+        after.CollateralReleased.Should().BeTrue();
     }
 
     private static async Task<Loan?> GetLoanAsync(IDbContextFactory<BankDbContext> f, int id)
