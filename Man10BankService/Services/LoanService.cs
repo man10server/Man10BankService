@@ -238,6 +238,7 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
         {
             return ApiResult<LoanRepayResponse>.NotFound(ErrorCode.PlayerNotFound);
         }
+        var amountToCollect = loan.Amount;
         var withdraw = await bank.WithdrawAsync(new WithdrawRequest
         {
             Uuid = loan.BorrowUuid,
