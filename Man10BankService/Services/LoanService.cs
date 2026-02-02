@@ -14,7 +14,8 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
     {
         try
         {
-            var repo = new LoanRepository(dbFactory);
+            await using var db = await dbFactory.CreateDbContextAsync();
+            var repo = new LoanRepository(db);
             var loan = await repo.GetByIdAsync(id);
             return loan == null ? ApiResult<Loan>.NotFound(ErrorCode.LoanNotFound) : ApiResult<Loan>.Ok(loan);
         }
@@ -35,7 +36,8 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
 
         try
         {
-            var repo = new LoanRepository(dbFactory);
+            await using var db = await dbFactory.CreateDbContextAsync();
+            var repo = new LoanRepository(db);
             var list = await repo.GetByBorrowerUuidAsync(borrowUuid, limit, offset);
             return ApiResult<List<Loan>>.Ok(list);
         }
@@ -74,17 +76,23 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
             if (w.StatusCode != 200)
                 return new ApiResult<Loan?>(w.StatusCode, w.Code);
             
-            var repo = new LoanRepository(dbFactory);
+            await using var db = await dbFactory.CreateDbContextAsync();
+            var repo = new LoanRepository(db);
             try
             {
-                var entity = await repo.CreateAsync(
-                    lendName,
-                    request.LendUuid,
-                    borrowName,
-                    request.BorrowUuid,
-                    request.Amount,
-                    request.PaybackDate,
-                    request.CollateralItem);
+                var entity = new Loan
+                {
+                    LendPlayer = lendName,
+                    LendUuid = request.LendUuid,
+                    BorrowPlayer = borrowName,
+                    BorrowUuid = request.BorrowUuid,
+                    Amount = request.Amount,
+                    BorrowDate = DateTime.UtcNow,
+                    PaybackDate = request.PaybackDate,
+                    CollateralItem = request.CollateralItem ?? string.Empty,
+                    CollateralReleased = false,
+                };
+                await repo.AddAsync(entity);
                 
                 var deposit = await bank.DepositAsync(new DepositRequest
                 {
@@ -126,8 +134,8 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
         {
             await using var db = await dbFactory.CreateDbContextAsync();
             await using var tx = await db.Database.BeginTransactionAsync();
-            var repo = new LoanRepository(dbFactory);
-            var loan = await repo.GetByIdForUpdateAsync(db, id);
+            var repo = new LoanRepository(db);
+            var loan = await repo.GetByIdForUpdateAsync(id);
             if (loan == null)
                 return ApiResult<LoanRepayResponse>.NotFound(ErrorCode.LoanNotFound);
             
@@ -318,8 +326,8 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
         {
             await using var db = await dbFactory.CreateDbContextAsync();
             await using var tx = await db.Database.BeginTransactionAsync();
-            var repo = new LoanRepository(dbFactory);
-            var loan = await repo.GetByIdForUpdateAsync(db, id);
+            var repo = new LoanRepository(db);
+            var loan = await repo.GetByIdForUpdateAsync(id);
             
             if (loan == null)
                 return ApiResult<Loan?>.NotFound(ErrorCode.LoanNotFound);

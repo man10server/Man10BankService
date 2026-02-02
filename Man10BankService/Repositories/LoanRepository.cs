@@ -4,27 +4,22 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Man10BankService.Repositories;
 
-public class LoanRepository(IDbContextFactory<BankDbContext> factory)
+public class LoanRepository(BankDbContext db)
 {
     public async Task<Loan?> GetByIdAsync(int id)
     {
-        await using var db = await factory.CreateDbContextAsync();
         return await db.Loans.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id);
     }
 
-    public async Task<Loan?> GetByIdForUpdateAsync(BankDbContext db, int id)
+    public async Task<Loan?> GetByIdForUpdateAsync(int id)
     {
         return await db.Loans
             .FromSqlInterpolated($"SELECT * FROM loan_table WHERE id = {id} FOR UPDATE")
             .FirstOrDefaultAsync();
     }
 
-    public async Task<List<Loan>> GetByBorrowerUuidAsync(string borrowUuid, int limit = 100, int offset = 0)
+    public async Task<List<Loan>> GetByBorrowerUuidAsync(string borrowUuid, int limit, int offset)
     {
-        limit = Math.Clamp(limit, 1, 1000);
-        if (offset < 0) offset = 0;
-
-        await using var db = await factory.CreateDbContextAsync();
         return await db.Loans
             .AsNoTracking()
             .Where(x => x.BorrowUuid == borrowUuid)
@@ -34,44 +29,15 @@ public class LoanRepository(IDbContextFactory<BankDbContext> factory)
             .ToListAsync();
     }
 
-    public async Task<Loan> CreateAsync(
-        string lendPlayer,
-        string lendUuid,
-        string borrowPlayer,
-        string borrowUuid,
-        decimal amount,
-        DateTime paybackDate,
-        string? collateralItem)
+    public async Task<Loan> AddAsync(Loan entity)
     {
-        if (amount <= 0m) throw new ArgumentException("金額は 0 より大きい必要があります。", nameof(amount));
-
-        await using var db = await factory.CreateDbContextAsync();
-        await using var tx = await db.Database.BeginTransactionAsync();
-
-        var entity = new Loan
-        {
-            LendPlayer = lendPlayer,
-            LendUuid = lendUuid,
-            BorrowPlayer = borrowPlayer,
-            BorrowUuid = borrowUuid,
-            Amount = amount,
-            BorrowDate = DateTime.UtcNow,
-            PaybackDate = paybackDate,
-            CollateralItem = collateralItem ?? string.Empty,
-            CollateralReleased = false,
-        };
-
         await db.Loans.AddAsync(entity);
         await db.SaveChangesAsync();
-        await tx.CommitAsync();
         return entity;
     }
 
     public async Task<Loan?> AdjustAmountAsync(int id, decimal delta)
     {
-        await using var db = await factory.CreateDbContextAsync();
-        await using var tx = await db.Database.BeginTransactionAsync();
-
         var loan = await db.Loans.FirstOrDefaultAsync(x => x.Id == id);
         if (loan == null) return null;
 
@@ -79,22 +45,17 @@ public class LoanRepository(IDbContextFactory<BankDbContext> factory)
         if (loan.Amount < 0m) loan.Amount = 0m;
 
         await db.SaveChangesAsync();
-        await tx.CommitAsync();
         return loan;
     }
 
     public async Task<bool> DeleteByIdAsync(int id)
     {
-        await using var db = await factory.CreateDbContextAsync();
-        await using var tx = await db.Database.BeginTransactionAsync();
-
         var loan = await db.Loans.FirstOrDefaultAsync(x => x.Id == id);
         if (loan == null)
             return false;
 
         db.Loans.Remove(loan);
         await db.SaveChangesAsync();
-        await tx.CommitAsync();
         return true;
     }
 }
