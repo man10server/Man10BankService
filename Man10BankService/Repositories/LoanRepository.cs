@@ -12,6 +12,13 @@ public class LoanRepository(IDbContextFactory<BankDbContext> factory)
         return await db.Loans.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id);
     }
 
+    public async Task<Loan?> GetByIdForUpdateAsync(BankDbContext db, int id)
+    {
+        return await db.Loans
+            .FromSqlInterpolated($"SELECT * FROM loan_table WHERE id = {id} FOR UPDATE")
+            .FirstOrDefaultAsync();
+    }
+
     public async Task<List<Loan>> GetByBorrowerUuidAsync(string borrowUuid, int limit = 100, int offset = 0)
     {
         limit = Math.Clamp(limit, 1, 1000);

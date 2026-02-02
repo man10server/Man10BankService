@@ -13,7 +13,11 @@ public class AtmService(IDbContextFactory<BankDbContext> dbFactory)
         try
         {
             var repo = new AtmRepository(dbFactory);
-            var player = await MinecraftProfileService.GetNameByUuidAsync(req.Uuid) ?? string.Empty;
+            var player = await MinecraftProfileService.GetNameByUuidAsync(req.Uuid);
+            if (player == null)
+            {
+                return ApiResult<AtmLog>.NotFound(ErrorCode.PlayerNotFound);
+            }
             var log = await repo.AddAtmLogAsync(req.Uuid, player, req.Amount, req.Deposit);
             return ApiResult<AtmLog>.Ok(log);
         }

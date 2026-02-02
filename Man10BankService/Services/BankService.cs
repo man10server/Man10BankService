@@ -60,7 +60,11 @@ public class BankService
             try
             {
                 var repo = new BankRepository(_dbFactory);
-                var player = await MinecraftProfileService.GetNameByUuidAsync(req.Uuid) ?? string.Empty;
+                var player = await MinecraftProfileService.GetNameByUuidAsync(req.Uuid);
+                if (player == null)
+                {
+                    return ApiResult<decimal>.NotFound(ErrorCode.PlayerNotFound);
+                }
                 var bal = await repo.ChangeBalanceAsync(req.Uuid, player, req.Amount, req.PluginName, req.Note, req.DisplayNote, req.Server);
                 return ApiResult<decimal>.Ok(bal);
             }
@@ -86,7 +90,11 @@ public class BankService
                 if (current < req.Amount)
                     return ApiResult<decimal>.Conflict(ErrorCode.InsufficientFunds);
 
-                var player = await MinecraftProfileService.GetNameByUuidAsync(req.Uuid) ?? string.Empty;
+                var player = await MinecraftProfileService.GetNameByUuidAsync(req.Uuid);
+                if (player == null)
+                {
+                    return ApiResult<decimal>.NotFound(ErrorCode.PlayerNotFound);
+                }
                 var bal = await repo.ChangeBalanceAsync(req.Uuid, player, -req.Amount, req.PluginName, req.Note, req.DisplayNote, req.Server);
                 return ApiResult<decimal>.Ok(bal);
             }

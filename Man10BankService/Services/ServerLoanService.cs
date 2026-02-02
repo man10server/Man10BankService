@@ -34,7 +34,9 @@ public class ServerLoanService
         try
         {
             var repo = new ServerLoanRepository(_dbFactory);
-            //TODO: プレイヤーが存在しなかった時に404をかえす
+            var player = await MinecraftProfileService.GetNameByUuidAsync(uuid);
+            if (player == null)
+                return ApiResult<ServerLoan>.NotFound(ErrorCode.PlayerNotFound);
             var loan = await repo.GetOrCreateByUuidAsync(uuid);
             return ApiResult<ServerLoan>.Ok(loan);
         }
