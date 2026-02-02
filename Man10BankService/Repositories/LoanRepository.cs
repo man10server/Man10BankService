@@ -101,7 +101,7 @@ public class LoanRepository(IDbContextFactory<BankDbContext> factory)
             return false;
 
         if (loan.CollateralReleased)
-            return true;
+            return false;
 
         if (string.IsNullOrWhiteSpace(loan.CollateralItem))
             return false; // すでに担保なし
