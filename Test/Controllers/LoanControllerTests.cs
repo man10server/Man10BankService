@@ -55,8 +55,8 @@ public class LoanControllerTests
         using var env = BuildController();
         var ctrl = (LoanController)env.Host.Controller;
 
-        const string lendUuid = "11111111-1111-1111-1111-111111111111";
-        const string borrowUuid = "22222222-2222-2222-2222-222222222222";
+        const string lendUuid = TestConstants.LendUuid;
+        const string borrowUuid = TestConstants.BorrowUuid;
         await env.Bank.DepositAsync(new DepositRequest { Uuid = lendUuid, Amount = 5000m, PluginName = "test", Note = "seed", DisplayNote = "seed", Server = "dev" });
 
         var createReq = new LoanCreateRequest
@@ -95,8 +95,8 @@ public class LoanControllerTests
         using var env = BuildController();
         var ctrl = (LoanController)env.Host.Controller;
 
-        const string lendUuid = "33333333-3333-3333-3333-333333333333";
-        const string borrowUuid = "44444444-4444-4444-4444-444444444444";
+        const string lendUuid = TestConstants.LendUuid;
+        const string borrowUuid = TestConstants.BorrowUuid;
         await env.Bank.DepositAsync(new DepositRequest { Uuid = lendUuid, Amount = 10000m, PluginName = "test", Note = "seed", DisplayNote = "seed", Server = "dev" });
 
         var create = await ctrl.Create(new LoanCreateRequest
@@ -124,8 +124,8 @@ public class LoanControllerTests
         using var env = BuildController();
         var ctrl = (LoanController)env.Host.Controller;
 
-        const string lendUuid = "33333333-3333-3333-3333-333333333334";
-        const string borrowUuid = "44444444-4444-4444-4444-444444444445";
+        const string lendUuid = TestConstants.LendUuid;
+        const string borrowUuid = TestConstants.BorrowUuid;
         await env.Bank.DepositAsync(new DepositRequest { Uuid = lendUuid, Amount = 10000m, PluginName = "test", Note = "seed", DisplayNote = "seed", Server = "dev" });
 
         var create = await ctrl.Create(new LoanCreateRequest
@@ -161,8 +161,8 @@ public class LoanControllerTests
         using var env = BuildController();
         var ctrl = (LoanController)env.Host.Controller;
 
-        const string lendUuid = "33333333-3333-3333-3333-333333333335";
-        const string borrowUuid = "44444444-4444-4444-4444-444444444446";
+        const string lendUuid = TestConstants.LendUuid;
+        const string borrowUuid = TestConstants.BorrowUuid;
         await env.Bank.DepositAsync(new DepositRequest { Uuid = lendUuid, Amount = 10000m, PluginName = "test", Note = "seed", DisplayNote = "seed", Server = "dev" });
 
         var create = await ctrl.Create(new LoanCreateRequest
@@ -193,8 +193,8 @@ public class LoanControllerTests
         using var env = BuildController();
         var ctrl = (LoanController)env.Host.Controller;
 
-        const string lendUuid = "55555555-5555-5555-5555-555555555555";
-        const string borrowUuid = "66666666-6666-6666-6666-666666666666";
+        const string lendUuid = TestConstants.LendUuid;
+        const string borrowUuid = TestConstants.BorrowUuid;
         await env.Bank.DepositAsync(new DepositRequest { Uuid = lendUuid, Amount = 20000m, PluginName = "test", Note = "seed", DisplayNote = "seed", Server = "dev" });
 
         var create = await ctrl.Create(new LoanCreateRequest
@@ -231,8 +231,8 @@ public class LoanControllerTests
         using var env = BuildController();
         var ctrl = (LoanController)env.Host.Controller;
 
-        const string lendUuid = "55555555-5555-5555-5555-555555555556";
-        const string borrowUuid = "66666666-6666-6666-6666-666666666667";
+        const string lendUuid = TestConstants.LendUuid;
+        const string borrowUuid = TestConstants.BorrowUuid;
         await env.Bank.DepositAsync(new DepositRequest { Uuid = lendUuid, Amount = 20000m, PluginName = "test", Note = "seed", DisplayNote = "seed", Server = "dev" });
 
         var create = await ctrl.Create(new LoanCreateRequest
@@ -264,8 +264,8 @@ public class LoanControllerTests
         using var env = BuildController();
         var ctrl = (LoanController)env.Host.Controller;
 
-        const string lendUuid = "55555555-5555-5555-5555-555555555557";
-        const string borrowUuid = "66666666-6666-6666-6666-666666666668";
+        const string lendUuid = TestConstants.LendUuid;
+        const string borrowUuid = TestConstants.BorrowUuid;
         await env.Bank.DepositAsync(new DepositRequest { Uuid = lendUuid, Amount = 20000m, PluginName = "test", Note = "seed", DisplayNote = "seed", Server = "dev" });
 
         var create = await ctrl.Create(new LoanCreateRequest
