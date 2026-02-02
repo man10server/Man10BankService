@@ -97,41 +97,4 @@ public class LoanRepository(IDbContextFactory<BankDbContext> factory)
         await tx.CommitAsync();
         return true;
     }
-
-    public async Task<bool> CollectCollateralAsync(int id)
-    {
-        await using var db = await factory.CreateDbContextAsync();
-        await using var tx = await db.Database.BeginTransactionAsync();
-
-        var loan = await db.Loans.FirstOrDefaultAsync(x => x.Id == id);
-        if (loan == null)
-            return false;
-
-        if (loan.CollateralReleased)
-            return false;
-
-        if (string.IsNullOrWhiteSpace(loan.CollateralItem))
-            return false; // すでに担保なし
-
-        loan.CollateralReleased = true;
-        await db.SaveChangesAsync();
-        await tx.CommitAsync();
-        return true;
-    }
-
-    public async Task<Loan?> ClearDebtAndReleaseCollateralAsync(int id)
-    {
-        await using var db = await factory.CreateDbContextAsync();
-        await using var tx = await db.Database.BeginTransactionAsync();
-
-        var loan = await db.Loans.FirstOrDefaultAsync(x => x.Id == id);
-        if (loan == null) return null;
-
-        loan.Amount = 0m;
-        loan.CollateralReleased = true;
-
-        await db.SaveChangesAsync();
-        await tx.CommitAsync();
-        return loan;
-    }
 }

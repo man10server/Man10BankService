@@ -253,11 +253,8 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
         if (withdraw.StatusCode == 409)
         {
             var collateral = loan.CollateralItem;
-            var afterCollateral = await repo.ClearDebtAndReleaseCollateralAsync(loan.Id);
-            if (afterCollateral == null)
-                return ApiResult<LoanRepayResponse>.Error(ErrorCode.UnexpectedError);
             loan.Amount = 0m;
-            loan.CollateralItem = string.Empty;
+            loan.CollateralReleased = true;
             await db.SaveChangesAsync();
             await tx.CommitAsync();
 
@@ -275,36 +272,24 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
         if (withdraw.StatusCode != 200)
             return new ApiResult<LoanRepayResponse>(withdraw.StatusCode, withdraw.Code);
 
-        try
+        // 出金できた場合
+        loan.Amount = 0m;
+        await db.SaveChangesAsync();
+        await tx.CommitAsync();
+
+        var deposit = await bank.DepositAsync(new DepositRequest
         {
-            loan.Amount = 0m;
-            await db.SaveChangesAsync();
-            await tx.CommitAsync();
+            Uuid = collectorUuid,
+            Amount = amountToCollect,
+            PluginName = "user_loan",
+            Note = "user_loan_full_collect_deposit",
+            DisplayNote = "個人間貸付 一括回収(入金)",
+            Server = "system"
+        });
 
-            var deposit = await bank.DepositAsync(new DepositRequest
-            {
-                Uuid = collectorUuid,
-                Amount = amountToCollect,
-                PluginName = "user_loan",
-                Note = "user_loan_full_collect_deposit",
-                DisplayNote = "個人間貸付 一括回収(入金)",
-                Server = "system"
-            });
-
-            if (deposit.StatusCode != 200) throw new Exception("collector_deposit_failed");
-
-            var dto = new LoanRepayResponse(
-                LoanId: loan.Id,
-                Outcome: LoanRepayOutcome.Paid,
-                CollectedAmount: amountToCollect,
-                RemainingAmount: loan.Amount,
-                CollateralItem: null
-            );
-            return ApiResult<LoanRepayResponse>.Ok(dto);
-        }
-        catch (Exception)
+        // 返金（補償）
+        if (deposit.StatusCode != 200)
         {
-            // 返金（補償）
             await bank.DepositAsync(new DepositRequest
             {
                 Uuid = loan.BorrowUuid,
@@ -316,6 +301,15 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
             });
             return ApiResult<LoanRepayResponse>.Error(ErrorCode.UnexpectedError);
         }
+
+        var dtoOk = new LoanRepayResponse(
+            LoanId: loan.Id,
+            Outcome: LoanRepayOutcome.Paid,
+            CollectedAmount: amountToCollect,
+            RemainingAmount: loan.Amount,
+            CollateralItem: null
+        );
+        return ApiResult<LoanRepayResponse>.Ok(dtoOk);
     }
 
     public async Task<ApiResult<Loan?>> ReleaseCollateralAsync(int id, string borrowerUuid)
@@ -326,9 +320,10 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
             await using var tx = await db.Database.BeginTransactionAsync();
             var repo = new LoanRepository(dbFactory);
             var loan = await repo.GetByIdForUpdateAsync(db, id);
+            
             if (loan == null)
                 return ApiResult<Loan?>.NotFound(ErrorCode.LoanNotFound);
-
+            
             if (!string.Equals(loan.BorrowUuid, borrowerUuid, StringComparison.OrdinalIgnoreCase))
                 return ApiResult<Loan?>.BadRequest(ErrorCode.ValidationError);
 
@@ -341,19 +336,14 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
             if (loan.CollateralReleased)
                 return ApiResult<Loan?>.Conflict(ErrorCode.CollateralAlreadyReleased);
 
-            var ok = await repo.CollectCollateralAsync(id);
-            if (!ok)
-                return ApiResult<Loan?>.Error(ErrorCode.UnexpectedError);
-
+            loan.CollateralReleased = true;
+            await db.SaveChangesAsync();
+            await tx.CommitAsync();
+            
             var updatedLoan = await repo.GetByIdAsync(id);
             if (updatedLoan == null)
                 return ApiResult<Loan?>.Error(ErrorCode.UnexpectedError);
-
             return ApiResult<Loan?>.Ok(updatedLoan);
-            loan.CollateralItem = string.Empty;
-            await db.SaveChangesAsync();
-            await tx.CommitAsync();
-            return ApiResult<Loan?>.Ok(loan);
         }
         catch (Exception)
         {
