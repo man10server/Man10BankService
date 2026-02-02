@@ -15,7 +15,10 @@ public class LoanCreateRequest : IValidatableObject
     public required string BorrowUuid { get; set; }
 
     [Required]
-    public decimal Amount { get; set; }
+    public decimal BorrowAmount { get; set; }
+    
+    [Required]
+    public decimal RepayAmount { get; set; }
 
     [Required]
     public DateTime PaybackDate { get; set; }
@@ -24,10 +27,11 @@ public class LoanCreateRequest : IValidatableObject
 
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
-        if (Amount <= 0m)
-            yield return new ValidationResult("金額は 0 より大きい必要があります。", [nameof(Amount)]);
+        if (BorrowAmount <= 0m)
+            yield return new ValidationResult("金額は 0 より大きい必要があります。", [nameof(BorrowAmount)]);
+        if (RepayAmount <= 0m)
+            yield return new ValidationResult("金額は 0 より大きい必要があります。", [nameof(RepayAmount)]);
         if (LendUuid == BorrowUuid)
             yield return new ValidationResult("貸手と借手の UUID が同一です。", [nameof(LendUuid), nameof(BorrowUuid)]);
     }
 }
-

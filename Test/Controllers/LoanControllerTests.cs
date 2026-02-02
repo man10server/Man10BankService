@@ -63,7 +63,8 @@ public class LoanControllerTests
         {
             LendUuid = lendUuid,
             BorrowUuid = borrowUuid,
-            Amount = 3000m,
+            BorrowAmount = 1000m,
+            RepayAmount = 3000m,
             PaybackDate = DateTime.UtcNow.AddDays(7),
             CollateralItem = string.Empty
         };
@@ -102,7 +103,8 @@ public class LoanControllerTests
         {
             LendUuid = lendUuid,
             BorrowUuid = borrowUuid,
-            Amount = 1000m,
+            BorrowAmount = 1000m,
+            RepayAmount = 1000m,
             PaybackDate = DateTime.UtcNow.AddDays(5),
             CollateralItem = string.Empty
         });
@@ -130,7 +132,8 @@ public class LoanControllerTests
         {
             LendUuid = lendUuid,
             BorrowUuid = borrowUuid,
-            Amount = 500m,
+            BorrowAmount = 100m,
+            RepayAmount = 500m,
             PaybackDate = DateTime.UtcNow.AddDays(-1),
             CollateralItem = string.Empty
         });
@@ -166,7 +169,8 @@ public class LoanControllerTests
         {
             LendUuid = lendUuid,
             BorrowUuid = borrowUuid,
-            Amount = 700m,
+            BorrowAmount = 100m,
+            RepayAmount = 700m,
             PaybackDate = DateTime.UtcNow.AddDays(3),
             CollateralItem = string.Empty
         });
@@ -197,7 +201,8 @@ public class LoanControllerTests
         {
             LendUuid = lendUuid,
             BorrowUuid = borrowUuid,
-            Amount = 1200m,
+            BorrowAmount = 100m,
+            RepayAmount = 1200m,
             PaybackDate = DateTime.UtcNow.AddDays(-1),
             CollateralItem = "diamond"
         });
@@ -234,7 +239,8 @@ public class LoanControllerTests
         {
             LendUuid = lendUuid,
             BorrowUuid = borrowUuid,
-            Amount = 1000m,
+            BorrowAmount = 100m,
+            RepayAmount = 1000m,
             PaybackDate = DateTime.UtcNow.AddDays(-1),
             CollateralItem = "gold"
         });
@@ -266,7 +272,8 @@ public class LoanControllerTests
         {
             LendUuid = lendUuid,
             BorrowUuid = borrowUuid,
-            Amount = 5000m,
+            BorrowAmount = 100m,
+            RepayAmount = 5000m,
             PaybackDate = DateTime.UtcNow.AddDays(-1),
             CollateralItem = "emerald"
         });

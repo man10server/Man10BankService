@@ -53,7 +53,9 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
                 return ApiResult<Loan?>.BadRequest(ErrorCode.ValidationError);
             if (request.LendUuid == request.BorrowUuid)
                 return ApiResult<Loan?>.BadRequest(ErrorCode.ValidationError);
-            if (request.Amount <= 0m)
+            if (request.BorrowAmount <= 0m)
+                return ApiResult<Loan?>.BadRequest(ErrorCode.ValidationError);
+            if (request.RepayAmount <= 0m)
                 return ApiResult<Loan?>.BadRequest(ErrorCode.ValidationError);
 
             var lendName = await MinecraftProfileService.GetNameByUuidAsync(request.LendUuid);
@@ -64,7 +66,7 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
             var w = await bank.WithdrawAsync(new WithdrawRequest
             {
                 Uuid = request.LendUuid,
-                Amount = request.Amount,
+                Amount = request.BorrowAmount,
                 PluginName = "user_loan",
                 Note = "user_loan_lend_withdraw",
                 DisplayNote = "個人間貸付(出金)",
@@ -82,14 +84,14 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
                     request.LendUuid,
                     borrowName,
                     request.BorrowUuid,
-                    request.Amount,
+                    request.RepayAmount,
                     request.PaybackDate,
                     request.CollateralItem);
                 
                 var deposit = await bank.DepositAsync(new DepositRequest
                 {
                     Uuid = request.BorrowUuid,
-                    Amount = request.Amount,
+                    Amount = request.BorrowAmount,
                     PluginName = "user_loan",
                     Note = "user_loan_borrow_deposit",
                     DisplayNote = "個人間貸付(入金)",
@@ -105,7 +107,7 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
                 await bank.DepositAsync(new DepositRequest
                 {
                     Uuid = request.LendUuid,
-                    Amount = request.Amount,
+                    Amount = request.BorrowAmount,
                     PluginName = "user_loan",
                     Note = "user_loan_compensate_refund",
                     DisplayNote = "個人間貸付(補償返金)",
