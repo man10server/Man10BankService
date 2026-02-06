@@ -8,7 +8,7 @@ using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Man10BankService.Services;
 
-public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService bank)
+public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService bank, IPlayerProfileService profileService)
 {
     public async Task<ApiResult<Loan>> GetByIdAsync(int id)
     {
@@ -58,8 +58,8 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
             if (request.Amount <= 0m)
                 return ApiResult<Loan?>.BadRequest(ErrorCode.ValidationError);
 
-            var lendName = await MinecraftProfileService.GetNameByUuidAsync(request.LendUuid);
-            var borrowName = await MinecraftProfileService.GetNameByUuidAsync(request.BorrowUuid);
+            var lendName = await profileService.GetNameByUuidAsync(request.LendUuid);
+            var borrowName = await profileService.GetNameByUuidAsync(request.BorrowUuid);
             if (lendName == null || borrowName == null)
                 return ApiResult<Loan?>.NotFound(ErrorCode.PlayerNotFound);
 
@@ -133,7 +133,7 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
         try
         {
             await using var db = await dbFactory.CreateDbContextAsync();
-            await using var tx = await db.Database.BeginTransactionAsync();
+            await using var tx = await BeginTransactionIfNeededAsync(db);
             var repo = new LoanRepository(db);
             var loan = await repo.GetByIdForUpdateAsync(id);
             if (loan == null)
@@ -158,7 +158,7 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
 
     private async Task<ApiResult<LoanRepayResponse>> RepayWithoutCollateralAsync(
         BankDbContext db,
-        IDbContextTransaction tx,
+        IDbContextTransaction? tx,
         Loan loan,
         string collectorUuid)
     {
@@ -170,8 +170,8 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
         if (toCollect <= 0m)
             return ApiResult<LoanRepayResponse>.BadRequest(ErrorCode.ValidationError);
 
-        var borrowPlayer = await MinecraftProfileService.GetNameByUuidAsync(loan.BorrowUuid);
-        var collectPlayer = await MinecraftProfileService.GetNameByUuidAsync(collectorUuid);
+        var borrowPlayer = await profileService.GetNameByUuidAsync(loan.BorrowUuid);
+        var collectPlayer = await profileService.GetNameByUuidAsync(collectorUuid);
         if (borrowPlayer == null || collectPlayer == null)
         {
             return ApiResult<LoanRepayResponse>.NotFound(ErrorCode.PlayerNotFound);
@@ -192,7 +192,8 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
         {
             loan.Amount = Math.Max(0m, loan.Amount - toCollect);
             await db.SaveChangesAsync();
-            await tx.CommitAsync();
+            if (tx != null)
+                await tx.CommitAsync();
             
             var deposit = await bank.DepositAsync(new DepositRequest
             {
@@ -233,15 +234,15 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
 
     private async Task<ApiResult<LoanRepayResponse>> RepayWithCollateralAsync(
         BankDbContext db,
-        IDbContextTransaction tx,
+        IDbContextTransaction? tx,
         Loan loan,
         string collectorUuid)
     {
         if (loan.Amount <= 0m)
             return ApiResult<LoanRepayResponse>.BadRequest(ErrorCode.NoRepaymentNeeded);
 
-        var borrowPlayer = await MinecraftProfileService.GetNameByUuidAsync(loan.BorrowUuid);
-        var lendPlayer = await MinecraftProfileService.GetNameByUuidAsync(collectorUuid);
+        var borrowPlayer = await profileService.GetNameByUuidAsync(loan.BorrowUuid);
+        var lendPlayer = await profileService.GetNameByUuidAsync(collectorUuid);
         if (borrowPlayer == null || lendPlayer == null)
         {
             return ApiResult<LoanRepayResponse>.NotFound(ErrorCode.PlayerNotFound);
@@ -264,7 +265,8 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
             loan.Amount = 0m;
             loan.CollateralReleased = true;
             await db.SaveChangesAsync();
-            await tx.CommitAsync();
+            if (tx != null)
+                await tx.CommitAsync();
 
             var dto = new LoanRepayResponse(
                 LoanId: loan.Id,
@@ -283,7 +285,8 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
         // 出金できた場合
         loan.Amount = 0m;
         await db.SaveChangesAsync();
-        await tx.CommitAsync();
+        if (tx != null)
+            await tx.CommitAsync();
 
         var deposit = await bank.DepositAsync(new DepositRequest
         {
@@ -325,7 +328,7 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
         try
         {
             await using var db = await dbFactory.CreateDbContextAsync();
-            await using var tx = await db.Database.BeginTransactionAsync();
+            await using var tx = await BeginTransactionIfNeededAsync(db);
             var repo = new LoanRepository(db);
             var loan = await repo.GetByIdForUpdateAsync(id);
             
@@ -346,7 +349,8 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
 
             loan.CollateralReleased = true;
             await db.SaveChangesAsync();
-            await tx.CommitAsync();
+            if (tx != null)
+                await tx.CommitAsync();
             
             var updatedLoan = await repo.GetByIdAsync(id);
             if (updatedLoan == null)
@@ -357,5 +361,14 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
         {
             return ApiResult<Loan?>.Error(ErrorCode.UnexpectedError);
         }
+    }
+
+    private static async Task<IDbContextTransaction?> BeginTransactionIfNeededAsync(BankDbContext db)
+    {
+        var provider = db.Database.ProviderName;
+        if (provider is null || !provider.Contains("MySql", StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        return await db.Database.BeginTransactionAsync();
     }
 }

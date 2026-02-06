@@ -6,14 +6,14 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Man10BankService.Services;
 
-public class AtmService(IDbContextFactory<BankDbContext> dbFactory)
+public class AtmService(IDbContextFactory<BankDbContext> dbFactory, IPlayerProfileService profileService)
 {
     public async Task<ApiResult<AtmLog>> AddLogAsync(AtmLogRequest req)
     {
         try
         {
             var repo = new AtmRepository(dbFactory);
-            var player = await MinecraftProfileService.GetNameByUuidAsync(req.Uuid);
+            var player = await profileService.GetNameByUuidAsync(req.Uuid);
             if (player == null)
             {
                 return ApiResult<AtmLog>.NotFound(ErrorCode.PlayerNotFound);

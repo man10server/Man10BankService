@@ -7,7 +7,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Man10BankService.Services;
 
-public class EstateService(IDbContextFactory<BankDbContext> dbFactory)
+public class EstateService(IDbContextFactory<BankDbContext> dbFactory, IPlayerProfileService profileService)
 {
     public async Task<ApiResult<Estate?>> GetLatestAsync(string uuid)
     {
@@ -65,7 +65,7 @@ public class EstateService(IDbContextFactory<BankDbContext> dbFactory)
             var current = await repo.GetLatestAsync(uuid);
             
             // player 推定
-            var player = await MinecraftProfileService.GetNameByUuidAsync(uuid) ?? current?.Player;
+            var player = await profileService.GetNameByUuidAsync(uuid) ?? current?.Player;
             if (player == null)
             {
                 return ApiResult<bool>.NotFound(ErrorCode.PlayerNotFound);
@@ -115,7 +115,7 @@ public class EstateService(IDbContextFactory<BankDbContext> dbFactory)
 
     private async Task<decimal> GetServerLoanBorrowAmountAsync(string uuid)
     {
-        var repo = new ServerLoanRepository(dbFactory);
+        var repo = new ServerLoanRepository(dbFactory, profileService);
         var loan = await repo.GetOrCreateByUuidAsync(uuid);
         return loan.BorrowAmount;
     }

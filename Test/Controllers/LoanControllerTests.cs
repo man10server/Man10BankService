@@ -31,8 +31,9 @@ public class LoanControllerTests
         services.AddControllers().AddApplicationPart(typeof(LoanController).Assembly);
 
         var sp = services.BuildServiceProvider();
-        var bank = new BankService(db.Factory);
-        var loanService = new LoanService(db.Factory, bank);
+        var profile = new FakePlayerProfileService();
+        var bank = new BankService(db.Factory, profile);
+        var loanService = new LoanService(db.Factory, bank, profile);
 
         var ctrl = new LoanController(loanService)
         {

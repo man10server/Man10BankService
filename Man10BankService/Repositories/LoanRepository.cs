@@ -13,6 +13,10 @@ public class LoanRepository(BankDbContext db)
 
     public async Task<Loan?> GetByIdForUpdateAsync(int id)
     {
+        var provider = db.Database.ProviderName;
+        if (provider is null || !provider.Contains("MySql", StringComparison.OrdinalIgnoreCase))
+            return await db.Loans.FirstOrDefaultAsync(x => x.Id == id);
+
         return await db.Loans
             .FromSqlInterpolated($"SELECT * FROM loan_table WHERE id = {id} FOR UPDATE")
             .FirstOrDefaultAsync();
