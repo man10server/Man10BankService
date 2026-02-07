@@ -96,8 +96,7 @@ public class ServerLoanService
 
             if (dp.StatusCode != 200) return new ApiResult<ServerLoan?>(dp.StatusCode, dp.Code);
             
-            var paymentAmount = Math.Round(amount * DailyInterestRate * 7m * 2m, 0, MidpointRounding.AwayFromZero);
-            if (paymentAmount < 1m) paymentAmount = 1m;
+            var paymentAmount = CalculateRepaymentAmount(amount);
             
             if (updated == null || updated.PaymentAmount > 0m) return ApiResult<ServerLoan?>.Ok(updated);
             
@@ -225,6 +224,30 @@ public class ServerLoanService
             return ApiResult<ServerLoan?>.Error(ErrorCode.UnexpectedError);
         }
     }
+
+    public async Task<ApiResult<ServerLoan?>> SetBorrowAmountAsync(string uuid, decimal amount)
+    {
+        try
+        {
+            if (amount < 0m)
+                return ApiResult<ServerLoan?>.BadRequest(ErrorCode.ValidationError);
+
+            var repo = new ServerLoanRepository(_dbFactory);
+            var paymentAmount = CalculateRepaymentAmount(amount);
+            var loan = await repo.SetBorrowAmountAsync(uuid, amount, paymentAmount);
+            if (loan == null)
+                return ApiResult<ServerLoan?>.NotFound(ErrorCode.LoanNotFound);
+            return ApiResult<ServerLoan?>.Ok(loan);
+        }
+        catch (ArgumentException)
+        {
+            return ApiResult<ServerLoan?>.BadRequest(ErrorCode.ValidationError);
+        }
+        catch (Exception)
+        {
+            return ApiResult<ServerLoan?>.Error(ErrorCode.UnexpectedError);
+        }
+    }
     
     // 金利の丸め規則をサービス内で一元化
     public static decimal CalculateDailyInterestAmount(decimal borrowAmount)
@@ -233,6 +256,15 @@ public class ServerLoanService
         var interest = borrowAmount * DailyInterestRate;
         var rounded = Math.Round(interest, 0, MidpointRounding.AwayFromZero);
         return rounded < 0m ? 0m : rounded;
+    }
+
+    private static decimal CalculateRepaymentAmount(decimal borrowAmount)
+    {
+        if (borrowAmount <= 0m)
+            return 0m;
+
+        var paymentAmount = Math.Round(borrowAmount * DailyInterestRate * 7m * 2m, 0, MidpointRounding.AwayFromZero);
+        return paymentAmount < 1m ? 1m : paymentAmount;
     }
 
     // 次回の週次返済日時を計算（ローカル時刻基準）

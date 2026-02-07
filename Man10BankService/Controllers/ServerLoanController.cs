@@ -61,6 +61,18 @@ public class ServerLoanController(ServerLoanService service) : ControllerBase
         return this.ToActionResult(res);
     }
 
+    [HttpPost("borrow-amount")]
+    [Produces("application/json")]
+    [ProducesResponseType(typeof(ServerLoan), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<ServerLoan?>> SetBorrowAmount([FromRoute] string uuid, [FromQuery] decimal amount)
+    {
+        var res = await service.SetBorrowAmountAsync(uuid, amount);
+        return this.ToActionResult(res);
+    }
+
     [HttpGet("borrow-limit")]
     [Produces("application/json")]
     [ProducesResponseType(typeof(decimal), StatusCodes.Status200OK)]

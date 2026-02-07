@@ -164,6 +164,89 @@ public class ServerLoanControllerTests
         afterSecond!.BorrowAmount.Should().Be(first);
     }
 
+    [Fact(DisplayName = "borrow-amount: 残額を上書きし支払額を再計算する")]
+    public async Task SetBorrowAmount_ShouldOverwriteBorrowAmount_AndRecalculatePayment()
+    {
+        using var env = BuildController();
+        var ctrl = (ServerLoanController)env.Host.Controller;
+        const string uuid = TestConstants.Uuid;
+
+        var borrowRes = await ctrl.Borrow(uuid, new ServerLoanBorrowBodyRequest { Amount = 1000m });
+        borrowRes.Result.Should().BeOfType<OkObjectResult>();
+
+        var setRes = await ctrl.SetBorrowAmount(uuid, 5000m);
+        setRes.Result.Should().BeOfType<OkObjectResult>();
+
+        var loanRes = await ctrl.GetByUuid(uuid);
+        var loan = loanRes.Result
+            .Should().BeOfType<OkObjectResult>().Which.Value
+            .Should().BeOfType<ServerLoan>().Which;
+        loan!.BorrowAmount.Should().Be(5000m);
+        loan.PaymentAmount.Should().Be(Math.Round(5000m * 0.01m * 7m * 2m, 0, MidpointRounding.AwayFromZero));
+    }
+
+    [Fact(DisplayName = "borrow-amount: 0指定で残額と支払額を0にする")]
+    public async Task SetBorrowAmount_Zero_ShouldSetBorrowAndPaymentToZero()
+    {
+        using var env = BuildController();
+        var ctrl = (ServerLoanController)env.Host.Controller;
+        const string uuid = TestConstants.Uuid;
+
+        var borrowRes = await ctrl.Borrow(uuid, new ServerLoanBorrowBodyRequest { Amount = 800m });
+        borrowRes.Result.Should().BeOfType<OkObjectResult>();
+
+        var setRes = await ctrl.SetBorrowAmount(uuid, 0m);
+        setRes.Result.Should().BeOfType<OkObjectResult>();
+
+        var loanRes = await ctrl.GetByUuid(uuid);
+        var loan = loanRes.Result
+            .Should().BeOfType<OkObjectResult>().Which.Value
+            .Should().BeOfType<ServerLoan>().Which;
+        loan!.BorrowAmount.Should().Be(0m);
+        loan.PaymentAmount.Should().Be(0m);
+    }
+
+    [Fact(DisplayName = "borrow-amount: 負数指定は400になる")]
+    public async Task SetBorrowAmount_Negative_ShouldReturn400()
+    {
+        using var env = BuildController();
+        var ctrl = (ServerLoanController)env.Host.Controller;
+
+        var res = await ctrl.SetBorrowAmount("invalid-uuid", -1m);
+        res.Result.Should().BeOfType<BadRequestObjectResult>();
+    }
+
+    [Fact(DisplayName = "borrow-amount: UUID不正時は400になる")]
+    public async Task SetBorrowAmount_InvalidUuid_ShouldReturn400()
+    {
+        using var env = BuildController();
+        var ctrl = (ServerLoanController)env.Host.Controller;
+
+        var res = await ctrl.SetBorrowAmount("invalid-uuid", 1000m);
+        res.Result.Should().BeOfType<BadRequestObjectResult>();
+    }
+
+    [Fact(DisplayName = "borrow-amount: 差分ログがSetBorrowAmountで記録される")]
+    public async Task SetBorrowAmount_ShouldWriteDeltaLog()
+    {
+        using var env = BuildController();
+        var ctrl = (ServerLoanController)env.Host.Controller;
+        const string uuid = TestConstants.Uuid;
+
+        var borrowRes = await ctrl.Borrow(uuid, new ServerLoanBorrowBodyRequest { Amount = 1000m });
+        borrowRes.Result.Should().BeOfType<OkObjectResult>();
+
+        var setRes = await ctrl.SetBorrowAmount(uuid, 1300m);
+        setRes.Result.Should().BeOfType<OkObjectResult>();
+
+        var logsRes = await ctrl.GetLogs(uuid, limit: 10);
+        var logs = logsRes.Result
+            .Should().BeOfType<OkObjectResult>().Which.Value
+            .Should().BeOfType<List<ServerLoanLog>>().Which;
+
+        logs.Any(x => x.Action == "SetBorrowAmount" && x.Amount == 300m).Should().BeTrue();
+    }
+
     [Fact(DisplayName = "repay: 所持金不足で409・借入ログは変化せず失敗ログが記録される")]
     public async Task Repay_InsufficientBalance_Should409_And_LogFailure()
     {
