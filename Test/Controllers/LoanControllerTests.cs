@@ -56,15 +56,16 @@ public class LoanControllerTests
         using var env = BuildController();
         var ctrl = (LoanController)env.Host.Controller;
 
-        const string lendUuid = "11111111-1111-1111-1111-111111111111";
-        const string borrowUuid = "22222222-2222-2222-2222-222222222222";
+        const string lendUuid = TestConstants.LendUuid;
+        const string borrowUuid = TestConstants.BorrowUuid;
         await env.Bank.DepositAsync(new DepositRequest { Uuid = lendUuid, Amount = 5000m, PluginName = "test", Note = "seed", DisplayNote = "seed", Server = "dev" });
 
         var createReq = new LoanCreateRequest
         {
             LendUuid = lendUuid,
             BorrowUuid = borrowUuid,
-            Amount = 3000m,
+            BorrowAmount = 1000m,
+            RepayAmount = 3000m,
             PaybackDate = DateTime.UtcNow.AddDays(7),
             CollateralItem = string.Empty
         };
@@ -95,15 +96,16 @@ public class LoanControllerTests
         using var env = BuildController();
         var ctrl = (LoanController)env.Host.Controller;
 
-        const string lendUuid = "33333333-3333-3333-3333-333333333333";
-        const string borrowUuid = "44444444-4444-4444-4444-444444444444";
+        const string lendUuid = TestConstants.LendUuid;
+        const string borrowUuid = TestConstants.BorrowUuid;
         await env.Bank.DepositAsync(new DepositRequest { Uuid = lendUuid, Amount = 10000m, PluginName = "test", Note = "seed", DisplayNote = "seed", Server = "dev" });
 
         var create = await ctrl.Create(new LoanCreateRequest
         {
             LendUuid = lendUuid,
             BorrowUuid = borrowUuid,
-            Amount = 1000m,
+            BorrowAmount = 1000m,
+            RepayAmount = 1000m,
             PaybackDate = DateTime.UtcNow.AddDays(5),
             CollateralItem = string.Empty
         });
@@ -123,15 +125,16 @@ public class LoanControllerTests
         using var env = BuildController();
         var ctrl = (LoanController)env.Host.Controller;
 
-        const string lendUuid = "33333333-3333-3333-3333-333333333334";
-        const string borrowUuid = "44444444-4444-4444-4444-444444444445";
+        const string lendUuid = TestConstants.LendUuid;
+        const string borrowUuid = TestConstants.BorrowUuid;
         await env.Bank.DepositAsync(new DepositRequest { Uuid = lendUuid, Amount = 10000m, PluginName = "test", Note = "seed", DisplayNote = "seed", Server = "dev" });
 
         var create = await ctrl.Create(new LoanCreateRequest
         {
             LendUuid = lendUuid,
             BorrowUuid = borrowUuid,
-            Amount = 500m,
+            BorrowAmount = 100m,
+            RepayAmount = 500m,
             PaybackDate = DateTime.UtcNow.AddDays(-1),
             CollateralItem = string.Empty
         });
@@ -159,15 +162,16 @@ public class LoanControllerTests
         using var env = BuildController();
         var ctrl = (LoanController)env.Host.Controller;
 
-        const string lendUuid = "33333333-3333-3333-3333-333333333335";
-        const string borrowUuid = "44444444-4444-4444-4444-444444444446";
+        const string lendUuid = TestConstants.LendUuid;
+        const string borrowUuid = TestConstants.BorrowUuid;
         await env.Bank.DepositAsync(new DepositRequest { Uuid = lendUuid, Amount = 10000m, PluginName = "test", Note = "seed", DisplayNote = "seed", Server = "dev" });
 
         var create = await ctrl.Create(new LoanCreateRequest
         {
             LendUuid = lendUuid,
             BorrowUuid = borrowUuid,
-            Amount = 700m,
+            BorrowAmount = 100m,
+            RepayAmount = 700m,
             PaybackDate = DateTime.UtcNow.AddDays(3),
             CollateralItem = string.Empty
         });
@@ -190,15 +194,16 @@ public class LoanControllerTests
         using var env = BuildController();
         var ctrl = (LoanController)env.Host.Controller;
 
-        const string lendUuid = "55555555-5555-5555-5555-555555555555";
-        const string borrowUuid = "66666666-6666-6666-6666-666666666666";
+        const string lendUuid = TestConstants.LendUuid;
+        const string borrowUuid = TestConstants.BorrowUuid;
         await env.Bank.DepositAsync(new DepositRequest { Uuid = lendUuid, Amount = 20000m, PluginName = "test", Note = "seed", DisplayNote = "seed", Server = "dev" });
 
         var create = await ctrl.Create(new LoanCreateRequest
         {
             LendUuid = lendUuid,
             BorrowUuid = borrowUuid,
-            Amount = 1200m,
+            BorrowAmount = 100m,
+            RepayAmount = 1200m,
             PaybackDate = DateTime.UtcNow.AddDays(-1),
             CollateralItem = "diamond"
         });
@@ -227,15 +232,16 @@ public class LoanControllerTests
         using var env = BuildController();
         var ctrl = (LoanController)env.Host.Controller;
 
-        const string lendUuid = "55555555-5555-5555-5555-555555555556";
-        const string borrowUuid = "66666666-6666-6666-6666-666666666667";
+        const string lendUuid = TestConstants.LendUuid;
+        const string borrowUuid = TestConstants.BorrowUuid;
         await env.Bank.DepositAsync(new DepositRequest { Uuid = lendUuid, Amount = 20000m, PluginName = "test", Note = "seed", DisplayNote = "seed", Server = "dev" });
 
         var create = await ctrl.Create(new LoanCreateRequest
         {
             LendUuid = lendUuid,
             BorrowUuid = borrowUuid,
-            Amount = 1000m,
+            BorrowAmount = 100m,
+            RepayAmount = 1000m,
             PaybackDate = DateTime.UtcNow.AddDays(-1),
             CollateralItem = "gold"
         });
@@ -260,15 +266,16 @@ public class LoanControllerTests
         using var env = BuildController();
         var ctrl = (LoanController)env.Host.Controller;
 
-        const string lendUuid = "55555555-5555-5555-5555-555555555557";
-        const string borrowUuid = "66666666-6666-6666-6666-666666666668";
+        const string lendUuid = TestConstants.LendUuid;
+        const string borrowUuid = TestConstants.BorrowUuid;
         await env.Bank.DepositAsync(new DepositRequest { Uuid = lendUuid, Amount = 20000m, PluginName = "test", Note = "seed", DisplayNote = "seed", Server = "dev" });
 
         var create = await ctrl.Create(new LoanCreateRequest
         {
             LendUuid = lendUuid,
             BorrowUuid = borrowUuid,
-            Amount = 5000m,
+            BorrowAmount = 100m,
+            RepayAmount = 5000m,
             PaybackDate = DateTime.UtcNow.AddDays(-1),
             CollateralItem = "emerald"
         });
