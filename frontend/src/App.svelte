@@ -1,47 +1,112 @@
 <script lang="ts">
-  import svelteLogo from './assets/svelte.svg'
-  import viteLogo from '/vite.svg'
-  import Counter from './lib/Counter.svelte'
+  import { onMount } from 'svelte'
+  import HomePage from './pages/HomePage.svelte'
+  import HealthPage from './pages/HealthPage.svelte'
+  import NotFoundPage from './pages/NotFoundPage.svelte'
+
+  const homePath = '/'
+  const healthPagePath = '/health'
+
+  let currentPath = normalizePath(window.location.pathname)
+
+  function normalizePath(pathname: string): string {
+    if (!pathname) {
+      return homePath
+    }
+
+    return pathname.endsWith('/') && pathname.length > 1
+      ? pathname.slice(0, -1)
+      : pathname
+  }
+
+  function navigate(path: string): void {
+    const normalizedPath = normalizePath(path)
+    if (normalizedPath === currentPath) {
+      return
+    }
+
+    window.history.pushState({}, '', normalizedPath)
+    currentPath = normalizedPath
+  }
+
+  onMount(() => {
+    const handlePopState = () => {
+      currentPath = normalizePath(window.location.pathname)
+    }
+
+    window.addEventListener('popstate', handlePopState)
+    return () => {
+      window.removeEventListener('popstate', handlePopState)
+    }
+  })
 </script>
 
-<main>
-  <div>
-    <a href="https://vite.dev" target="_blank" rel="noreferrer">
-      <img src={viteLogo} class="logo" alt="Vite Logo" />
+<main class="page">
+  <nav class="nav">
+    <a
+      href={homePath}
+      class:active={currentPath === homePath}
+      on:click|preventDefault={() => navigate(homePath)}
+    >
+      トップ
     </a>
-    <a href="https://svelte.dev" target="_blank" rel="noreferrer">
-      <img src={svelteLogo} class="logo svelte" alt="Svelte Logo" />
+    <a
+      href={healthPagePath}
+      class:active={currentPath === healthPagePath}
+      on:click|preventDefault={() => navigate(healthPagePath)}
+    >
+      ヘルスチェック
     </a>
-  </div>
-  <h1>Vite + Svelte</h1>
+  </nav>
 
-  <div class="card">
-    <Counter />
-  </div>
-
-  <p>
-    Check out <a href="https://github.com/sveltejs/kit#readme" target="_blank" rel="noreferrer">SvelteKit</a>, the official Svelte app framework powered by Vite!
-  </p>
-
-  <p class="read-the-docs">
-    Click on the Vite and Svelte logos to learn more
-  </p>
+  {#if currentPath === homePath}
+    <HomePage onOpenHealth={() => navigate(healthPagePath)} />
+  {:else if currentPath === healthPagePath}
+    <HealthPage />
+  {:else}
+    <NotFoundPage path={currentPath} onGoHome={() => navigate(homePath)} />
+  {/if}
 </main>
 
 <style>
-  .logo {
-    height: 6em;
-    padding: 1.5em;
-    will-change: filter;
-    transition: filter 300ms;
+  .page {
+    min-height: 100vh;
+    padding: 24px;
+    background: linear-gradient(160deg, #f5f7fb, #dfe9f6);
+    display: grid;
+    place-items: center;
+    gap: 16px;
   }
-  .logo:hover {
-    filter: drop-shadow(0 0 2em #646cffaa);
+
+  .nav {
+    width: min(760px, 100%);
+    display: flex;
+    gap: 10px;
   }
-  .logo.svelte:hover {
-    filter: drop-shadow(0 0 2em #ff3e00aa);
+
+  .nav a {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 110px;
+    padding: 8px 12px;
+    border-radius: 10px;
+    text-decoration: none;
+    color: #1f2a44;
+    background: #edf2fb;
+    border: 1px solid #d0d9e8;
+    font-weight: 600;
   }
-  .read-the-docs {
-    color: #888;
+
+  .nav a.active {
+    color: #ffffff;
+    background: #1e4db7;
+    border-color: #1e4db7;
+  }
+
+  @media (max-width: 640px) {
+    .nav {
+      flex-wrap: wrap;
+    }
   }
 </style>
