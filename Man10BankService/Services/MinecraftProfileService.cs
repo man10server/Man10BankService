@@ -9,6 +9,7 @@ public static partial class MinecraftProfileService
     {
         Timeout = TimeSpan.FromSeconds(8)
     };
+    private static readonly Regex MinecraftIdPattern = MinecraftIdRegex();
     private static readonly Regex UuidHex32 = MyRegex();
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
@@ -23,6 +24,9 @@ public static partial class MinecraftProfileService
 
     [GeneratedRegex("^[0-9a-f]{32}$", RegexOptions.IgnoreCase | RegexOptions.Compiled, "ja-JP")]
     private static partial Regex MyRegex();
+    
+    [GeneratedRegex("^[0-9A-Za-z_]{3,16}$", RegexOptions.Compiled, "ja-JP")]
+    private static partial Regex MinecraftIdRegex();
 
 
     /// <summary>
@@ -60,6 +64,50 @@ public static partial class MinecraftProfileService
                 return null;
 
             return name;
+        }
+        catch (TaskCanceledException)
+        {
+            return null;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    public static async Task<string?> GetUuidByNameAsync(string minecraftId, CancellationToken ct = default)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(minecraftId))
+                return null;
+
+            var normalizedMinecraftId = minecraftId.Trim();
+            if (!MinecraftIdPattern.IsMatch(normalizedMinecraftId))
+                return null;
+
+            var url = $"https://api.mojang.com/users/profiles/minecraft/{Uri.EscapeDataString(normalizedMinecraftId)}";
+            using var req = new HttpRequestMessage(HttpMethod.Get, url);
+            using var res = await Http.SendAsync(req, ct).ConfigureAwait(false);
+
+            if (res.StatusCode is System.Net.HttpStatusCode.NoContent or System.Net.HttpStatusCode.NotFound)
+                return null;
+
+            if (!res.IsSuccessStatusCode)
+                return null;
+
+            await using var stream = await res.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+            var profile = await JsonSerializer.DeserializeAsync<MojangProfile>(stream, JsonOpts, ct);
+
+            var id = profile?.Id;
+            if (string.IsNullOrWhiteSpace(id))
+                return null;
+
+            var normalizedUuid = id.Trim().Replace("-", string.Empty).ToLowerInvariant();
+            if (!UuidHex32.IsMatch(normalizedUuid))
+                return null;
+
+            return normalizedUuid;
         }
         catch (TaskCanceledException)
         {
