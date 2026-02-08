@@ -19,6 +19,7 @@
   export let datasets: AssetTrendDataset[] = []
   export let ariaLabel = '資産推移グラフ'
   export let height = 320
+  export let mobileHeight = 220
   export let showLatestAmounts = true
 
   type LatestAmount = {
@@ -171,7 +172,7 @@
   </div>
 {/if}
 
-<div class="chart-wrap" style:height={`${height}px`}>
+<div class="chart-wrap" style={`--chart-height:${height}px; --chart-height-mobile:${mobileHeight}px;`}>
   <canvas bind:this={chartCanvas} aria-label={ariaLabel}></canvas>
 </div>
 
@@ -195,5 +196,22 @@
   .chart-wrap {
     margin-top: 16px;
     width: 100%;
+    height: var(--chart-height);
+  }
+
+  @media (max-width: 430px) {
+    .latest-amounts {
+      gap: 8px;
+      font-size: 0.88rem;
+    }
+
+    .latest-item {
+      padding: 3px 8px;
+    }
+
+    .chart-wrap {
+      margin-top: 12px;
+      height: var(--chart-height-mobile);
+    }
   }
 </style>

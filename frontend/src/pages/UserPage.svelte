@@ -202,12 +202,6 @@
   <p class="meta">MinecraftID: {minecraftId || '-'}</p>
   <p class="meta">UUID: {uuid}</p>
 
-  <div class="actions">
-    <button type="button" on:click={reloadAllAsync} disabled={loadingHistory || loadingLogs}>
-      {loadingHistory || loadingLogs ? '読み込み中...' : '履歴を再取得'}
-    </button>
-  </div>
-
   {#if historyErrorMessage}
     <p class="status error">{historyErrorMessage}</p>
   {:else if loadingHistory}
@@ -217,7 +211,13 @@
   {/if}
 
   <div class="chart-area">
-    <AssetTrendChart labels={chartLabels} datasets={chartDatasets} ariaLabel="ユーザー資産履歴グラフ" />
+    <AssetTrendChart
+      labels={chartLabels}
+      datasets={chartDatasets}
+      ariaLabel="ユーザー資産履歴グラフ"
+      height={320}
+      mobileHeight={210}
+    />
   </div>
 
   {#if lastCheckedAt}
@@ -392,5 +392,78 @@
 
   .error {
     color: #b42318;
+  }
+
+  @media (max-width: 430px) {
+    .card {
+      width: 100%;
+      padding: 14px;
+      border-radius: 12px;
+    }
+
+    h1 {
+      font-size: 1.25rem;
+      line-height: 1.35;
+    }
+
+    .meta {
+      font-size: 0.88rem;
+    }
+
+    .actions {
+      margin-top: 12px;
+      gap: 6px;
+    }
+
+    button {
+      width: 100%;
+      font-size: 0.9rem;
+      padding: 10px 12px;
+    }
+
+    .chart-area {
+      margin-top: 12px;
+    }
+
+    .logs {
+      margin-top: 18px;
+      padding-top: 14px;
+    }
+
+    h2 {
+      font-size: 1.05rem;
+    }
+
+    .log-item {
+      padding: 10px;
+    }
+
+    .log-row {
+      font-size: 0.84rem;
+      align-items: flex-start;
+      flex-wrap: wrap;
+      gap: 4px 8px;
+    }
+
+    .log-row-display-note {
+      width: 100%;
+      word-break: break-word;
+    }
+
+    .pager {
+      margin-top: 10px;
+      gap: 8px;
+      flex-wrap: wrap;
+      font-size: 0.88rem;
+    }
+
+    .pager button {
+      width: auto;
+      min-width: 92px;
+    }
+
+    .status {
+      font-size: 0.88rem;
+    }
   }
 </style>

@@ -133,4 +133,23 @@
       flex-wrap: wrap;
     }
   }
+
+  @media (max-width: 430px) {
+    .page {
+      padding: 12px;
+      gap: 12px;
+    }
+
+    .nav {
+      width: 100%;
+      gap: 8px;
+    }
+
+    .nav a {
+      min-width: 0;
+      flex: 1;
+      font-size: 0.9rem;
+      padding: 8px 10px;
+    }
+  }
 </style>

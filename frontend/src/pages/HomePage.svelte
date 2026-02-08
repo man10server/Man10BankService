@@ -97,16 +97,7 @@
 </script>
 
 <section class="card">
-  <h1>Man10BankService フロントエンド</h1>
-  <p class="meta">直近500件のサーバー内総資産履歴を表示します。</p>
-  <p class="endpoint">取得元: {apiBaseUrl}/api/ServerEstate/history?limit={chartLimit}&offset=0</p>
-
-  <div class="actions">
-    <button type="button" on:click={onOpenHealth}>ヘルスチェックを開く</button>
-    <button type="button" class="secondary" on:click={loadEstateHistory} disabled={loading}>
-      {loading ? '読み込み中...' : '履歴を再取得'}
-    </button>
-  </div>
+  <h1>Man10Bank</h1>
 
   {#if errorMessage}
     <p class="status error">{errorMessage}</p>
@@ -117,7 +108,13 @@
   {/if}
 
   <div class="chart-area">
-    <AssetTrendChart labels={chartLabels} datasets={chartDatasets} ariaLabel="サーバー資産履歴グラフ" />
+    <AssetTrendChart
+      labels={chartLabels}
+      datasets={chartDatasets}
+      ariaLabel="サーバー資産履歴グラフ"
+      height={320}
+      mobileHeight={210}
+    />
   </div>
 
   {#if lastCheckedAt}
@@ -195,5 +192,45 @@
 
   .error {
     color: #b42318;
+  }
+
+  @media (max-width: 430px) {
+    .card {
+      width: 100%;
+      padding: 14px;
+      border-radius: 12px;
+    }
+
+    h1 {
+      font-size: 1.25rem;
+      line-height: 1.35;
+    }
+
+    .meta {
+      font-size: 0.88rem;
+    }
+
+    .endpoint {
+      font-size: 0.8rem;
+    }
+
+    .actions {
+      margin-top: 12px;
+      gap: 6px;
+    }
+
+    button {
+      width: 100%;
+      font-size: 0.9rem;
+      padding: 10px 12px;
+    }
+
+    .chart-area {
+      margin-top: 12px;
+    }
+
+    .status {
+      font-size: 0.88rem;
+    }
   }
 </style>
