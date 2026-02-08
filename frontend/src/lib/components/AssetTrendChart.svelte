@@ -19,8 +19,17 @@
   export let datasets: AssetTrendDataset[] = []
   export let ariaLabel = '資産推移グラフ'
   export let height = 320
+  export let showLatestAmounts = true
+
+  type LatestAmount = {
+    label: string
+    value: number
+    color: string
+  }
+
   let chartCanvas: HTMLCanvasElement | null = null
   let mounted = false
+  let latestAmounts: LatestAmount[] = []
 
   function formatNumber(value: number): string {
     return new Intl.NumberFormat('ja-JP', {
@@ -110,6 +119,27 @@
     new Chart(chartCanvas, buildConfig(currentLabels, currentDatasets))
   }
 
+  function buildLatestAmounts(currentDatasets: AssetTrendDataset[]): void {
+    latestAmounts = currentDatasets
+      .map((dataset): LatestAmount | null => {
+        if (dataset.data.length === 0) {
+          return null
+        }
+
+        const value = Number(dataset.data[dataset.data.length - 1])
+        if (!Number.isFinite(value)) {
+          return null
+        }
+
+        return {
+          label: dataset.label,
+          value,
+          color: dataset.color
+        }
+      })
+      .filter((dataset): dataset is LatestAmount => dataset !== null)
+  }
+
   onMount(() => {
     mounted = true
     renderChart(labels, datasets)
@@ -118,6 +148,7 @@
   $: if (mounted) {
     renderChart(labels, datasets)
   }
+  $: buildLatestAmounts(datasets)
 
   onDestroy(() => {
     if (!chartCanvas) {
@@ -130,12 +161,39 @@
   })
 </script>
 
+{#if showLatestAmounts && latestAmounts.length > 0}
+  <div class="latest-amounts">
+    {#each latestAmounts as item}
+      <span class="latest-item" style:color={item.color}>
+        {item.label}:{formatNumber(item.value)}
+      </span>
+    {/each}
+  </div>
+{/if}
+
 <div class="chart-wrap" style:height={`${height}px`}>
   <canvas bind:this={chartCanvas} aria-label={ariaLabel}></canvas>
 </div>
 
 <style>
+  .latest-amounts {
+    margin-top: 14px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 14px;
+    font-size: 0.95rem;
+    font-weight: 600;
+  }
+
+  .latest-item {
+    background: #f8fafc;
+    border: 1px solid #dbe2ee;
+    border-radius: 999px;
+    padding: 4px 10px;
+  }
+
   .chart-wrap {
+    margin-top: 16px;
     width: 100%;
   }
 </style>
