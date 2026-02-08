@@ -39,6 +39,7 @@ services:
       Database__User: root
       Database__Password: root_pw
       Database__TreatTinyAsBoolean: "true"
+      Cors__AllowedOrigins__0: "http://localhost:5173"
     ports:
       - "8080:8080"
 
