@@ -3,11 +3,14 @@
   import HomePage from './pages/HomePage.svelte'
   import HealthPage from './pages/HealthPage.svelte'
   import NotFoundPage from './pages/NotFoundPage.svelte'
+  import UserPage from './pages/UserPage.svelte'
 
   const homePath = '/'
   const healthPagePath = '/health'
+  const userPathPrefix = '/user/'
 
   let currentPath = normalizePath(window.location.pathname)
+  let currentUserUuid: string | null = extractUserUuid(currentPath)
 
   function normalizePath(pathname: string): string {
     if (!pathname) {
@@ -29,6 +32,23 @@
     currentPath = normalizedPath
   }
 
+  function extractUserUuid(path: string): string | null {
+    if (!path.startsWith(userPathPrefix)) {
+      return null
+    }
+
+    const rest = path.slice(userPathPrefix.length)
+    if (!rest || rest.includes('/')) {
+      return null
+    }
+
+    try {
+      return decodeURIComponent(rest)
+    } catch {
+      return rest
+    }
+  }
+
   onMount(() => {
     const handlePopState = () => {
       currentPath = normalizePath(window.location.pathname)
@@ -39,6 +59,8 @@
       window.removeEventListener('popstate', handlePopState)
     }
   })
+
+  $: currentUserUuid = extractUserUuid(currentPath)
 </script>
 
 <main class="page">
@@ -63,6 +85,8 @@
     <HomePage onOpenHealth={() => navigate(healthPagePath)} />
   {:else if currentPath === healthPagePath}
     <HealthPage />
+  {:else if currentUserUuid}
+    <UserPage uuid={currentUserUuid} />
   {:else}
     <NotFoundPage path={currentPath} onGoHome={() => navigate(homePath)} />
   {/if}
