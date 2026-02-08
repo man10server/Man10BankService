@@ -3,11 +3,13 @@
   import HomePage from './pages/HomePage.svelte'
   import HealthPage from './pages/HealthPage.svelte'
   import NotFoundPage from './pages/NotFoundPage.svelte'
+  import UserSearchPage from './pages/UserSearchPage.svelte'
   import UserPage from './pages/UserPage.svelte'
 
   const homePath = '/'
   const healthPagePath = '/health'
-  const userPathPrefix = '/user/'
+  const userRootPath = '/user'
+  const userPathPrefix = `${userRootPath}/`
 
   let currentPath = normalizePath(window.location.pathname)
   let currentUserUuid: string | null = extractUserUuid(currentPath)
@@ -30,6 +32,14 @@
 
     window.history.pushState({}, '', normalizedPath)
     currentPath = normalizedPath
+  }
+
+  function openUserPage(uuid: string): void {
+    const encodedUuid = encodeURIComponent(uuid.trim())
+    if (!encodedUuid) {
+      return
+    }
+    navigate(`${userPathPrefix}${encodedUuid}`)
   }
 
   function extractUserUuid(path: string): string | null {
@@ -79,12 +89,21 @@
     >
       ヘルスチェック
     </a>
+    <a
+      href={userRootPath}
+      class:active={currentPath === userRootPath || !!currentUserUuid}
+      on:click|preventDefault={() => navigate(userRootPath)}
+    >
+      ユーザー
+    </a>
   </nav>
 
   {#if currentPath === homePath}
     <HomePage onOpenHealth={() => navigate(healthPagePath)} />
   {:else if currentPath === healthPagePath}
     <HealthPage />
+  {:else if currentPath === userRootPath}
+    <UserSearchPage onOpenUser={openUserPage} />
   {:else if currentUserUuid}
     <UserPage uuid={currentUserUuid} />
   {:else}
