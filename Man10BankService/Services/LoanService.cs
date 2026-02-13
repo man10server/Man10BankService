@@ -180,7 +180,7 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
 
         var rollbackAmount = loan.Amount;
         var remainingAmount = Math.Max(0m, loan.Amount - toCollect);
-        return await CompletePaidRepayAsync(
+        return await ApplyRepayAsync(
             db,
             tx,
             loan,
@@ -224,7 +224,7 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
         if (withdraw.StatusCode != 200)
             return new ApiResult<LoanRepayResponse>(withdraw.StatusCode, withdraw.Code);
 
-        return await CompletePaidRepayAsync(
+        return await ApplyRepayAsync(
             db,
             tx,
             loan,
@@ -236,7 +236,7 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
             collectorDepositDisplayNote: "個人間貸付 一括回収(入金)");
     }
 
-    private async Task<ApiResult<LoanRepayResponse>> CompletePaidRepayAsync(
+    private async Task<ApiResult<LoanRepayResponse>> ApplyRepayAsync(
         BankDbContext db,
         IDbContextTransaction? tx,
         Loan loan,
