@@ -209,7 +209,7 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
         {
             var collateral = loan.CollateralItem;
             loan.CollateralReleased = true;
-            await PersistLoanAmountAsync(db, tx, loan, 0m);
+            await SetLoanAmountAsync(db, tx, loan, 0m);
 
             var dto = new LoanRepayResponse(
                 LoanId: loan.Id,
@@ -249,7 +249,7 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
     {
         try
         {
-            await PersistLoanAmountAsync(db, tx, loan, remainingAmount);
+            await SetLoanAmountAsync(db, tx, loan, remainingAmount);
             var deposit = await DepositCollectorAsync(
                 collectorUuid,
                 collectedAmount,
@@ -257,15 +257,15 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
                 collectorDepositDisplayNote);
             if (deposit.StatusCode != 200)
             {
-                await RecoverAfterRepayTransferFailureAsync(db, loan, rollbackAmount, collectedAmount);
+                await RecoverAfterRepayAsync(db, loan, rollbackAmount, collectedAmount);
                 return ApiResult<LoanRepayResponse>.Error(ErrorCode.UnexpectedError);
             }
 
-            return ApiResult<LoanRepayResponse>.Ok(CreatePaidRepayResponse(loan, collectedAmount));
+            return ApiResult<LoanRepayResponse>.Ok(CreateLoanRepayResponse(loan, collectedAmount));
         }
         catch (Exception)
         {
-            await RecoverAfterRepayTransferFailureAsync(db, loan, rollbackAmount, collectedAmount);
+            await RecoverAfterRepayAsync(db, loan, rollbackAmount, collectedAmount);
             return ApiResult<LoanRepayResponse>.Error(ErrorCode.UnexpectedError);
         }
     }
@@ -303,7 +303,7 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
         });
     }
 
-    private static async Task PersistLoanAmountAsync(BankDbContext db, IDbContextTransaction? tx, Loan loan, decimal amount)
+    private static async Task SetLoanAmountAsync(BankDbContext db, IDbContextTransaction? tx, Loan loan, decimal amount)
     {
         loan.Amount = amount;
         await db.SaveChangesAsync();
@@ -311,7 +311,7 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
             await tx.CommitAsync();
     }
 
-    private async Task RecoverAfterRepayTransferFailureAsync(
+    private async Task RecoverAfterRepayAsync(
         BankDbContext db,
         Loan loan,
         decimal rollbackAmount,
@@ -342,7 +342,7 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
         });
     }
 
-    private static LoanRepayResponse CreatePaidRepayResponse(Loan loan, decimal collectedAmount)
+    private static LoanRepayResponse CreateLoanRepayResponse(Loan loan, decimal collectedAmount)
     {
         return new LoanRepayResponse(
             LoanId: loan.Id,
