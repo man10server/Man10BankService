@@ -57,7 +57,7 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
             return ApiResult<Loan?>.BadRequest(ErrorCode.ValidationError);
         if (request.RepayAmount <= 0m)
             return ApiResult<Loan?>.BadRequest(ErrorCode.ValidationError);
-        if (request.RepayAmount < request.BorrowAmount)
+        if (request.RepayAmount <= request.BorrowAmount)
             return ApiResult<Loan?>.BadRequest(ErrorCode.ValidationError);
 
         var (lendName, borrowName) = await GetNamesAsync(request.LendUuid, request.BorrowUuid);
