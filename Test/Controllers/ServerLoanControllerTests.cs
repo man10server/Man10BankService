@@ -232,6 +232,19 @@ public class ServerLoanControllerTests
         pd.Extensions["code"].Should().Be(ErrorCode.PlayerNotFound.ToString());
     }
 
+    [Fact(DisplayName = "borrow-amount: ローン未作成のUUIDでも新規作成して設定できる")]
+    public async Task SetBorrowAmount_WithoutHistory_ShouldCreateAndSet()
+    {
+        using var env = BuildController();
+        var ctrl = (ServerLoanController)env.Host.Controller;
+
+        var res = await ctrl.SetBorrowAmount(TestConstants.BorrowUuid, 1000m);
+        var ok = res.Result.Should().BeOfType<OkObjectResult>().Which;
+        var loan = ok.Value.Should().BeOfType<ServerLoan>().Which;
+        loan.BorrowAmount.Should().Be(1000m);
+        loan.PaymentAmount.Should().Be(Math.Round(1000m * 0.01m * 7m * 2m, 0, MidpointRounding.AwayFromZero));
+    }
+
     [Fact(DisplayName = "borrow-amount: 差分ログがSetBorrowAmountで記録される")]
     public async Task SetBorrowAmount_ShouldWriteDeltaLog()
     {

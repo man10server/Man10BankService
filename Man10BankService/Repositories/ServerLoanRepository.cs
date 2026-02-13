@@ -123,17 +123,30 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
         return loan;
     }
 
-    public async Task<ServerLoan?> SetBorrowAmountAsync(string uuid, decimal borrowAmount, decimal paymentAmount)
+    public async Task<ServerLoan?> SetBorrowAmountAsync(string uuid, string player, decimal borrowAmount, decimal paymentAmount)
     {
         await using var db = await factory.CreateDbContextAsync();
         await using var tx = await db.Database.BeginTransactionAsync();
 
-        var loan = await GetOrCreateByUuidAsync(uuid);
+        var loan = await db.ServerLoans.FirstOrDefaultAsync(x => x.Uuid == uuid);
+        if (loan == null)
+        {
+            loan = new ServerLoan
+            {
+                Uuid = uuid,
+                Player = player,
+                BorrowAmount = 0m,
+                PaymentAmount = 0m,
+                LastPayDate = DateTime.UtcNow,
+                FailedPayment = 0,
+                StopInterest = false,
+            };
+            await db.ServerLoans.AddAsync(loan);
+        }
         var delta = borrowAmount - loan.BorrowAmount;
 
         loan.BorrowAmount = borrowAmount;
         loan.PaymentAmount = paymentAmount;
-        db.Update(loan);
         await AddLogAsync(db, loan.Uuid, loan.Player, ServerLoanLogAction.SetBorrowAmount, delta);
         await db.SaveChangesAsync();
         await tx.CommitAsync();

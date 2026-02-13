@@ -240,17 +240,11 @@ public class ServerLoanService
 
         try
         {
-            var existing = await repo.GetByUuidAsync(uuid);
-            if (existing == null)
-            {
-                var player = await _profileService.GetNameByUuidAsync(uuid);
-                if (player == null)
-                    return ApiResult<ServerLoan?>.BadRequest(ErrorCode.PlayerNotFound);
-            }
+            var player = await _profileService.GetNameByUuidAsync(uuid);
+            if (player == null)
+                return ApiResult<ServerLoan?>.BadRequest(ErrorCode.PlayerNotFound);
 
-            var loan = await repo.SetBorrowAmountAsync(uuid, amount, paymentAmount);
-            if (loan == null)
-                return ApiResult<ServerLoan?>.NotFound(ErrorCode.LoanNotFound);
+            var loan = await repo.SetBorrowAmountAsync(uuid, player, amount, paymentAmount);
             return ApiResult<ServerLoan?>.Ok(loan);
         }
         catch (Exception)
