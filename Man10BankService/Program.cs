@@ -24,6 +24,15 @@ builder.Services.AddSingleton<Man10BankService.Services.ServerEstateService>();
 
 var app = builder.Build();
 
+using (var scope = app.Services.CreateScope())
+{
+    var dbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<Man10BankService.Data.BankDbContext>>();
+    using var db = dbFactory.CreateDbContext();
+    var provider = db.Database.ProviderName;
+    if (provider is null || !provider.Contains("MySql", StringComparison.OrdinalIgnoreCase))
+        throw new InvalidOperationException("このアプリケーションはMySQLプロバイダでのみ実行できます。");
+}
+
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
