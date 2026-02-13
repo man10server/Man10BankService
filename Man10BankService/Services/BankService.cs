@@ -10,14 +10,16 @@ namespace Man10BankService.Services;
 public class BankService
 {
     private readonly IDbContextFactory<BankDbContext> _dbFactory;
+    private readonly IPlayerProfileService _profileService;
     private readonly Channel<TxWorkItem> _txChannel = Channel.CreateUnbounded<TxWorkItem>(
         new UnboundedChannelOptions { SingleReader = true, SingleWriter = false });
     
     private readonly record struct TxWorkItem(Func<Task<ApiResult<decimal>>> Work, TaskCompletionSource<ApiResult<decimal>> Tcs);
 
-    public BankService(IDbContextFactory<BankDbContext> dbFactory)
+    public BankService(IDbContextFactory<BankDbContext> dbFactory, IPlayerProfileService profileService)
     {
         _dbFactory = dbFactory;
+        _profileService = profileService;
         Task.Run(WorkerLoopAsync);
     }
 
@@ -60,7 +62,7 @@ public class BankService
             try
             {
                 var repo = new BankRepository(_dbFactory);
-                var player = await MinecraftProfileService.GetNameByUuidAsync(req.Uuid);
+                var player = await _profileService.GetNameByUuidAsync(req.Uuid);
                 if (player == null)
                 {
                     return ApiResult<decimal>.NotFound(ErrorCode.PlayerNotFound);
@@ -90,7 +92,7 @@ public class BankService
                 if (current < req.Amount)
                     return ApiResult<decimal>.Conflict(ErrorCode.InsufficientFunds);
 
-                var player = await MinecraftProfileService.GetNameByUuidAsync(req.Uuid);
+                var player = await _profileService.GetNameByUuidAsync(req.Uuid);
                 if (player == null)
                 {
                     return ApiResult<decimal>.NotFound(ErrorCode.PlayerNotFound);

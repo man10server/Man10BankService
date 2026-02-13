@@ -24,7 +24,8 @@ public class BankControllerTests
         services.AddControllers().AddApplicationPart(typeof(BankController).Assembly);
         var sp = services.BuildServiceProvider();
 
-        var service = new BankService(db.Factory);
+        var profile = new FakePlayerProfileService();
+        var service = new BankService(db.Factory, profile);
         var ctrl = new BankController(service)
         {
             ControllerContext = new ControllerContext

@@ -128,6 +128,7 @@ public class BankDbContext : DbContext
             e.Property(x => x.BorrowDate).HasColumnName("borrow_date");
             e.Property(x => x.PaybackDate).HasColumnName("payback_date");
             e.Property(x => x.CollateralItem).HasColumnName("collateral_item");
+            e.Property(x => x.CollateralReleased).HasColumnName("collateral_released");
             e.Property(x => x.LendPlayer).HasDefaultValue("");
             e.Property(x => x.LendUuid).HasDefaultValue("");
             e.Property(x => x.BorrowPlayer).HasDefaultValue("");
@@ -135,6 +136,7 @@ public class BankDbContext : DbContext
             e.Property(x => x.BorrowDate).HasDefaultValueSql("CURRENT_TIMESTAMP").ValueGeneratedOnAdd();
             e.Property(x => x.PaybackDate).HasDefaultValueSql("CURRENT_TIMESTAMP");
             e.Property(x => x.CollateralItem).HasDefaultValue("");
+            e.Property(x => x.CollateralReleased).HasDefaultValue(false);
         });
 
         modelBuilder.Entity<MoneyLog>(e =>

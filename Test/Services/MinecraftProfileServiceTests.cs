@@ -8,8 +8,9 @@ public class MinecraftProfileServiceTests
     [Fact(DisplayName = "UUIDが空や不正形式ならnullを返す")]
     public async Task GetNameByUuid_ShouldReturnNull_WhenInvalid()
     {
-        (await MinecraftProfileService.GetNameByUuidAsync("")).Should().BeNull();
-        (await MinecraftProfileService.GetNameByUuidAsync("not-a-uuid")).Should().BeNull();
-        (await MinecraftProfileService.GetNameByUuidAsync("zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz")).Should().BeNull();
+        var service = new MojangPlayerProfileService();
+        (await service.GetNameByUuidAsync("")).Should().BeNull();
+        (await service.GetNameByUuidAsync("not-a-uuid")).Should().BeNull();
+        (await service.GetNameByUuidAsync("zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz")).Should().BeNull();
     }
 }

@@ -11,15 +11,17 @@ public class ChequeService
 {
     private readonly IDbContextFactory<BankDbContext> _dbFactory;
     private readonly BankService _bank;
+    private readonly IPlayerProfileService _profileService;
     private readonly Channel<Func<Task>> _queue = Channel.CreateUnbounded<Func<Task>>(
         new UnboundedChannelOptions { SingleReader = true, SingleWriter = false });
     
     private const string PluginName = "Man10Bank";
 
-    public ChequeService(IDbContextFactory<BankDbContext> dbFactory, BankService bank)
+    public ChequeService(IDbContextFactory<BankDbContext> dbFactory, BankService bank, IPlayerProfileService profileService)
     {
         _dbFactory = dbFactory;
         _bank = bank;
+        _profileService = profileService;
         Task.Run(WorkerLoopAsync);
     }
 
@@ -29,7 +31,7 @@ public class ChequeService
         {
             try
             {
-                var player = await MinecraftProfileService.GetNameByUuidAsync(req.Uuid);
+                var player = await _profileService.GetNameByUuidAsync(req.Uuid);
                 if (player == null)
                 {
                     return ApiResult<Cheque>.NotFound(ErrorCode.PlayerNotFound);
@@ -94,7 +96,7 @@ public class ChequeService
         {
             try
             {
-                var player = await MinecraftProfileService.GetNameByUuidAsync(req.Uuid);
+                var player = await _profileService.GetNameByUuidAsync(req.Uuid);
                 if (player == null)
                 {
                     return ApiResult<Cheque>.NotFound(ErrorCode.PlayerNotFound);

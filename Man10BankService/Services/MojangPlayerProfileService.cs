@@ -3,18 +3,20 @@ using System.Text.RegularExpressions;
 
 namespace Man10BankService.Services;
 
-public static partial class MinecraftProfileService
+public partial class MojangPlayerProfileService : IPlayerProfileService
 {
     private static readonly HttpClient Http = new()
     {
         Timeout = TimeSpan.FromSeconds(8)
     };
+
     private static readonly Regex UuidHex32 = MyRegex();
+
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
         PropertyNameCaseInsensitive = true
     };
-    
+
     private sealed class MojangProfile
     {
         public string? Id { get; init; }
@@ -24,14 +26,7 @@ public static partial class MinecraftProfileService
     [GeneratedRegex("^[0-9a-f]{32}$", RegexOptions.IgnoreCase | RegexOptions.Compiled, "ja-JP")]
     private static partial Regex MyRegex();
 
-
-    /// <summary>
-    /// Java版の UUID (ハイフンあり/なし可) から現在の MCID を取得します。
-    /// </summary>
-    /// <param name="uuid">プレイヤーUUID（32桁のhex。ハイフンありでも可）</param>
-    /// <param name="ct">キャンセルトークン</param>
-    /// <returns>成功時: MCID / 失敗時や未取得時: null</returns>
-    public static async Task<string?> GetNameByUuidAsync(string uuid, CancellationToken ct = default)
+    public async Task<string?> GetNameByUuidAsync(string uuid, CancellationToken ct = default)
     {
         try
         {

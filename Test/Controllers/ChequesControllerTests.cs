@@ -24,8 +24,9 @@ public class ChequesControllerTests
         services.AddControllers().AddApplicationPart(typeof(ChequesController).Assembly);
         var sp = services.BuildServiceProvider();
 
-        var bank = new BankService(db.Factory);
-        var service = new ChequeService(db.Factory, bank);
+        var profile = new FakePlayerProfileService();
+        var bank = new BankService(db.Factory, profile);
+        var service = new ChequeService(db.Factory, bank, profile);
         var ctrl = new ChequesController(service)
         {
             ControllerContext = new ControllerContext
@@ -57,7 +58,7 @@ public class ChequesControllerTests
         ctrl.TryValidateModel(create).Should().BeTrue();
         // 残高を用意
         var db = host.Resources.OfType<TestDbFactory>().First();
-        var bank = new BankService(db.Factory);
+        var bank = new BankService(db.Factory, new FakePlayerProfileService());
         (await bank.DepositAsync(new DepositRequest
         {
             Uuid = create.Uuid,
@@ -101,7 +102,7 @@ public class ChequesControllerTests
         };
         // 残高を用意
         var db2 = host.Resources.OfType<TestDbFactory>().First();
-        var bank2 = new BankService(db2.Factory);
+        var bank2 = new BankService(db2.Factory, new FakePlayerProfileService());
         (await bank2.DepositAsync(new DepositRequest
         {
             Uuid = create.Uuid,
@@ -181,7 +182,7 @@ public class ChequesControllerTests
         };
         // 残高を用意
         var db3 = host.Resources.OfType<TestDbFactory>().First();
-        var bank3 = new BankService(db3.Factory);
+        var bank3 = new BankService(db3.Factory, new FakePlayerProfileService());
         (await bank3.DepositAsync(new DepositRequest
         {
             Uuid = create.Uuid,

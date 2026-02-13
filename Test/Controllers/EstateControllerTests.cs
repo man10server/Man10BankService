@@ -30,7 +30,8 @@ public class EstateControllerTests
         services.AddControllers().AddApplicationPart(typeof(EstateController).Assembly);
 
         var sp = services.BuildServiceProvider();
-        var estateService = new EstateService(db.Factory);
+        var profile = new FakePlayerProfileService();
+        var estateService = new EstateService(db.Factory, profile);
 
         var ctrl = new EstateController(estateService)
         {
