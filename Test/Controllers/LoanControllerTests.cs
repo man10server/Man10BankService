@@ -24,7 +24,7 @@ public class LoanControllerTests
 
     private static TestEnv BuildController()
     {
-        var db = TestDbFactory.Create();
+        var db = MySqlTestDbFactory.Create();
 
         var services = new ServiceCollection();
         services.AddLogging();

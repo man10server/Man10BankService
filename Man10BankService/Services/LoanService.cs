@@ -126,7 +126,7 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
         try
         {
             await using var db = await dbFactory.CreateDbContextAsync();
-            await using var tx = await BeginTransactionIfSupportedAsync(db);
+            await using var tx = await db.Database.BeginTransactionAsync();
             var repo = new LoanRepository(db);
             var loan = await repo.GetByIdForUpdateAsync(id);
             if (loan == null)
@@ -358,7 +358,7 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
         try
         {
             await using var db = await dbFactory.CreateDbContextAsync();
-            await using var tx = await BeginTransactionIfSupportedAsync(db);
+            await using var tx = await db.Database.BeginTransactionAsync();
             var repo = new LoanRepository(db);
             var loan = await repo.GetByIdForUpdateAsync(id);
             
@@ -391,14 +391,5 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
         {
             return ApiResult<Loan?>.Error(ErrorCode.UnexpectedError);
         }
-    }
-
-    private static async Task<IDbContextTransaction?> BeginTransactionIfSupportedAsync(BankDbContext db)
-    {
-        var provider = db.Database.ProviderName;
-        if (provider is null || !provider.Contains("MySql", StringComparison.OrdinalIgnoreCase))
-            return null;
-
-        return await db.Database.BeginTransactionAsync();
     }
 }
