@@ -105,25 +105,20 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
                 Server = "system"
             });
 
-            if (deposit.StatusCode == 200)
-                return ApiResult<Loan?>.Ok(entity);
+            if (deposit.StatusCode != 200)
+            {
+                await repo.DeleteByIdAsync(entity.Id);
+                await CompensateAsync(request.LendUuid, request.BorrowAmount);
+                return ApiResult<Loan?>.Error(ErrorCode.UnexpectedError);
+            }
 
-            await repo.DeleteByIdAsync(entity.Id);
+            return ApiResult<Loan?>.Ok(entity);
         }
         catch (Exception)
         {
+            await CompensateAsync(request.LendUuid, request.BorrowAmount);
+            return ApiResult<Loan?>.Error(ErrorCode.UnexpectedError);
         }
-
-        await bank.DepositAsync(new DepositRequest
-        {
-            Uuid = request.LendUuid,
-            Amount = request.BorrowAmount,
-            PluginName = "user_loan",
-            Note = "user_loan_compensate_refund",
-            DisplayNote = "個人間貸付(補償返金)",
-            Server = "system"
-        });
-        return ApiResult<Loan?>.Error(ErrorCode.UnexpectedError);
     }
 
     public async Task<ApiResult<LoanRepayResponse>> RepayAsync(int id, string collectorUuid)
@@ -136,13 +131,10 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
             var loan = await repo.GetByIdForUpdateAsync(id);
             if (loan == null)
                 return ApiResult<LoanRepayResponse>.NotFound(ErrorCode.LoanNotFound);
-
             if (loan.CollateralReleased)
                 return ApiResult<LoanRepayResponse>.Conflict(ErrorCode.CollateralAlreadyReleased);
-            
             if (loan.PaybackDate > DateTime.UtcNow)
                 return ApiResult<LoanRepayResponse>.Conflict(ErrorCode.BeforePaybackDate);
-
             if (string.IsNullOrWhiteSpace(loan.CollateralItem))
                 return await RepayWithoutCollateralAsync(db, tx, loan, collectorUuid);
             return await RepayWithCollateralAsync(db, tx, loan, collectorUuid);
@@ -341,14 +333,14 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
         {
         }
 
-        await CompensateBorrowerAsync(loan.BorrowUuid, compensateAmount);
+        await CompensateAsync(loan.BorrowUuid, compensateAmount);
     }
 
-    private Task<ApiResult<decimal>> CompensateBorrowerAsync(string borrowerUuid, decimal amount)
+    private Task<ApiResult<decimal>> CompensateAsync(string uuid, decimal amount)
     {
         return bank.DepositAsync(new DepositRequest
         {
-            Uuid = borrowerUuid,
+            Uuid = uuid,
             Amount = amount,
             PluginName = "user_loan",
             Note = "user_loan_compensate_refund",
