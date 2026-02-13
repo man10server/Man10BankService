@@ -23,7 +23,7 @@ public class ServerLoanControllerTests
         public void Dispose() => Host.Dispose();
     }
 
-    private static TestEnv BuildController()
+    private static TestEnv BuildController(Action<FakePlayerProfileService>? configureProfile = null)
     {
         var db = TestDbFactory.Create();
 
@@ -43,6 +43,7 @@ public class ServerLoanControllerTests
 
         var sp = services.BuildServiceProvider();
         var profile = new FakePlayerProfileService();
+        configureProfile?.Invoke(profile);
         var bank = new BankService(db.Factory, profile);
         var loanService = new ServerLoanService(db.Factory, bank, profile, config);
 
@@ -220,7 +221,7 @@ public class ServerLoanControllerTests
     [Fact(DisplayName = "borrow-amount: UUID不正時は400になる")]
     public async Task SetBorrowAmount_InvalidUuid_ShouldReturn400()
     {
-        using var env = BuildController();
+        using var env = BuildController(profile => profile.SetName("invalid-uuid", null));
         var ctrl = (ServerLoanController)env.Host.Controller;
 
         var res = await ctrl.SetBorrowAmount("invalid-uuid", 1000m);
