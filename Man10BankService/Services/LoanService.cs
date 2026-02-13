@@ -133,8 +133,15 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
                 return ApiResult<LoanRepayResponse>.NotFound(ErrorCode.LoanNotFound);
             if (loan.CollateralReleased)
                 return ApiResult<LoanRepayResponse>.Conflict(ErrorCode.CollateralAlreadyReleased);
+            if (loan.Amount <= 0m)
+                return ApiResult<LoanRepayResponse>.BadRequest(ErrorCode.NoRepaymentNeeded);
             if (loan.PaybackDate > DateTime.UtcNow)
                 return ApiResult<LoanRepayResponse>.Conflict(ErrorCode.BeforePaybackDate);
+
+            var (borrowPlayer, collectPlayer) = await GetNamesAsync(loan.BorrowUuid, collectorUuid);
+            if (borrowPlayer == null || collectPlayer == null)
+                return ApiResult<LoanRepayResponse>.NotFound(ErrorCode.PlayerNotFound);
+
             if (string.IsNullOrWhiteSpace(loan.CollateralItem))
                 return await RepayWithoutCollateralAsync(db, tx, loan, collectorUuid);
             return await RepayWithCollateralAsync(db, tx, loan, collectorUuid);
@@ -162,10 +169,6 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
         var toCollect = Math.Min(bal.Data, loan.Amount);
         if (toCollect <= 0m)
             return ApiResult<LoanRepayResponse>.BadRequest(ErrorCode.ValidationError);
-
-        var (borrowPlayer, collectPlayer) = await GetNamesAsync(loan.BorrowUuid, collectorUuid);
-        if (borrowPlayer == null || collectPlayer == null)
-            return ApiResult<LoanRepayResponse>.NotFound(ErrorCode.PlayerNotFound);
 
         var withdraw = await WithdrawBorrowerAsync(
             loan.BorrowUuid,
@@ -195,16 +198,6 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
         Loan loan,
         string collectorUuid)
     {
-        if (loan.CollateralReleased)
-            return ApiResult<LoanRepayResponse>.Conflict(ErrorCode.CollateralAlreadyReleased);
-
-        if (loan.Amount <= 0m)
-            return ApiResult<LoanRepayResponse>.BadRequest(ErrorCode.NoRepaymentNeeded);
-
-        var (borrowPlayer, collectPlayer) = await GetNamesAsync(loan.BorrowUuid, collectorUuid);
-        if (borrowPlayer == null || collectPlayer == null)
-            return ApiResult<LoanRepayResponse>.NotFound(ErrorCode.PlayerNotFound);
-
         var amountToCollect = loan.Amount;
         var withdraw = await WithdrawBorrowerAsync(
             loan.BorrowUuid,

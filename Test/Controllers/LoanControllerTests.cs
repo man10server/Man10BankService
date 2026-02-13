@@ -154,6 +154,11 @@ public class LoanControllerTests
         okRes.CollateralItem.Should().BeNull();
         var after = await GetLoanAsync(env.DbFactory, loan.Id);
         after!.Amount.Should().Be(0m);
+
+        var repayAgain = await ctrl.Repay(loan.Id, collectorUuid: lendUuid);
+        var repayAgainBadRequest = repayAgain.Result.Should().BeOfType<BadRequestObjectResult>().Which;
+        var repayAgainPd = repayAgainBadRequest.Value.Should().BeOfType<ProblemDetails>().Which;
+        repayAgainPd.Title.Should().Be(ErrorCode.NoRepaymentNeeded.ToString());
     }
 
     [Fact(DisplayName = "loan: 担保なし 所持金なしは回収不可")]
