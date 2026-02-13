@@ -47,6 +47,12 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
         return await db.ServerLoans.AsNoTracking().ToListAsync();
     }
 
+    public async Task<ServerLoan?> GetByUuidAsync(string uuid)
+    {
+        await using var db = await factory.CreateDbContextAsync();
+        return await db.ServerLoans.AsNoTracking().FirstOrDefaultAsync(x => x.Uuid == uuid);
+    }
+
     public async Task<ServerLoan?> AdjustLoanAsync(string uuid, string player, decimal delta, ServerLoanLogAction action)
     {
         await using var db = await factory.CreateDbContextAsync();

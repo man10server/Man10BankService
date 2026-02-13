@@ -215,7 +215,9 @@ public class ServerLoanControllerTests
         var ctrl = (ServerLoanController)env.Host.Controller;
 
         var res = await ctrl.SetBorrowAmount("invalid-uuid", -1m);
-        res.Result.Should().BeOfType<BadRequestObjectResult>();
+        var bad = res.Result.Should().BeOfType<BadRequestObjectResult>().Which;
+        var pd = bad.Value.Should().BeOfType<ProblemDetails>().Which;
+        pd.Extensions["code"].Should().Be(ErrorCode.BorrowAmountMustBeZeroOrGreater.ToString());
     }
 
     [Fact(DisplayName = "borrow-amount: UUID不正時は400になる")]
@@ -225,7 +227,9 @@ public class ServerLoanControllerTests
         var ctrl = (ServerLoanController)env.Host.Controller;
 
         var res = await ctrl.SetBorrowAmount("invalid-uuid", 1000m);
-        res.Result.Should().BeOfType<BadRequestObjectResult>();
+        var bad = res.Result.Should().BeOfType<BadRequestObjectResult>().Which;
+        var pd = bad.Value.Should().BeOfType<ProblemDetails>().Which;
+        pd.Extensions["code"].Should().Be(ErrorCode.PlayerNotFound.ToString());
     }
 
     [Fact(DisplayName = "borrow-amount: 差分ログがSetBorrowAmountで記録される")]
