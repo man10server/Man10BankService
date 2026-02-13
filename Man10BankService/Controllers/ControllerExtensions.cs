@@ -14,10 +14,11 @@ public static class ControllerExtensions
 
         var pd = new ProblemDetails
         {
-            Title = res.Code.ToString(),
+            Title = res.Code.GetJa(),
             Type = res.Code.ToString(),
             Status = res.StatusCode,
         };
+        pd.Extensions["code"] = res.Code.ToString();
 
         return res.StatusCode switch
         {

@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Man10BankService.Repositories;
 
-public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory)
+public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPlayerProfileService profileService)
 {
     public enum ServerLoanLogAction
     {
@@ -23,7 +23,7 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory)
         var loan = await db.ServerLoans.AsNoTracking().FirstOrDefaultAsync(x => x.Uuid == uuid);
         if (loan != null) return loan;
         
-        var player = await MinecraftProfileService.GetNameByUuidAsync(uuid);
+        var player = await profileService.GetNameByUuidAsync(uuid);
         if (player == null) throw new ArgumentException("指定された UUID のプレイヤーが見つかりません。", nameof(uuid));
         loan = new ServerLoan
         {

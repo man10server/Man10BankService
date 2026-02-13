@@ -19,22 +19,24 @@ public class ServerLoanService
 
     private readonly IDbContextFactory<BankDbContext> _dbFactory;
     private readonly BankService _bank;
+    private readonly IPlayerProfileService _profileService;
 
-    public ServerLoanService(IDbContextFactory<BankDbContext> dbFactory, BankService bank,IConfiguration config)
+    public ServerLoanService(IDbContextFactory<BankDbContext> dbFactory, BankService bank, IPlayerProfileService profileService, IConfiguration config)
     {
         Task.Run(SchedulerLoopAsync);
         Configure(config);
         
         _dbFactory = dbFactory;
         _bank = bank;
+        _profileService = profileService;
     }
 
     public async Task<ApiResult<ServerLoan>> GetByUuidAsync(string uuid)
     {
         try
         {
-            var repo = new ServerLoanRepository(_dbFactory);
-            var player = await MinecraftProfileService.GetNameByUuidAsync(uuid);
+            var repo = new ServerLoanRepository(_dbFactory, _profileService);
+            var player = await _profileService.GetNameByUuidAsync(uuid);
             if (player == null)
                 return ApiResult<ServerLoan>.NotFound(ErrorCode.PlayerNotFound);
             var loan = await repo.GetOrCreateByUuidAsync(uuid);
@@ -54,7 +56,7 @@ public class ServerLoanService
             return ApiResult<List<ServerLoanLog>>.BadRequest(ErrorCode.OffsetOutOfRange);
         try
         {
-            var repo = new ServerLoanRepository(_dbFactory);
+            var repo = new ServerLoanRepository(_dbFactory, _profileService);
             var logs = await repo.GetLogsAsync(uuid, limit, offset);
             return ApiResult<List<ServerLoanLog>>.Ok(logs);
         }
@@ -71,7 +73,7 @@ public class ServerLoanService
             if (amount <= 0m)
                 return ApiResult<ServerLoan?>.BadRequest(ErrorCode.ValidationError);
 
-            var repo = new ServerLoanRepository(_dbFactory);
+            var repo = new ServerLoanRepository(_dbFactory, _profileService);
             var limitRes = await CalculateBorrowLimitAsync(uuid);
             if (limitRes.StatusCode != 200)
                 return new ApiResult<ServerLoan?>(limitRes.StatusCode, limitRes.Code);
@@ -81,7 +83,7 @@ public class ServerLoanService
             if (currentData.BorrowAmount + amount > limit)
                 return ApiResult<ServerLoan?>.Conflict(ErrorCode.BorrowLimitExceeded);
 
-            var resolvedPlayer = await MinecraftProfileService.GetNameByUuidAsync(uuid) ?? string.Empty;
+            var resolvedPlayer = await _profileService.GetNameByUuidAsync(uuid) ?? string.Empty;
             var updated = await repo.AdjustLoanAsync(uuid, resolvedPlayer, amount, ServerLoanRepository.ServerLoanLogAction.Borrow);
 
             var dp = await _bank.DepositAsync(new DepositRequest
@@ -117,7 +119,7 @@ public class ServerLoanService
     {
         try
         {
-            var repo = new ServerLoanRepository(_dbFactory);
+            var repo = new ServerLoanRepository(_dbFactory, _profileService);
             var loan = await repo.GetOrCreateByUuidAsync(uuid);
             var remain = loan.BorrowAmount;
             if (remain <= 0m)
@@ -165,7 +167,7 @@ public class ServerLoanService
         var borrowable = 0m;
         try
         {
-            var repo = new ServerLoanRepository(_dbFactory);
+            var repo = new ServerLoanRepository(_dbFactory, _profileService);
             var fetch = Math.Min(1000, RepayWindow * 20);
             var logs = await repo.GetLogsAsync(uuid, fetch);
 
@@ -209,7 +211,7 @@ public class ServerLoanService
     {
         try
         {
-            var repo = new ServerLoanRepository(_dbFactory);
+            var repo = new ServerLoanRepository(_dbFactory, _profileService);
             var loan = await repo.SetPaymentAmountAsync(uuid, paymentAmount);
             if (loan == null)
                 return ApiResult<ServerLoan?>.NotFound(ErrorCode.LoanNotFound);
@@ -285,7 +287,7 @@ public class ServerLoanService
     {
         try
         {
-            var repo = new ServerLoanRepository(_dbFactory);
+            var repo = new ServerLoanRepository(_dbFactory, _profileService);
             var loan = await repo.GetOrCreateByUuidAsync(uuid);
             if (loan.StopInterest)
                 return ApiResult<ServerLoan?>.Ok(loan, ErrorCode.InterestStopped);
@@ -351,7 +353,7 @@ public class ServerLoanService
     
     private async Task RunDailyInterestForAllAsync()
     {
-        var repo = new ServerLoanRepository(_dbFactory);
+        var repo = new ServerLoanRepository(_dbFactory, _profileService);
         var loans = await repo.GetAllAsync();
         foreach (var loan in loans)
         {
@@ -361,7 +363,7 @@ public class ServerLoanService
 
     private async Task RunWeeklyRepayForAllAsync()
     {
-        var repo = new ServerLoanRepository(_dbFactory);
+        var repo = new ServerLoanRepository(_dbFactory, _profileService);
         var loans = await repo.GetAllAsync();
         foreach (var loan in loans)
         {

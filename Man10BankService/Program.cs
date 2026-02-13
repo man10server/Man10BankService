@@ -13,6 +13,7 @@ var cs = Man10BankService.Data.BankDbContext.GetConnectionString();
 builder.Services.AddPooledDbContextFactory<Man10BankService.Data.BankDbContext>(o =>
     o.UseMySql(cs, ServerVersion.AutoDetect(cs))
 );
+builder.Services.AddSingleton<Man10BankService.Services.IPlayerProfileService, Man10BankService.Services.MojangPlayerProfileService>();
 builder.Services.AddSingleton<Man10BankService.Services.BankService>();
 builder.Services.AddSingleton<Man10BankService.Services.AtmService>();
 builder.Services.AddSingleton<Man10BankService.Services.ChequeService>();
@@ -22,6 +23,15 @@ builder.Services.AddSingleton<Man10BankService.Services.EstateService>();
 builder.Services.AddSingleton<Man10BankService.Services.ServerEstateService>();
 
 var app = builder.Build();
+
+using (var scope = app.Services.CreateScope())
+{
+    var dbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<Man10BankService.Data.BankDbContext>>();
+    using var db = dbFactory.CreateDbContext();
+    var provider = db.Database.ProviderName;
+    if (provider is null || !provider.Contains("MySql", StringComparison.OrdinalIgnoreCase))
+        throw new InvalidOperationException("このアプリケーションはMySQLプロバイダでのみ実行できます。");
+}
 
 if (app.Environment.IsDevelopment())
 {

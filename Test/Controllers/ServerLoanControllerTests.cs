@@ -42,8 +42,9 @@ public class ServerLoanControllerTests
             .Build();
 
         var sp = services.BuildServiceProvider();
-        var bank = new BankService(db.Factory);
-        var loanService = new ServerLoanService(db.Factory, bank, config);
+        var profile = new FakePlayerProfileService();
+        var bank = new BankService(db.Factory, profile);
+        var loanService = new ServerLoanService(db.Factory, bank, profile, config);
 
         var ctrl = new ServerLoanController(loanService)
         {

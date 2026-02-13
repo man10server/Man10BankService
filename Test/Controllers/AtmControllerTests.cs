@@ -23,7 +23,8 @@ public class AtmControllerTests
         services.AddControllers().AddApplicationPart(typeof(AtmController).Assembly);
         var sp = services.BuildServiceProvider();
 
-        var service = new AtmService(db.Factory);
+        var profile = new FakePlayerProfileService();
+        var service = new AtmService(db.Factory, profile);
         var ctrl = new AtmController(service)
         {
             ControllerContext = new ControllerContext
