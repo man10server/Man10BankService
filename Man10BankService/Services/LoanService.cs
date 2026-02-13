@@ -267,16 +267,14 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
                 collectorDepositDisplayNote);
             if (deposit.StatusCode != 200)
             {
-                await RecoverAfterRepayAsync(db, loan, rollbackAmount, collectedAmount);
-                return ApiResult<LoanRepayResponse>.Error(ErrorCode.UnexpectedError);
+                return await RecoverAfterRepayAsync(db, loan, rollbackAmount, collectedAmount);
             }
 
             return ApiResult<LoanRepayResponse>.Ok(CreateLoanRepayResponse(loan, collectedAmount));
         }
         catch (Exception)
         {
-            await RecoverAfterRepayAsync(db, loan, rollbackAmount, collectedAmount);
-            return ApiResult<LoanRepayResponse>.Error(ErrorCode.UnexpectedError);
+            return await RecoverAfterRepayAsync(db, loan, rollbackAmount, collectedAmount);
         }
     }
 
@@ -321,7 +319,7 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
             await tx.CommitAsync();
     }
 
-    private async Task RecoverAfterRepayAsync(
+    private async Task<ApiResult<LoanRepayResponse>> RecoverAfterRepayAsync(
         BankDbContext db,
         Loan loan,
         decimal rollbackAmount,
@@ -332,11 +330,25 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
             loan.Amount = rollbackAmount;
             await db.SaveChangesAsync();
         }
-        catch
+        catch (Exception)
         {
+            return ApiResult<LoanRepayResponse>.Error(ErrorCode.UnexpectedError);
         }
 
-        await CompensateAsync(loan.BorrowUuid, compensateAmount);
+        try
+        {
+            var compensate = await CompensateAsync(loan.BorrowUuid, compensateAmount);
+            if (compensate.StatusCode != 200)
+            {
+                return new ApiResult<LoanRepayResponse>(compensate.StatusCode, compensate.Code);
+            }
+        }
+        catch (Exception)
+        {
+            return ApiResult<LoanRepayResponse>.Error(ErrorCode.UnexpectedError);
+        }
+
+        return ApiResult<LoanRepayResponse>.Error(ErrorCode.UnexpectedError);
     }
 
     private Task<ApiResult<decimal>> CompensateAsync(string uuid, decimal amount)
