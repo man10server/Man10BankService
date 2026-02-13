@@ -213,8 +213,9 @@ public class ServerLoanControllerTests
     {
         using var env = BuildController();
         var ctrl = (ServerLoanController)env.Host.Controller;
+        const string uuid = TestConstants.Uuid;
 
-        var res = await ctrl.SetBorrowAmount("invalid-uuid", -1m);
+        var res = await ctrl.SetBorrowAmount(uuid, -1m);
         var bad = res.Result.Should().BeOfType<BadRequestObjectResult>().Which;
         var pd = bad.Value.Should().BeOfType<ProblemDetails>().Which;
         pd.Extensions["code"].Should().Be(ErrorCode.BorrowAmountMustBeZeroOrGreater.ToString());
