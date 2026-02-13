@@ -15,7 +15,7 @@ public class LoanRepository(BankDbContext db)
     {
         var provider = db.Database.ProviderName;
         if (provider is null || !provider.Contains("MySql", StringComparison.OrdinalIgnoreCase))
-            return await db.Loans.FirstOrDefaultAsync(x => x.Id == id);
+            throw new NotSupportedException("GetByIdForUpdateAsync は MySQL 環境でのみサポートされています。");
 
         return await db.Loans
             .FromSqlInterpolated($"SELECT * FROM loan_table WHERE id = {id} FOR UPDATE")
