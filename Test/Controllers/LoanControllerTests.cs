@@ -255,6 +255,10 @@ public class LoanControllerTests
 
         var release = await ctrl.ReleaseCollateral(loan.Id, borrowerUuid: borrowUuid);
         release.Result.Should().BeOfType<OkObjectResult>();
+        var releaseAgain = await ctrl.ReleaseCollateral(loan.Id, borrowerUuid: borrowUuid);
+        var releaseAgainConflict = releaseAgain.Result.Should().BeOfType<ConflictObjectResult>().Which;
+        var releaseAgainPd = releaseAgainConflict.Value.Should().BeOfType<ProblemDetails>().Which;
+        releaseAgainPd.Title.Should().Be(ErrorCode.CollateralAlreadyReleased.ToString());
         var after = await GetLoanAsync(env.DbFactory, loan.Id);
         after!.CollateralItem.Should().Be("gold");
         after.CollateralReleased.Should().BeTrue();
@@ -300,6 +304,11 @@ public class LoanControllerTests
         okRes.CollectedAmount.Should().Be(0m);
         okRes.RemainingAmount.Should().Be(0m);
         okRes.CollateralItem.Should().Be("emerald");
+
+        var repayAgain = await ctrl.Repay(loan.Id, collectorUuid: lendUuid);
+        var repayAgainConflict = repayAgain.Result.Should().BeOfType<ConflictObjectResult>().Which;
+        var repayAgainPd = repayAgainConflict.Value.Should().BeOfType<ProblemDetails>().Which;
+        repayAgainPd.Title.Should().Be(ErrorCode.CollateralAlreadyReleased.ToString());
         
         var lenderAfter = await env.Bank.GetBalanceAsync(lendUuid);
         lenderAfter.Data.Should().Be(lenderBefore.Data);

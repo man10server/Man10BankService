@@ -135,11 +135,14 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
         try
         {
             await using var db = await dbFactory.CreateDbContextAsync();
-            await using var tx = await BeginTransactionIfNeededAsync(db);
+            await using var tx = await BeginTransactionIfSupportedAsync(db);
             var repo = new LoanRepository(db);
             var loan = await repo.GetByIdForUpdateAsync(id);
             if (loan == null)
                 return ApiResult<LoanRepayResponse>.NotFound(ErrorCode.LoanNotFound);
+
+            if (loan.CollateralReleased)
+                return ApiResult<LoanRepayResponse>.Conflict(ErrorCode.CollateralAlreadyReleased);
             
             if (loan.PaybackDate > DateTime.UtcNow)
                 return ApiResult<LoanRepayResponse>.Conflict(ErrorCode.BeforePaybackDate);
@@ -190,12 +193,14 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
         if (w.StatusCode != 200)
             return ApiResult<LoanRepayResponse>.Conflict(ErrorCode.InsufficientFunds);
 
+        var debtReduced = false;
         try
         {
             loan.Amount = Math.Max(0m, loan.Amount - toCollect);
             await db.SaveChangesAsync();
             if (tx != null)
                 await tx.CommitAsync();
+            debtReduced = true;
             
             var deposit = await bank.DepositAsync(new DepositRequest
             {
@@ -208,7 +213,10 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
             });
 
             if (deposit.StatusCode != 200)
+            {
+                await RecoverAfterCollectionFailureAsync();
                 return ApiResult<LoanRepayResponse>.Error(ErrorCode.UnexpectedError);
+            }
 
             var dto = new LoanRepayResponse(
                 LoanId: loan.Id,
@@ -221,6 +229,24 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
         }
         catch (Exception)
         {
+            await RecoverAfterCollectionFailureAsync();
+            return ApiResult<LoanRepayResponse>.Error(ErrorCode.UnexpectedError);
+        }
+
+        async Task RecoverAfterCollectionFailureAsync()
+        {
+            if (debtReduced)
+            {
+                try
+                {
+                    loan.Amount += toCollect;
+                    await db.SaveChangesAsync();
+                }
+                catch
+                {
+                }
+            }
+
             await bank.DepositAsync(new DepositRequest
             {
                 Uuid = loan.BorrowUuid,
@@ -230,7 +256,6 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
                 DisplayNote = "個人間貸付(補償返金)",
                 Server = "system"
             });
-            return ApiResult<LoanRepayResponse>.Error(ErrorCode.UnexpectedError);
         }
     }
 
@@ -240,6 +265,9 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
         Loan loan,
         string collectorUuid)
     {
+        if (loan.CollateralReleased)
+            return ApiResult<LoanRepayResponse>.Conflict(ErrorCode.CollateralAlreadyReleased);
+
         if (loan.Amount <= 0m)
             return ApiResult<LoanRepayResponse>.BadRequest(ErrorCode.NoRepaymentNeeded);
 
@@ -303,6 +331,15 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
         // 返金（補償）
         if (deposit.StatusCode != 200)
         {
+            try
+            {
+                loan.Amount = amountToCollect;
+                await db.SaveChangesAsync();
+            }
+            catch
+            {
+            }
+
             await bank.DepositAsync(new DepositRequest
             {
                 Uuid = loan.BorrowUuid,
@@ -330,7 +367,7 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
         try
         {
             await using var db = await dbFactory.CreateDbContextAsync();
-            await using var tx = await BeginTransactionIfNeededAsync(db);
+            await using var tx = await BeginTransactionIfSupportedAsync(db);
             var repo = new LoanRepository(db);
             var loan = await repo.GetByIdForUpdateAsync(id);
             
@@ -365,7 +402,7 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
         }
     }
 
-    private static async Task<IDbContextTransaction?> BeginTransactionIfNeededAsync(BankDbContext db)
+    private static async Task<IDbContextTransaction?> BeginTransactionIfSupportedAsync(BankDbContext db)
     {
         var provider = db.Database.ProviderName;
         if (provider is null || !provider.Contains("MySql", StringComparison.OrdinalIgnoreCase))
