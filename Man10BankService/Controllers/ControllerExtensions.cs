@@ -14,7 +14,7 @@ public static class ControllerExtensions
 
         var pd = new ProblemDetails
         {
-            Title = ErrorCodeMessages.Get(res.Code),
+            Title = res.Code.GetJa(),
             Type = res.Code.ToString(),
             Status = res.StatusCode,
         };

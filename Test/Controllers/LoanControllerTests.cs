@@ -158,7 +158,7 @@ public class LoanControllerTests
         var repayAgain = await ctrl.Repay(loan.Id, collectorUuid: lendUuid);
         var repayAgainBadRequest = repayAgain.Result.Should().BeOfType<BadRequestObjectResult>().Which;
         var repayAgainPd = repayAgainBadRequest.Value.Should().BeOfType<ProblemDetails>().Which;
-        repayAgainPd.Title.Should().Be(ErrorCodeMessages.Get(ErrorCode.NoRepaymentNeeded));
+        repayAgainPd.Title.Should().Be(ErrorCode.NoRepaymentNeeded.GetJa());
         repayAgainPd.Extensions["code"].Should().Be(ErrorCode.NoRepaymentNeeded.ToString());
     }
 
@@ -264,7 +264,7 @@ public class LoanControllerTests
         var releaseAgain = await ctrl.ReleaseCollateral(loan.Id, borrowerUuid: borrowUuid);
         var releaseAgainConflict = releaseAgain.Result.Should().BeOfType<ConflictObjectResult>().Which;
         var releaseAgainPd = releaseAgainConflict.Value.Should().BeOfType<ProblemDetails>().Which;
-        releaseAgainPd.Title.Should().Be(ErrorCodeMessages.Get(ErrorCode.CollateralAlreadyReleased));
+        releaseAgainPd.Title.Should().Be(ErrorCode.CollateralAlreadyReleased.GetJa());
         releaseAgainPd.Extensions["code"].Should().Be(ErrorCode.CollateralAlreadyReleased.ToString());
         var after = await GetLoanAsync(env.DbFactory, loan.Id);
         after!.CollateralItem.Should().Be("gold");
@@ -315,7 +315,7 @@ public class LoanControllerTests
         var repayAgain = await ctrl.Repay(loan.Id, collectorUuid: lendUuid);
         var repayAgainConflict = repayAgain.Result.Should().BeOfType<ConflictObjectResult>().Which;
         var repayAgainPd = repayAgainConflict.Value.Should().BeOfType<ProblemDetails>().Which;
-        repayAgainPd.Title.Should().Be(ErrorCodeMessages.Get(ErrorCode.CollateralAlreadyReleased));
+        repayAgainPd.Title.Should().Be(ErrorCode.CollateralAlreadyReleased.GetJa());
         repayAgainPd.Extensions["code"].Should().Be(ErrorCode.CollateralAlreadyReleased.ToString());
         
         var lenderAfter = await env.Bank.GetBalanceAsync(lendUuid);
