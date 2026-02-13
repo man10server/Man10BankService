@@ -206,35 +206,44 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
             "user_loan_full_collect_withdraw",
             "個人間貸付 一括回収(出金)");
 
+        if (withdraw.StatusCode == 200)
+            return await ApplyRepayAsync(
+                db,
+                tx,
+                loan,
+                collectorUuid,
+                collectedAmount: amountToCollect,
+                remainingAmount: 0m,
+                rollbackAmount: amountToCollect,
+                collectorDepositNote: "user_loan_full_collect_deposit",
+                collectorDepositDisplayNote: "個人間貸付 一括回収(入金)");
+
         if (withdraw.StatusCode == 409)
         {
-            var collateral = loan.CollateralItem;
-            loan.CollateralReleased = true;
-            await SetLoanAmountAsync(db, tx, loan, 0m);
-
-            var dto = new LoanRepayResponse(
-                LoanId: loan.Id,
-                Outcome: LoanRepayOutcome.CollateralCollected,
-                CollectedAmount: 0m,
-                RemainingAmount: loan.Amount,
-                CollateralItem: string.IsNullOrWhiteSpace(collateral) ? null : collateral
-            );
-            return ApiResult<LoanRepayResponse>.Ok(dto);
+            var period = loan.PaybackDate - loan.BorrowDate;
+            var collateralUnlockAt = loan.PaybackDate + period;
+            if (DateTime.UtcNow < collateralUnlockAt)
+                return ApiResult<LoanRepayResponse>.Conflict(ErrorCode.InsufficientFunds);
+            return await CollectCollateralAsync(db, tx, loan);
         }
 
-        if (withdraw.StatusCode != 200)
-            return new ApiResult<LoanRepayResponse>(withdraw.StatusCode, withdraw.Code);
+        return new ApiResult<LoanRepayResponse>(withdraw.StatusCode, withdraw.Code);
+    }
 
-        return await ApplyRepayAsync(
-            db,
-            tx,
-            loan,
-            collectorUuid,
-            collectedAmount: amountToCollect,
-            remainingAmount: 0m,
-            rollbackAmount: amountToCollect,
-            collectorDepositNote: "user_loan_full_collect_deposit",
-            collectorDepositDisplayNote: "個人間貸付 一括回収(入金)");
+    private static async Task<ApiResult<LoanRepayResponse>> CollectCollateralAsync(BankDbContext db, IDbContextTransaction? tx, Loan loan)
+    {
+        var collateral = loan.CollateralItem;
+        loan.CollateralReleased = true;
+        await SetLoanAmountAsync(db, tx, loan, 0m);
+
+        var dto = new LoanRepayResponse(
+            LoanId: loan.Id,
+            Outcome: LoanRepayOutcome.CollateralCollected,
+            CollectedAmount: 0m,
+            RemainingAmount: loan.Amount,
+            CollateralItem: string.IsNullOrWhiteSpace(collateral) ? null : collateral
+        );
+        return ApiResult<LoanRepayResponse>.Ok(dto);
     }
 
     private async Task<ApiResult<LoanRepayResponse>> ApplyRepayAsync(
