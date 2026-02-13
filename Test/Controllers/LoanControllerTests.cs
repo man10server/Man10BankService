@@ -105,7 +105,7 @@ public class LoanControllerTests
             LendUuid = lendUuid,
             BorrowUuid = borrowUuid,
             BorrowAmount = 1000m,
-            RepayAmount = 1000m,
+            RepayAmount = 1200m,
             PaybackDate = DateTime.UtcNow.AddDays(5),
             CollateralItem = string.Empty
         });
@@ -116,7 +116,7 @@ public class LoanControllerTests
         var repay = await ctrl.Repay(loan.Id, collectorUuid: lendUuid);
         repay.Result.Should().BeOfType<ConflictObjectResult>();
         var after = await GetLoanAsync(env.DbFactory, loan.Id);
-        after!.Amount.Should().Be(1000m);
+        after!.Amount.Should().Be(1200m);
     }
 
     [Fact(DisplayName = "loan: 担保なし 期限後は全額回収される（所持金十分）")]
@@ -158,7 +158,8 @@ public class LoanControllerTests
         var repayAgain = await ctrl.Repay(loan.Id, collectorUuid: lendUuid);
         var repayAgainBadRequest = repayAgain.Result.Should().BeOfType<BadRequestObjectResult>().Which;
         var repayAgainPd = repayAgainBadRequest.Value.Should().BeOfType<ProblemDetails>().Which;
-        repayAgainPd.Title.Should().Be(ErrorCode.NoRepaymentNeeded.ToString());
+        repayAgainPd.Title.Should().Be(ErrorCodeMessages.Get(ErrorCode.NoRepaymentNeeded));
+        repayAgainPd.Extensions["code"].Should().Be(ErrorCode.NoRepaymentNeeded.ToString());
     }
 
     [Fact(DisplayName = "loan: 担保なし 所持金なしは回収不可")]
@@ -263,7 +264,8 @@ public class LoanControllerTests
         var releaseAgain = await ctrl.ReleaseCollateral(loan.Id, borrowerUuid: borrowUuid);
         var releaseAgainConflict = releaseAgain.Result.Should().BeOfType<ConflictObjectResult>().Which;
         var releaseAgainPd = releaseAgainConflict.Value.Should().BeOfType<ProblemDetails>().Which;
-        releaseAgainPd.Title.Should().Be(ErrorCode.CollateralAlreadyReleased.ToString());
+        releaseAgainPd.Title.Should().Be(ErrorCodeMessages.Get(ErrorCode.CollateralAlreadyReleased));
+        releaseAgainPd.Extensions["code"].Should().Be(ErrorCode.CollateralAlreadyReleased.ToString());
         var after = await GetLoanAsync(env.DbFactory, loan.Id);
         after!.CollateralItem.Should().Be("gold");
         after.CollateralReleased.Should().BeTrue();
@@ -313,7 +315,8 @@ public class LoanControllerTests
         var repayAgain = await ctrl.Repay(loan.Id, collectorUuid: lendUuid);
         var repayAgainConflict = repayAgain.Result.Should().BeOfType<ConflictObjectResult>().Which;
         var repayAgainPd = repayAgainConflict.Value.Should().BeOfType<ProblemDetails>().Which;
-        repayAgainPd.Title.Should().Be(ErrorCode.CollateralAlreadyReleased.ToString());
+        repayAgainPd.Title.Should().Be(ErrorCodeMessages.Get(ErrorCode.CollateralAlreadyReleased));
+        repayAgainPd.Extensions["code"].Should().Be(ErrorCode.CollateralAlreadyReleased.ToString());
         
         var lenderAfter = await env.Bank.GetBalanceAsync(lendUuid);
         lenderAfter.Data.Should().Be(lenderBefore.Data);

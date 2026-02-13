@@ -28,7 +28,15 @@ public enum ErrorCode
     PaymentAmountZero,
     InterestStopped,
     InterestZero,
-    BeforePaybackDate
+    BeforePaybackDate,
+    LenderUuidRequired,
+    BorrowerUuidRequired,
+    CollectorUuidRequired,
+    LenderAndBorrowerMustDiffer,
+    BorrowAmountMustBePositive,
+    RepayAmountMustBePositive,
+    RepayAmountMustExceedBorrowAmount,
+    BorrowerMismatch
 }
 
 public sealed record ApiResult<T>(int StatusCode, ErrorCode Code = ErrorCode.None, T? Data = default)
