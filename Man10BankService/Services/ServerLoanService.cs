@@ -234,8 +234,11 @@ public class ServerLoanService
             if (amount < 0m)
                 return ApiResult<ServerLoan?>.BadRequest(ErrorCode.ValidationError);
 
-            var repo = new ServerLoanRepository(_dbFactory);
             var paymentAmount = CalculateRepaymentAmount(amount);
+            if (paymentAmount < 0m)
+                return ApiResult<ServerLoan?>.BadRequest(ErrorCode.ValidationError);
+
+            var repo = new ServerLoanRepository(_dbFactory, _profileService);
             var loan = await repo.SetBorrowAmountAsync(uuid, amount, paymentAmount);
             if (loan == null)
                 return ApiResult<ServerLoan?>.NotFound(ErrorCode.LoanNotFound);

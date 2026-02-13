@@ -119,9 +119,6 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
 
     public async Task<ServerLoan?> SetBorrowAmountAsync(string uuid, decimal borrowAmount, decimal paymentAmount)
     {
-        if (borrowAmount < 0m) throw new ArgumentException("借入残額は 0 以上で指定してください。", nameof(borrowAmount));
-        if (paymentAmount < 0m) throw new ArgumentException("支払額は 0 以上で指定してください。", nameof(paymentAmount));
-
         await using var db = await factory.CreateDbContextAsync();
         await using var tx = await db.Database.BeginTransactionAsync();
 
