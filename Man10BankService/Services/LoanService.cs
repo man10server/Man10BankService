@@ -235,7 +235,7 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
         var collateral = loan.CollateralItem;
         loan.CollateralReleased = true;
         loan.Amount = 0m;
-        SetCollateralReleaseMetadata(loan, LoanRepository.CollateralReleaseReason.CollectorCollect);
+        SetCollateralReleaseMetadata(loan, LoanCollateralReleaseReason.CollectorCollect);
         await db.SaveChangesAsync();
         if (tx != null)
             await tx.CommitAsync();
@@ -407,7 +407,7 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
                 return ApiResult<Loan?>.Conflict(ErrorCode.CollateralAlreadyReleased);
 
             loan.CollateralReleased = true;
-            SetCollateralReleaseMetadata(loan, LoanRepository.CollateralReleaseReason.BorrowerReturn);
+            SetCollateralReleaseMetadata(loan, LoanCollateralReleaseReason.BorrowerReturn);
             await db.SaveChangesAsync();
             if (tx != null)
                 await tx.CommitAsync();
@@ -423,7 +423,7 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
         }
     }
 
-    private static void SetCollateralReleaseMetadata(Loan loan, LoanRepository.CollateralReleaseReason reason)
+    private static void SetCollateralReleaseMetadata(Loan loan, LoanCollateralReleaseReason reason)
     {
         loan.CollateralReleasedAt = DateTime.UtcNow;
         loan.CollateralReleaseReason = reason.ToString();

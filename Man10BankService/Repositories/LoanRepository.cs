@@ -6,12 +6,6 @@ namespace Man10BankService.Repositories;
 
 public class LoanRepository(BankDbContext db)
 {
-    public enum CollateralReleaseReason
-    {
-        CollectorCollect,
-        BorrowerReturn,
-    }
-
     public async Task<Loan?> GetByIdAsync(int id)
     {
         return await db.Loans.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id);
