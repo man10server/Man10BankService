@@ -10,9 +10,6 @@ namespace Man10BankService.Services;
 
 public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService bank, IPlayerProfileService profileService)
 {
-    private const string CollateralReleaseReasonCollectorCollect = "collector_collect";
-    private const string CollateralReleaseReasonBorrowerReturn = "borrower_return";
-
     public async Task<ApiResult<Loan>> GetByIdAsync(int id)
     {
         try
@@ -240,7 +237,7 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
         loan.CollateralReleased = true;
         loan.Amount = 0m;
         await db.SaveChangesAsync();
-        await repo.SetCollateralReleaseAuditAsync(loan.Id, CollateralReleaseReasonCollectorCollect);
+        await repo.SetCollateralReleaseAuditAsync(loan.Id, LoanRepository.CollateralReleaseReason.CollectorCollect);
         if (tx != null)
             await tx.CommitAsync();
 
@@ -412,7 +409,7 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
 
             loan.CollateralReleased = true;
             await db.SaveChangesAsync();
-            await repo.SetCollateralReleaseAuditAsync(id, CollateralReleaseReasonBorrowerReturn);
+            await repo.SetCollateralReleaseAuditAsync(id, LoanRepository.CollateralReleaseReason.BorrowerReturn);
             if (tx != null)
                 await tx.CommitAsync();
             

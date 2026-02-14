@@ -272,7 +272,7 @@ public class LoanControllerTests
         after.CollateralReleased.Should().BeTrue();
         var audit = await GetCollateralAuditAsync(env.DbFactory, loan.Id);
         audit.ReleasedAt.Should().NotBeNull();
-        audit.Reason.Should().Be("borrower_return");
+        audit.Reason.Should().Be("BorrowerReturn");
     }
 
     [Fact(DisplayName = "loan: 担保あり 期限後でも解禁前は残高不足エラーになる")]
@@ -377,7 +377,7 @@ public class LoanControllerTests
         after.CollateralReleased.Should().BeTrue();
         var audit = await GetCollateralAuditAsync(env.DbFactory, loan.Id);
         audit.ReleasedAt.Should().NotBeNull();
-        audit.Reason.Should().Be("collector_collect");
+        audit.Reason.Should().Be("CollectorCollect");
     }
 
     private static async Task SetLoanDatesAsync(IDbContextFactory<BankDbContext> f, int id, DateTime borrowDate, DateTime paybackDate)
