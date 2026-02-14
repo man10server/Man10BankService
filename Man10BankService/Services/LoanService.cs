@@ -149,7 +149,7 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
 
             if (string.IsNullOrWhiteSpace(loan.CollateralItem))
                 return await RepayWithoutCollateralAsync(db, tx, loan, collectorUuid);
-            return await RepayWithCollateralAsync(db, tx, loan, collectorUuid, repo);
+            return await RepayWithCollateralAsync(db, tx, loan, collectorUuid);
         }
         catch (Exception)
         {
@@ -197,8 +197,7 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
         BankDbContext db,
         IDbContextTransaction? tx,
         Loan loan,
-        string collectorUuid,
-        LoanRepository repo)
+        string collectorUuid)
     {
         var amountToCollect = loan.Amount;
         var withdraw = await WithdrawBorrowerAsync(
@@ -225,19 +224,19 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
             var collateralUnlockAt = loan.PaybackDate + period;
             if (DateTime.UtcNow < collateralUnlockAt)
                 return ApiResult<LoanRepayResponse>.Conflict(ErrorCode.InsufficientFunds);
-            return await CollectCollateralAsync(db, tx, loan, repo);
+            return await CollectCollateralAsync(db, tx, loan);
         }
 
         return new ApiResult<LoanRepayResponse>(withdraw.StatusCode, withdraw.Code);
     }
 
-    private static async Task<ApiResult<LoanRepayResponse>> CollectCollateralAsync(BankDbContext db, IDbContextTransaction? tx, Loan loan, LoanRepository repo)
+    private static async Task<ApiResult<LoanRepayResponse>> CollectCollateralAsync(BankDbContext db, IDbContextTransaction? tx, Loan loan)
     {
         var collateral = loan.CollateralItem;
         loan.CollateralReleased = true;
         loan.Amount = 0m;
+        SetCollateralReleaseMetadata(db, loan, LoanRepository.CollateralReleaseReason.CollectorCollect);
         await db.SaveChangesAsync();
-        await repo.SetCollateralReleaseReasonAsync(loan.Id, LoanRepository.CollateralReleaseReason.CollectorCollect);
         if (tx != null)
             await tx.CommitAsync();
 
@@ -408,8 +407,8 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
                 return ApiResult<Loan?>.Conflict(ErrorCode.CollateralAlreadyReleased);
 
             loan.CollateralReleased = true;
+            SetCollateralReleaseMetadata(db, loan, LoanRepository.CollateralReleaseReason.BorrowerReturn);
             await db.SaveChangesAsync();
-            await repo.SetCollateralReleaseReasonAsync(id, LoanRepository.CollateralReleaseReason.BorrowerReturn);
             if (tx != null)
                 await tx.CommitAsync();
             
@@ -422,5 +421,12 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
         {
             return ApiResult<Loan?>.Error(ErrorCode.UnexpectedError);
         }
+    }
+
+    private static void SetCollateralReleaseMetadata(BankDbContext db, Loan loan, LoanRepository.CollateralReleaseReason reason)
+    {
+        var entry = db.Entry(loan);
+        entry.Property<DateTime?>("CollateralReleasedAt").CurrentValue = DateTime.UtcNow;
+        entry.Property<string?>("CollateralReleaseReason").CurrentValue = reason.ToString();
     }
 }

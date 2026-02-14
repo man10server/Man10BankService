@@ -64,16 +64,4 @@ public class LoanRepository(BankDbContext db)
         await db.SaveChangesAsync();
         return true;
     }
-
-    public async Task<int> SetCollateralReleaseReasonAsync(int id, CollateralReleaseReason reason)
-    {
-        var loan = await db.Loans.FirstOrDefaultAsync(x => x.Id == id);
-        if (loan == null)
-            return 0;
-
-        var entry = db.Entry(loan);
-        entry.Property<DateTime?>("CollateralReleasedAt").CurrentValue = DateTime.UtcNow;
-        entry.Property<string?>("CollateralReleaseReason").CurrentValue = reason.ToString();
-        return await db.SaveChangesAsync();
-    }
 }
