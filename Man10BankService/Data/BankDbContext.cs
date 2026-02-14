@@ -129,8 +129,8 @@ public class BankDbContext : DbContext
             e.Property(x => x.PaybackDate).HasColumnName("payback_date");
             e.Property(x => x.CollateralItem).HasColumnName("collateral_item");
             e.Property(x => x.CollateralReleased).HasColumnName("collateral_released");
-            e.Property<DateTime?>("CollateralReleasedAt").HasColumnName("collateral_released_at");
-            e.Property<string?>("CollateralReleaseReason").HasColumnName("collateral_release_reason").HasMaxLength(32);
+            e.Property(x => x.CollateralReleasedAt).HasColumnName("collateral_released_at");
+            e.Property(x => x.CollateralReleaseReason).HasColumnName("collateral_release_reason").HasMaxLength(32);
             e.Property(x => x.LendPlayer).HasDefaultValue("");
             e.Property(x => x.LendUuid).HasDefaultValue("");
             e.Property(x => x.BorrowPlayer).HasDefaultValue("");

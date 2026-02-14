@@ -403,13 +403,13 @@ public class LoanControllerTests
             .Where(x => x.Id == id)
             .Select(x => new
             {
-                ReleasedAt = EF.Property<DateTime?>(x, "CollateralReleasedAt"),
-                Reason = EF.Property<string?>(x, "CollateralReleaseReason")
+                x.CollateralReleasedAt,
+                x.CollateralReleaseReason
             })
             .FirstOrDefaultAsync();
         if (row == null)
             return (null, null);
 
-        return (row.ReleasedAt, row.Reason);
+        return (row.CollateralReleasedAt, row.CollateralReleaseReason);
     }
 }
