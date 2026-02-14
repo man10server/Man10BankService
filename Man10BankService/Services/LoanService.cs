@@ -10,6 +10,12 @@ namespace Man10BankService.Services;
 
 public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService bank, IPlayerProfileService profileService)
 {
+    private enum CollateralReleaseReason
+    {
+        CollectorCollect,
+        BorrowerReturn,
+    }
+
     public async Task<ApiResult<Loan>> GetByIdAsync(int id)
     {
         try
@@ -235,7 +241,7 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
         var collateral = loan.CollateralItem;
         loan.CollateralReleased = true;
         loan.Amount = 0m;
-        SetCollateralReleaseMetadata(loan, LoanCollateralReleaseReason.CollectorCollect);
+        SetCollateralReleaseMetadata(loan, CollateralReleaseReason.CollectorCollect);
         await db.SaveChangesAsync();
         if (tx != null)
             await tx.CommitAsync();
@@ -407,7 +413,7 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
                 return ApiResult<Loan?>.Conflict(ErrorCode.CollateralAlreadyReleased);
 
             loan.CollateralReleased = true;
-            SetCollateralReleaseMetadata(loan, LoanCollateralReleaseReason.BorrowerReturn);
+            SetCollateralReleaseMetadata(loan, CollateralReleaseReason.BorrowerReturn);
             await db.SaveChangesAsync();
             if (tx != null)
                 await tx.CommitAsync();
@@ -423,7 +429,7 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
         }
     }
 
-    private static void SetCollateralReleaseMetadata(Loan loan, LoanCollateralReleaseReason reason)
+    private static void SetCollateralReleaseMetadata(Loan loan, CollateralReleaseReason reason)
     {
         loan.CollateralReleasedAt = DateTime.UtcNow;
         loan.CollateralReleaseReason = reason.ToString();
