@@ -3,6 +3,7 @@ using Man10BankService.Models.Requests;
 using Man10BankService.Services;
 using Man10BankService.Models.Responses;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 
 namespace Man10BankService.Controllers;
 
@@ -58,6 +59,17 @@ public class ServerLoanController(ServerLoanService service) : ControllerBase
     public async Task<ActionResult<ServerLoan?>> SetPaymentAmount([FromRoute] string uuid, [FromQuery] decimal paymentAmount)
     {
         var res = await service.SetPaymentAmountAsync(uuid, paymentAmount);
+        return this.ToActionResult(res);
+    }
+
+    [HttpPost("borrow-amount")]
+    [Produces("application/json")]
+    [ProducesResponseType(typeof(ServerLoan), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<ServerLoan?>> SetBorrowAmount([FromRoute] string uuid, [FromQuery, BindRequired] decimal amount)
+    {
+        var res = await service.SetBorrowAmountAsync(uuid, amount);
         return this.ToActionResult(res);
     }
 

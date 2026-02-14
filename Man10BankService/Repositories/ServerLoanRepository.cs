@@ -14,6 +14,7 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
         RepaySuccess,
         RepayFailure,
         Interest,
+        SetBorrowAmount,
     }
 
     public async Task<ServerLoan> GetOrCreateByUuidAsync(string uuid)
@@ -44,6 +45,12 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
     {
         await using var db = await factory.CreateDbContextAsync();
         return await db.ServerLoans.AsNoTracking().ToListAsync();
+    }
+
+    public async Task<ServerLoan?> GetByUuidAsync(string uuid)
+    {
+        await using var db = await factory.CreateDbContextAsync();
+        return await db.ServerLoans.AsNoTracking().FirstOrDefaultAsync(x => x.Uuid == uuid);
     }
 
     public async Task<ServerLoan?> AdjustLoanAsync(string uuid, string player, decimal delta, ServerLoanLogAction action)
@@ -111,6 +118,36 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
 
         loan.PaymentAmount = paymentAmount;
         db.Update(loan);
+        await db.SaveChangesAsync();
+        await tx.CommitAsync();
+        return loan;
+    }
+
+    public async Task<ServerLoan?> SetBorrowAmountAsync(string uuid, string player, decimal borrowAmount, decimal paymentAmount)
+    {
+        await using var db = await factory.CreateDbContextAsync();
+        await using var tx = await db.Database.BeginTransactionAsync();
+
+        var loan = await db.ServerLoans.FirstOrDefaultAsync(x => x.Uuid == uuid);
+        if (loan == null)
+        {
+            loan = new ServerLoan
+            {
+                Uuid = uuid,
+                Player = player,
+                BorrowAmount = 0m,
+                PaymentAmount = 0m,
+                LastPayDate = DateTime.UtcNow,
+                FailedPayment = 0,
+                StopInterest = false,
+            };
+            await db.ServerLoans.AddAsync(loan);
+        }
+        var delta = borrowAmount - loan.BorrowAmount;
+
+        loan.BorrowAmount = borrowAmount;
+        loan.PaymentAmount = paymentAmount;
+        await AddLogAsync(db, loan.Uuid, loan.Player, ServerLoanLogAction.SetBorrowAmount, delta);
         await db.SaveChangesAsync();
         await tx.CommitAsync();
         return loan;
