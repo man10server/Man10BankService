@@ -268,7 +268,7 @@ public class ServerLoanService
             return 0m;
 
         var paymentAmount = Math.Round(borrowAmount * DailyInterestRate * 7m * 2m, 0, MidpointRounding.AwayFromZero);
-        return paymentAmount < 1m ? 1m : paymentAmount;
+        return Math.Max(1m, paymentAmount);
     }
 
     // 次回の週次返済日時を計算（ローカル時刻基準）
