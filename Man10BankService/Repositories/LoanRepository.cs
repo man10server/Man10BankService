@@ -58,4 +58,13 @@ public class LoanRepository(BankDbContext db)
         await db.SaveChangesAsync();
         return true;
     }
+
+    public Task<int> SetCollateralReleaseAuditAsync(int id, string reasonCode)
+    {
+        return db.Database.ExecuteSqlInterpolatedAsync($@"
+UPDATE loan_table
+SET collateral_released_at = CURRENT_TIMESTAMP,
+    collateral_release_reason = {reasonCode}
+WHERE id = {id}");
+    }
 }

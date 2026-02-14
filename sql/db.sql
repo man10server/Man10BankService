@@ -86,6 +86,8 @@ create table loan_table
     payback_date    datetime    default CURRENT_TIMESTAMP not null,
     collateral_item text                                  not null,
     collateral_released tinyint(1) default 0              not null,
+    collateral_released_at datetime                       null,
+    collateral_release_reason varchar(32)                 null,
     amount          decimal(20)                           not null
 );
 

@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.AspNetCore.Mvc.ModelBinding.Validation;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using MySqlConnector;
 using Test.Infrastructure;
 
 namespace Test.Controllers;
@@ -269,6 +270,9 @@ public class LoanControllerTests
         var after = await GetLoanAsync(env.DbFactory, loan.Id);
         after!.CollateralItem.Should().Be("gold");
         after.CollateralReleased.Should().BeTrue();
+        var audit = await GetCollateralAuditAsync(env.DbFactory, loan.Id);
+        audit.ReleasedAt.Should().NotBeNull();
+        audit.Reason.Should().Be("borrower_return");
     }
 
     [Fact(DisplayName = "loan: 担保あり 期限後でも解禁前は残高不足エラーになる")]
@@ -310,6 +314,9 @@ public class LoanControllerTests
         var after = await GetLoanAsync(env.DbFactory, loan.Id);
         after!.Amount.Should().Be(5000m);
         after.CollateralReleased.Should().BeFalse();
+        var audit = await GetCollateralAuditAsync(env.DbFactory, loan.Id);
+        audit.ReleasedAt.Should().BeNull();
+        audit.Reason.Should().BeNull();
     }
 
     [Fact(DisplayName = "loan: 担保あり 期限後かつ解禁後・所持金なしは担保回収になる")]
@@ -368,6 +375,9 @@ public class LoanControllerTests
         after!.Amount.Should().Be(0m);
         after.CollateralItem.Should().Be("emerald");
         after.CollateralReleased.Should().BeTrue();
+        var audit = await GetCollateralAuditAsync(env.DbFactory, loan.Id);
+        audit.ReleasedAt.Should().NotBeNull();
+        audit.Reason.Should().Be("collector_collect");
     }
 
     private static async Task SetLoanDatesAsync(IDbContextFactory<BankDbContext> f, int id, DateTime borrowDate, DateTime paybackDate)
@@ -384,5 +394,25 @@ public class LoanControllerTests
     {
         await using var db = await f.CreateDbContextAsync();
         return await db.Loans.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id);
+    }
+
+    private static async Task<(DateTime? ReleasedAt, string? Reason)> GetCollateralAuditAsync(IDbContextFactory<BankDbContext> f, int id)
+    {
+        await using var db = await f.CreateDbContextAsync();
+        var conn = (MySqlConnection)db.Database.GetDbConnection();
+        if (conn.State != System.Data.ConnectionState.Open)
+            await conn.OpenAsync();
+
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT collateral_released_at, collateral_release_reason FROM loan_table WHERE id = @id";
+        cmd.Parameters.AddWithValue("@id", id);
+
+        await using var reader = await cmd.ExecuteReaderAsync();
+        if (!await reader.ReadAsync())
+            return (null, null);
+
+        DateTime? releasedAt = reader.IsDBNull(0) ? null : reader.GetDateTime(0);
+        string? reason = reader.IsDBNull(1) ? null : reader.GetString(1);
+        return (releasedAt, reason);
     }
 }

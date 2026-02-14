@@ -10,6 +10,9 @@ namespace Man10BankService.Services;
 
 public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService bank, IPlayerProfileService profileService)
 {
+    private const string CollateralReleaseReasonCollectorCollect = "collector_collect";
+    private const string CollateralReleaseReasonBorrowerReturn = "borrower_return";
+
     public async Task<ApiResult<Loan>> GetByIdAsync(int id)
     {
         try
@@ -149,7 +152,7 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
 
             if (string.IsNullOrWhiteSpace(loan.CollateralItem))
                 return await RepayWithoutCollateralAsync(db, tx, loan, collectorUuid);
-            return await RepayWithCollateralAsync(db, tx, loan, collectorUuid);
+            return await RepayWithCollateralAsync(db, tx, loan, collectorUuid, repo);
         }
         catch (Exception)
         {
@@ -197,7 +200,8 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
         BankDbContext db,
         IDbContextTransaction? tx,
         Loan loan,
-        string collectorUuid)
+        string collectorUuid,
+        LoanRepository repo)
     {
         var amountToCollect = loan.Amount;
         var withdraw = await WithdrawBorrowerAsync(
@@ -224,17 +228,21 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
             var collateralUnlockAt = loan.PaybackDate + period;
             if (DateTime.UtcNow < collateralUnlockAt)
                 return ApiResult<LoanRepayResponse>.Conflict(ErrorCode.InsufficientFunds);
-            return await CollectCollateralAsync(db, tx, loan);
+            return await CollectCollateralAsync(db, tx, loan, repo);
         }
 
         return new ApiResult<LoanRepayResponse>(withdraw.StatusCode, withdraw.Code);
     }
 
-    private static async Task<ApiResult<LoanRepayResponse>> CollectCollateralAsync(BankDbContext db, IDbContextTransaction? tx, Loan loan)
+    private static async Task<ApiResult<LoanRepayResponse>> CollectCollateralAsync(BankDbContext db, IDbContextTransaction? tx, Loan loan, LoanRepository repo)
     {
         var collateral = loan.CollateralItem;
         loan.CollateralReleased = true;
-        await SetLoanAmountAsync(db, tx, loan, 0m);
+        loan.Amount = 0m;
+        await db.SaveChangesAsync();
+        await repo.SetCollateralReleaseAuditAsync(loan.Id, CollateralReleaseReasonCollectorCollect);
+        if (tx != null)
+            await tx.CommitAsync();
 
         var dto = new LoanRepayResponse(
             LoanId: loan.Id,
@@ -404,6 +412,7 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
 
             loan.CollateralReleased = true;
             await db.SaveChangesAsync();
+            await repo.SetCollateralReleaseAuditAsync(id, CollateralReleaseReasonBorrowerReturn);
             if (tx != null)
                 await tx.CommitAsync();
             
