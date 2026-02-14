@@ -65,12 +65,7 @@ public class LoanRepository(BankDbContext db)
         return true;
     }
 
-    public Task<int> SetCollateralReleaseAuditAsync(int id, CollateralReleaseReason reason)
-    {
-        return SetCollateralReleaseAuditInternalAsync(id, reason);
-    }
-
-    private async Task<int> SetCollateralReleaseAuditInternalAsync(int id, CollateralReleaseReason reason)
+    public async Task<int> SetCollateralReleaseReasonAsync(int id, CollateralReleaseReason reason)
     {
         var loan = await db.Loans.FirstOrDefaultAsync(x => x.Id == id);
         if (loan == null)

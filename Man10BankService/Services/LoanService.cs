@@ -237,7 +237,7 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
         loan.CollateralReleased = true;
         loan.Amount = 0m;
         await db.SaveChangesAsync();
-        await repo.SetCollateralReleaseAuditAsync(loan.Id, LoanRepository.CollateralReleaseReason.CollectorCollect);
+        await repo.SetCollateralReleaseReasonAsync(loan.Id, LoanRepository.CollateralReleaseReason.CollectorCollect);
         if (tx != null)
             await tx.CommitAsync();
 
@@ -409,7 +409,7 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
 
             loan.CollateralReleased = true;
             await db.SaveChangesAsync();
-            await repo.SetCollateralReleaseAuditAsync(id, LoanRepository.CollateralReleaseReason.BorrowerReturn);
+            await repo.SetCollateralReleaseReasonAsync(id, LoanRepository.CollateralReleaseReason.BorrowerReturn);
             if (tx != null)
                 await tx.CommitAsync();
             
