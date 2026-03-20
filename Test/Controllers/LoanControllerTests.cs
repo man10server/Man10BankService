@@ -269,6 +269,9 @@ public class LoanControllerTests
         var after = await GetLoanAsync(env.DbFactory, loan.Id);
         after!.CollateralItem.Should().Be("gold");
         after.CollateralReleased.Should().BeTrue();
+        var reason = await GetCollateralReasonAsync(env.DbFactory, loan.Id);
+        reason.ReleasedAt.Should().NotBeNull();
+        reason.Reason.Should().Be("BorrowerReturn");
     }
 
     [Fact(DisplayName = "loan: 担保あり 期限後でも解禁前は残高不足エラーになる")]
@@ -310,6 +313,9 @@ public class LoanControllerTests
         var after = await GetLoanAsync(env.DbFactory, loan.Id);
         after!.Amount.Should().Be(5000m);
         after.CollateralReleased.Should().BeFalse();
+        var reason = await GetCollateralReasonAsync(env.DbFactory, loan.Id);
+        reason.ReleasedAt.Should().BeNull();
+        reason.Reason.Should().BeNull();
     }
 
     [Fact(DisplayName = "loan: 担保あり 期限後かつ解禁後・所持金なしは担保回収になる")]
@@ -368,6 +374,9 @@ public class LoanControllerTests
         after!.Amount.Should().Be(0m);
         after.CollateralItem.Should().Be("emerald");
         after.CollateralReleased.Should().BeTrue();
+        var reason = await GetCollateralReasonAsync(env.DbFactory, loan.Id);
+        reason.ReleasedAt.Should().NotBeNull();
+        reason.Reason.Should().Be("CollectorCollect");
     }
 
     private static async Task SetLoanDatesAsync(IDbContextFactory<BankDbContext> f, int id, DateTime borrowDate, DateTime paybackDate)
@@ -384,5 +393,23 @@ public class LoanControllerTests
     {
         await using var db = await f.CreateDbContextAsync();
         return await db.Loans.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id);
+    }
+
+    private static async Task<(DateTime? ReleasedAt, string? Reason)> GetCollateralReasonAsync(IDbContextFactory<BankDbContext> f, int id)
+    {
+        await using var db = await f.CreateDbContextAsync();
+        var row = await db.Loans
+            .AsNoTracking()
+            .Where(x => x.Id == id)
+            .Select(x => new
+            {
+                x.CollateralReleasedAt,
+                x.CollateralReleaseReason
+            })
+            .FirstOrDefaultAsync();
+        if (row == null)
+            return (null, null);
+
+        return (row.CollateralReleasedAt, row.CollateralReleaseReason);
     }
 }

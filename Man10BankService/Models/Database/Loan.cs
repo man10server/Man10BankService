@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
 
 namespace Man10BankService.Models.Database;
 
@@ -19,4 +20,9 @@ public class Loan
     [StringLength(128)]
     public string? CollateralItem { get; set; }
     public bool CollateralReleased { get; set; }
+    [JsonIgnore]
+    public DateTime? CollateralReleasedAt { get; set; }
+    [StringLength(32)]
+    [JsonIgnore]
+    public string? CollateralReleaseReason { get; set; }
 }
