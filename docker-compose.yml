@@ -4,7 +4,7 @@ services:
     container_name: man10-mysql
     restart: unless-stopped
     environment:
-      MYSQL_DATABASE: man10
+      MYSQL_DATABASE: man10_bank
       MYSQL_USER: app
       MYSQL_PASSWORD: app_pw
       MYSQL_ROOT_PASSWORD: root_pw
