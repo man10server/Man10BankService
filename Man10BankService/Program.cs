@@ -137,7 +137,8 @@ app.UseExceptionHandler(errorApp =>
 
 if (app.Environment.IsDevelopment())
 {
-    app.MapOpenApi();
+    // Development 限定のため OpenAPI ドキュメントは匿名で取得可能にする（Swagger UI が参照する）
+    app.MapOpenApi().AllowAnonymous();
     // Swagger UI は組み込み OpenAPI (/openapi/v1.json) を表示
     app.UseSwaggerUI(o =>
     {
