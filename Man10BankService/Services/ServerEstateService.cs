@@ -12,7 +12,6 @@ public class ServerEstateService
     public ServerEstateService(IDbContextFactory<BankDbContext> dbFactory)
     {
         _dbFactory = dbFactory;
-        Task.Run(SchedulerLoopAsync);
     }
 
     public async Task<ApiResult<List<ServerEstateHistory>>> GetHistoryAsync(int limit = 100, int offset = 0)
@@ -31,29 +30,10 @@ public class ServerEstateService
         }
     }
 
-    private async Task SchedulerLoopAsync()
+    // 指定時刻(時単位)のサーバー資産スナップショットを記録する（スケジューラから呼ばれる）
+    public async Task RecordSnapshotAsync(DateTime hourUtc)
     {
-        DateTime? lastRunHourUtc = null;
-        while (true)
-        {
-            try
-            {
-                var nowUtc = DateTime.UtcNow;
-                var currentHourUtc = new DateTime(nowUtc.Year, nowUtc.Month, nowUtc.Day, nowUtc.Hour, 0, 0, DateTimeKind.Utc);
-                if (lastRunHourUtc != currentHourUtc)
-                {
-                    var repo = new ServerEstateRepository(_dbFactory);
-                    await repo.RecordSnapshotAsync(currentHourUtc);
-                    lastRunHourUtc = currentHourUtc;
-                }
-            }
-            catch
-            {
-                // ignore
-            }
-
-            try { await Task.Delay(TimeSpan.FromMinutes(1)); }
-            catch (TaskCanceledException) { break; }
-        }
+        var repo = new ServerEstateRepository(_dbFactory);
+        await repo.RecordSnapshotAsync(hourUtc);
     }
 }

@@ -17,15 +17,19 @@ public class ServerLoanService
     private static TimeSpan WeeklyRepayTime { get; set; } = new(3, 0, 0);   // 03:00
     private static DayOfWeek WeeklyRepayDay { get; set; } = DayOfWeek.Monday;
 
+    // スケジューラ(BackgroundService)が参照する実行時刻設定
+    public static TimeSpan DailyInterestTimeOfDay => DailyInterestTime;
+    public static TimeSpan WeeklyRepayTimeOfDay => WeeklyRepayTime;
+    public static DayOfWeek WeeklyRepayDayOfWeek => WeeklyRepayDay;
+
     private readonly IDbContextFactory<BankDbContext> _dbFactory;
     private readonly BankService _bank;
     private readonly IPlayerProfileService _profileService;
 
     public ServerLoanService(IDbContextFactory<BankDbContext> dbFactory, BankService bank, IPlayerProfileService profileService, IConfiguration config)
     {
-        Task.Run(SchedulerLoopAsync);
         Configure(config);
-        
+
         _dbFactory = dbFactory;
         _bank = bank;
         _profileService = profileService;
@@ -318,42 +322,8 @@ public class ServerLoanService
         }
     }
     
-    private async Task SchedulerLoopAsync()
-    {
-        DateOnly? lastDailyRun = null;
-        DateOnly? lastWeeklyRun = null;
-        while (true)
-        {
-            try
-            {
-                var now = DateTime.Now;
-                var today = DateOnly.FromDateTime(now);
-
-                var dailyDue = now.TimeOfDay >= DailyInterestTime;
-                if (dailyDue && lastDailyRun != today)
-                {
-                    await RunDailyInterestForAllAsync();
-                    lastDailyRun = today;
-                }
-
-                var weeklyDue = now.DayOfWeek == WeeklyRepayDay && now.TimeOfDay >= WeeklyRepayTime;
-                if (weeklyDue && lastWeeklyRun != today)
-                {
-                    await RunWeeklyRepayForAllAsync();
-                    lastWeeklyRun = today;
-                }
-            }
-            catch
-            {
-                // ignored
-            }
-
-            try { await Task.Delay(TimeSpan.FromMinutes(1)); }
-            catch (TaskCanceledException) { break; }
-        }
-    }
-    
-    private async Task RunDailyInterestForAllAsync()
+    // 日次利息を全ローンへ加算（スケジューラから呼ばれる）
+    public async Task RunDailyInterestForAllAsync()
     {
         var repo = new ServerLoanRepository(_dbFactory, _profileService);
         var loans = await repo.GetAllAsync();
@@ -363,7 +333,8 @@ public class ServerLoanService
         }
     }
 
-    private async Task RunWeeklyRepayForAllAsync()
+    // 週次返済を全ローンへ実行（スケジューラから呼ばれる）
+    public async Task RunWeeklyRepayForAllAsync()
     {
         var repo = new ServerLoanRepository(_dbFactory, _profileService);
         var loans = await repo.GetAllAsync();
