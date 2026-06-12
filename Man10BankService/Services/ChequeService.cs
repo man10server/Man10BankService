@@ -1,4 +1,3 @@
-using System.Threading.Channels;
 using Man10BankService.Data;
 using Man10BankService.Models.Database;
 using Man10BankService.Models.Requests;
@@ -12,9 +11,7 @@ public class ChequeService
     private readonly IDbContextFactory<BankDbContext> _dbFactory;
     private readonly BankService _bank;
     private readonly IPlayerProfileService _profileService;
-    private readonly Channel<Func<Task>> _queue = Channel.CreateUnbounded<Func<Task>>(
-        new UnboundedChannelOptions { SingleReader = true, SingleWriter = false });
-    
+
     private const string PluginName = "Man10Bank";
 
     public ChequeService(IDbContextFactory<BankDbContext> dbFactory, BankService bank, IPlayerProfileService profileService)
@@ -22,118 +19,64 @@ public class ChequeService
         _dbFactory = dbFactory;
         _bank = bank;
         _profileService = profileService;
-        Task.Run(WorkerLoopAsync);
     }
 
+    // 小切手発行: 単一トランザクションで「発行者残高減算(op時はスキップ)+MoneyLog→小切手INSERT→Commit」。
+    // BankService の直列化キュー上で実行し、補償(返金)Saga を廃止する。
     public async Task<ApiResult<Cheque>> CreateAsync(ChequeCreateRequest req)
     {
-        return await Enqueue(async () =>
-        {
-            try
-            {
-                var player = await _profileService.GetNameByUuidAsync(req.Uuid);
-                if (player == null)
-                {
-                    return ApiResult<Cheque>.Fail(ErrorCode.PlayerNotFound);
-                }
-                var withdrew = false;
-                // Op が false の場合のみ残高を引き落とし
-                if (!req.Op)
-                {
-                    var wres = await _bank.WithdrawAsync(new WithdrawRequest
-                    {
-                        Uuid = req.Uuid,
-                        Amount = req.Amount,
-                        PluginName = PluginName,
-                        Note = $"create_cheque: {req.Note}",
-                        DisplayNote = $"小切手作成: {req.Note}",
-                        Server = "system"
-                    });
-                    if (!wres.IsSuccess)
-                        return ApiResult<Cheque>.Fail(wres.Code);
-                    withdrew = true;
-                }
+        var player = await _profileService.GetNameByUuidAsync(req.Uuid);
+        if (player == null)
+            return ApiResult<Cheque>.Fail(ErrorCode.PlayerNotFound);
 
-                var repo = new ChequeRepository(_dbFactory);
-                Cheque cheque;
-                try
-                {
-                    cheque = await repo.CreateChequeAsync(req.Uuid, player, req.Amount, req.Note, req.Op);
-                }
-                catch (Exception)
-                {
-                    // 失敗時は補償で返金（引き落としている場合のみ）
-                    if (withdrew)
-                    {
-                        await _bank.DepositAsync(new DepositRequest
-                        {
-                            Uuid = req.Uuid,
-                            Amount = req.Amount,
-                            PluginName = PluginName,
-                            Note = "cheque_refund",
-                            DisplayNote = "小切手作成失敗の返金",
-                            Server = "system"
-                        });
-                    }
-                    throw new Exception("create_cheque_failed");
-                }
-                return ApiResult<Cheque>.Ok(cheque);
-            }
-            catch (ArgumentException)
+        return await _bank.RunExclusiveAsync<Cheque>(async db =>
+        {
+            // op が false の場合のみ残高を引き落とす(行ロック下で残高不足を判定)。
+            if (!req.Op)
             {
-                return ApiResult<Cheque>.Fail(ErrorCode.ValidationError);
+                var bank = await DbLockHelper.GetUserBankForUpdateAsync(db, req.Uuid);
+                var balance = bank?.Balance ?? 0m;
+                if (balance < req.Amount)
+                    return ApiResult<Cheque>.Fail(ErrorCode.InsufficientFunds);
+
+                await BankRepository.ChangeBalanceCoreAsync(
+                    db, req.Uuid, player, -req.Amount,
+                    PluginName, $"create_cheque: {req.Note}", $"小切手作成: {req.Note}", "system");
             }
-            catch (Exception)
-            {
-                return ApiResult<Cheque>.Fail(ErrorCode.UnexpectedError);
-            }
+
+            var cheque = ChequeRepository.AddChequeCore(db, req.Uuid, player, req.Amount, req.Note, req.Op);
+            return ApiResult<Cheque>.Ok(cheque);
         });
     }
 
+    // 小切手使用: 単一トランザクションで「小切手行ロック→未使用確認→Used更新→受取人残高加算+MoneyLog→Commit」。
+    // ロック順序: 自リソース(cheque)行→user_bank 行。入金とUsed更新の原子性を保証する。
     public async Task<ApiResult<Cheque>> UseAsync(int id, ChequeUseRequest req)
     {
-        return await Enqueue(async () =>
+        var player = await _profileService.GetNameByUuidAsync(req.Uuid);
+        if (player == null)
+            return ApiResult<Cheque>.Fail(ErrorCode.PlayerNotFound);
+
+        return await _bank.RunExclusiveAsync<Cheque>(async db =>
         {
-            try
-            {
-                var player = await _profileService.GetNameByUuidAsync(req.Uuid);
-                if (player == null)
-                {
-                    return ApiResult<Cheque>.Fail(ErrorCode.PlayerNotFound);
-                }
-                var repo = new ChequeRepository(_dbFactory);
-                var cheque = await repo.GetChequeAsync(id);
-                if (cheque == null)
-                    return ApiResult<Cheque>.Fail(ErrorCode.ChequeNotFound);
-                if (cheque.Used)
-                    return ApiResult<Cheque>.Fail(ErrorCode.ChequeAlreadyUsed);
+            // 1) 小切手行ロック
+            var cheque = await ChequeRepository.GetChequeForUpdateAsync(db, id);
+            if (cheque == null)
+                return ApiResult<Cheque>.Fail(ErrorCode.ChequeNotFound);
+            if (cheque.Used)
+                return ApiResult<Cheque>.Fail(ErrorCode.ChequeAlreadyUsed);
 
-                // 先に使用済みへ更新（更新失敗時はここで終了し入金しない）
-                cheque = await repo.UseChequeAsync(id, player) ?? cheque;
+            // 2) Used 更新
+            cheque.Used = true;
+            cheque.UsePlayer = player;
+            cheque.UseDate = DateTime.UtcNow;
 
-                // 次に入金
-                var dres = await _bank.DepositAsync(new DepositRequest
-                {
-                    Uuid = req.Uuid,
-                    Amount = cheque.Amount,
-                    PluginName = PluginName,
-                    Note = $"cheque_use:{id}",
-                    DisplayNote = "小切手使用",
-                    Server = "system"
-                });
-                if (!dres.IsSuccess)
-                    return ApiResult<Cheque>.Fail(dres.Code);
+            // 3) 受取人残高加算 + MoneyLog(同一 tx)
+            await BankRepository.ChangeBalanceCoreAsync(
+                db, req.Uuid, player, cheque.Amount,
+                PluginName, $"cheque_use:{id}", "小切手使用", "system");
 
-                return ApiResult<Cheque>.Ok(cheque);
-            }
-            catch (ArgumentException)
-            {
-                return ApiResult<Cheque>.Fail(ErrorCode.ValidationError);
-            }
-            catch (Exception)
-            {
-                return ApiResult<Cheque>.Fail(ErrorCode.UnexpectedError);
-            }
+            return ApiResult<Cheque>.Ok(cheque);
         });
     }
 
@@ -150,26 +93,6 @@ public class ChequeService
         catch (Exception)
         {
             return ApiResult<Cheque>.Fail(ErrorCode.UnexpectedError);
-        }
-    }
-    
-    private Task<T> Enqueue<T>(Func<Task<T>> work)
-    {
-        var tcs = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
-        _queue.Writer.TryWrite(async () =>
-        {
-            try { tcs.SetResult(await work()); }
-            catch (Exception ex) { tcs.SetException(ex); }
-        });
-        return tcs.Task;
-    }
-    
-    private async Task WorkerLoopAsync()
-    {
-        await foreach (var job in _queue.Reader.ReadAllAsync())
-        {
-            try { await job(); }
-            catch { /* ジョブ内で完結 */ }
         }
     }
 }

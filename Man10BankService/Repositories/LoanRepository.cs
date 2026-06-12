@@ -4,22 +4,23 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Man10BankService.Repositories;
 
-public class LoanRepository(BankDbContext db)
+// DESIGN 2.2: 全リポジトリを IDbContextFactory 注入へ統一。
+// トランザクション合成が必要なメソッド(FOR UPDATE 取得等)は外部から DbContext を受け取る static にする。
+public class LoanRepository(IDbContextFactory<BankDbContext> factory)
 {
     public async Task<Loan?> GetByIdAsync(int id)
     {
+        await using var db = await factory.CreateDbContextAsync();
         return await db.Loans.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id);
     }
 
-    public async Task<Loan?> GetByIdForUpdateAsync(int id)
-    {
-        return await db.Loans
-            .FromSqlInterpolated($"SELECT * FROM loan_table WHERE id = {id} FOR UPDATE")
-            .FirstOrDefaultAsync();
-    }
+    // トランザクション合成用: 呼び出し側の db(=tx内)で FOR UPDATE 取得する(MySQL時)。
+    public static Task<Loan?> GetByIdForUpdateAsync(BankDbContext db, int id)
+        => DbLockHelper.GetLoanForUpdateAsync(db, id);
 
     public async Task<List<Loan>> GetByBorrowerUuidAsync(string borrowUuid, int limit, int offset)
     {
+        await using var db = await factory.CreateDbContextAsync();
         return await db.Loans
             .AsNoTracking()
             .Where(x => x.BorrowUuid == borrowUuid)
@@ -27,35 +28,5 @@ public class LoanRepository(BankDbContext db)
             .Skip(offset)
             .Take(limit)
             .ToListAsync();
-    }
-
-    public async Task<Loan> AddAsync(Loan entity)
-    {
-        await db.Loans.AddAsync(entity);
-        await db.SaveChangesAsync();
-        return entity;
-    }
-
-    public async Task<Loan?> AdjustAmountAsync(int id, decimal delta)
-    {
-        var loan = await db.Loans.FirstOrDefaultAsync(x => x.Id == id);
-        if (loan == null) return null;
-
-        loan.Amount += delta;
-        if (loan.Amount < 0m) loan.Amount = 0m;
-
-        await db.SaveChangesAsync();
-        return loan;
-    }
-
-    public async Task<bool> DeleteByIdAsync(int id)
-    {
-        var loan = await db.Loans.FirstOrDefaultAsync(x => x.Id == id);
-        if (loan == null)
-            return false;
-
-        db.Loans.Remove(loan);
-        await db.SaveChangesAsync();
-        return true;
     }
 }
