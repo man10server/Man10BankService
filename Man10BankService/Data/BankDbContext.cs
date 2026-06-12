@@ -6,27 +6,6 @@ namespace Man10BankService.Data;
 
 public class BankDbContext : DbContext
 {
-    private static string? _connectionString;
-
-    public static void Configure(IConfiguration configuration)
-    {
-        var db = configuration.GetSection("Database");
-        var host = db["Host"] ?? "";
-        var port = db["Port"] ?? "";
-        var name = db["Name"] ?? "";
-        var user = db["User"] ?? "";
-        var password = db["Password"] ?? "";
-        var treatTiny = (db["TreatTinyAsBoolean"] ?? "true").ToLowerInvariant();
-        _connectionString = $"Server={host};Port={port};Database={name};User Id={user};Password={password};TreatTinyAsBoolean={treatTiny};";
-    }
-    
-    public static string GetConnectionString()
-    {
-        if (string.IsNullOrWhiteSpace(_connectionString))
-            throw new InvalidOperationException("データベース接続が未設定です。起動時に BankDbContext.Configure(...) を呼び出してください。");
-        return _connectionString!;
-    }
-    
     public DbSet<AtmLog> AtmLogs => Set<AtmLog>();
     public DbSet<Cheque> Cheques => Set<Cheque>();
     public DbSet<Estate> Estates => Set<Estate>();
@@ -38,20 +17,8 @@ public class BankDbContext : DbContext
     public DbSet<ServerLoanLog> ServerLoanLogs => Set<ServerLoanLog>();
     public DbSet<UserBank> UserBanks => Set<UserBank>();
     
-    public BankDbContext() {}
     public BankDbContext(DbContextOptions<BankDbContext> options) : base(options) {}
-    
-    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-    {
-        if (optionsBuilder.IsConfigured)
-            return;
 
-        if (string.IsNullOrWhiteSpace(_connectionString)) 
-            throw new InvalidOperationException("データベース接続が未設定です。起動時に BankDbContext.Configure(...) を呼び出してください。");
-
-        optionsBuilder.UseMySql(_connectionString, ServerVersion.AutoDetect(_connectionString));
-    }
-    
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
