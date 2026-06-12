@@ -3,6 +3,10 @@
 1. APIサーバーをローカルにcloneで落として `docker compose up -d`
 これでAPIサーバーとテスト用のMySQLサーバーが立ち上がる。
 
+> `docker-compose.yml` の app は `ASPNETCORE_ENVIRONMENT=Production` で起動する。
+> 本番環境では APIキー(`Auth:ApiKeys`)の設定が必須で、未設定だと起動時に失敗する。
+> 詳細は後述の「APIキー認証の設定」を参照。
+
 2. 疎通確認
 ポート番号などは環境に合わせて変更
 - ヘルスチェックコマンド
@@ -30,7 +34,34 @@ Configの設定方法は以下の通り
     baseUrlのところに、ヘルスチェックなどで疎通確認したURLを入力
     同じDockerCompose内で起動した場合は `bank`  で繋がる
     ゲーム内またはマイクラコンソールから `/bankop health` で接続が確認できる
-    
+    apiKey にはサーバー側 `Auth:ApiKeys` に登録したキーと同じ値を設定する
+
+
+### APIキー認証の設定
+
+- リクエストヘッダ `Authorization: Bearer <APIキー>` を検証する（スキーム名 `ApiKey`）。
+- `GET /api/Health` のみ認証不要。それ以外は認証必須で、書き込み系(POST)は `admin` スコープが必要。
+- 設定は `appsettings.json` の `Auth` セクション。雛形は以下の通り。
+
+    ```json
+    "Auth": {
+      "ApiKeys": [
+        { "Key": "<長いランダム文字列>", "Name": "man10bank-plugin", "Scopes": [ "admin" ] }
+      ]
+    }
+    ```
+
+- 環境別の挙動:
+  - **Production**: `Auth:ApiKeys` が空(または全キーが空文字)なら起動時に例外で失敗する(fail-closed)。
+  - **Development**: キー未設定なら警告ログを出して匿名アクセスを許可する。キーを設定した場合は検証する。
+- Docker(`docker-compose.yml` は `Production`)では環境変数でキーを注入する。
+
+    ```yaml
+    Auth__ApiKeys__0__Key: "<長いランダム文字列>"
+    Auth__ApiKeys__0__Name: "man10bank-plugin"
+    Auth__ApiKeys__0__Scopes__0: "admin"
+    ```
+
 
 ### MySQLに繋がらない場合
 
