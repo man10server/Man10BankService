@@ -23,9 +23,13 @@
 - コメント: 実装時はコード内にコメントを付けない（必要な説明は PR やコミットメッセージに記載）。
 
 ## テストガイドライン
-- フレームワーク: xUnit（推奨）。`tests/Man10BankService.Tests/` に並列実行可能なテストプロジェクトを作成。
+- フレームワーク: xUnit + FluentAssertions。テストプロジェクトは `Test/`。
 - 命名: `ClassName_MethodName_ShouldExpected`（ファイル名・メソッド名）。
-- 実行: テストプロジェクト作成後はリポジトリルートで `dotnet test`。
+- 実行: リポジトリルートで `dotnet test`。
+- **Docker が必要**: 行ロック・トランザクション・並行整合性・認証(`*MySqlTests` / `AuthenticationTests` /
+  `LoanControllerTests`)は MySQL(Testcontainers)上で動くため、Docker デーモンが必要。
+  純粋ロジック・DTO・ステータスコード系は SQLite(:memory:)で動き Docker 不要。
+  DB 戦略の詳細は `README.md` の「テスト」を参照。
 - カバレッジ（推奨）: `coverlet` または `dotnet test /p:CollectCoverage=true` を使用。
 
 ## コミット & プルリクエスト ガイドライン

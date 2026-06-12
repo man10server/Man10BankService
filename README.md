@@ -63,6 +63,26 @@ Configの設定方法は以下の通り
     ```
 
 
+## テスト
+
+リポジトリルートで `dotnet test` を実行する。テストの DB 戦略は用途で2系統に分かれる。
+
+- **MySQL(Testcontainers, Docker 必須)**: 行ロック(`SELECT ... FOR UPDATE`)・トランザクション境界・
+  並行整合性・原子性(片側失敗時のロールバック)など、本番 MySQL の挙動に依存する検証に使う。
+  対象は `*MySqlTests`(送金/入出金/小切手の並行・原子性)と認証テスト(`AuthenticationTests`)、
+  個人間ローン(`LoanControllerTests`)。これらは `mysql:8.4` の単一コンテナを共有し、
+  `MySqlCollection` で束ねて並列実行を無効化する(コンテナ共有のため)。
+- **SQLite(:memory:, Docker 不要)**: 純粋なロジック・ステータスコード・DTO 契約の検証に使う。
+  軽量・高速だが、SQLite は書き込みを単一ライターへ直列化し行ロックを再現しないため、
+  金銭の並行整合性は MySQL 側で担保する(SQLite 版の並行テストは直列化前提のスモーク)。
+
+> **Docker が必要**: `*MySqlTests` と認証テスト、Loan テストは Docker デーモンが起動していないと失敗する。
+> Docker 無しで実行する場合は `dotnet test --filter "FullyQualifiedName!~MySql&FullyQualifiedName!~Auth&FullyQualifiedName!~Loan"`
+> のように MySQL 依存テストを除外する。
+
+認証/認可は `WebApplicationFactory`(`AuthTestWebApplicationFactory`)で実 HTTP パイプライン経由で
+検証し、401(キーなし)/403(read スコープで POST)/200(admin キー)/Health 匿名 を確認する。
+
 ### MySQLに繋がらない場合
 
 初回起動でデータベースの生成ができなかった場合(ヘルスチェックで `"database":false` になる場合)
