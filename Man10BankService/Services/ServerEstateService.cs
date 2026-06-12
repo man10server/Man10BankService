@@ -16,8 +16,8 @@ public class ServerEstateService
 
     public async Task<ApiResult<List<ServerEstateHistory>>> GetHistoryAsync(int limit = 100, int offset = 0)
     {
-        if (limit is < 1 or > 1000) return ApiResult<List<ServerEstateHistory>>.BadRequest(ErrorCode.LimitOutOfRange);
-        if (offset < 0) return ApiResult<List<ServerEstateHistory>>.BadRequest(ErrorCode.OffsetOutOfRange);
+        if (limit is < 1 or > 1000) return ApiResult<List<ServerEstateHistory>>.Fail(ErrorCode.LimitOutOfRange);
+        if (offset < 0) return ApiResult<List<ServerEstateHistory>>.Fail(ErrorCode.OffsetOutOfRange);
         try
         {
             var repo = new ServerEstateRepository(_dbFactory);
@@ -26,7 +26,7 @@ public class ServerEstateService
         }
         catch (Exception)
         {
-            return ApiResult<List<ServerEstateHistory>>.Error(ErrorCode.UnexpectedError);
+            return ApiResult<List<ServerEstateHistory>>.Fail(ErrorCode.UnexpectedError);
         }
     }
 

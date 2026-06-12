@@ -16,27 +16,27 @@ public class AtmService(IDbContextFactory<BankDbContext> dbFactory, IPlayerProfi
             var player = await profileService.GetNameByUuidAsync(req.Uuid);
             if (player == null)
             {
-                return ApiResult<AtmLog>.NotFound(ErrorCode.PlayerNotFound);
+                return ApiResult<AtmLog>.Fail(ErrorCode.PlayerNotFound);
             }
             var log = await repo.AddAtmLogAsync(req.Uuid, player, req.Amount, req.Deposit);
             return ApiResult<AtmLog>.Ok(log);
         }
         catch (ArgumentException)
         {
-            return ApiResult<AtmLog>.BadRequest(ErrorCode.ValidationError);
+            return ApiResult<AtmLog>.Fail(ErrorCode.ValidationError);
         }
         catch (Exception)
         {
-            return ApiResult<AtmLog>.Error(ErrorCode.UnexpectedError);
+            return ApiResult<AtmLog>.Fail(ErrorCode.UnexpectedError);
         }
     }
 
     public async Task<ApiResult<List<AtmLog>>> GetLogsAsync(string uuid, int limit = 100, int offset = 0)
     {
         if (limit is < 1 or > 1000)
-            return ApiResult<List<AtmLog>>.BadRequest(ErrorCode.LimitOutOfRange);
+            return ApiResult<List<AtmLog>>.Fail(ErrorCode.LimitOutOfRange);
         if (offset < 0)
-            return ApiResult<List<AtmLog>>.BadRequest(ErrorCode.OffsetOutOfRange);
+            return ApiResult<List<AtmLog>>.Fail(ErrorCode.OffsetOutOfRange);
         try
         {
             var repo = new AtmRepository(dbFactory);
@@ -45,7 +45,7 @@ public class AtmService(IDbContextFactory<BankDbContext> dbFactory, IPlayerProfi
         }
         catch (Exception)
         {
-            return ApiResult<List<AtmLog>>.Error(ErrorCode.UnexpectedError);
+            return ApiResult<List<AtmLog>>.Fail(ErrorCode.UnexpectedError);
         }
 }
 }

@@ -15,19 +15,19 @@ public class EstateService(IDbContextFactory<BankDbContext> dbFactory, IPlayerPr
         {
             var repo = new EstateRepository(dbFactory);
             var latest = await repo.GetLatestAsync(uuid);
-            if (latest == null) return ApiResult<Estate?>.NotFound(ErrorCode.EstateNotFound);
+            if (latest == null) return ApiResult<Estate?>.Fail(ErrorCode.EstateNotFound);
             return ApiResult<Estate?>.Ok(latest);
         }
         catch (Exception)
         {
-            return ApiResult<Estate?>.Error(ErrorCode.UnexpectedError);
+            return ApiResult<Estate?>.Fail(ErrorCode.UnexpectedError);
         }
     }
 
     public async Task<ApiResult<List<EstateHistory>>> GetHistoryAsync(string uuid, int limit = 100, int offset = 0)
     {
-        if (limit is < 1 or > 1000) return ApiResult<List<EstateHistory>>.BadRequest(ErrorCode.LimitOutOfRange);
-        if (offset < 0) return ApiResult<List<EstateHistory>>.BadRequest(ErrorCode.OffsetOutOfRange);
+        if (limit is < 1 or > 1000) return ApiResult<List<EstateHistory>>.Fail(ErrorCode.LimitOutOfRange);
+        if (offset < 0) return ApiResult<List<EstateHistory>>.Fail(ErrorCode.OffsetOutOfRange);
         try
         {
             var repo = new EstateRepository(dbFactory);
@@ -36,14 +36,14 @@ public class EstateService(IDbContextFactory<BankDbContext> dbFactory, IPlayerPr
         }
         catch (Exception)
         {
-            return ApiResult<List<EstateHistory>>.Error(ErrorCode.UnexpectedError);
+            return ApiResult<List<EstateHistory>>.Fail(ErrorCode.UnexpectedError);
         }
     }
 
     public async Task<ApiResult<List<Estate>>> GetRankingAsync(int limit = 100, int offset = 0)
     {
-        if (limit is < 1 or > 1000) return ApiResult<List<Estate>>.BadRequest(ErrorCode.LimitOutOfRange);
-        if (offset < 0) return ApiResult<List<Estate>>.BadRequest(ErrorCode.OffsetOutOfRange);
+        if (limit is < 1 or > 1000) return ApiResult<List<Estate>>.Fail(ErrorCode.LimitOutOfRange);
+        if (offset < 0) return ApiResult<List<Estate>>.Fail(ErrorCode.OffsetOutOfRange);
         try
         {
             var repo = new EstateRepository(dbFactory);
@@ -52,7 +52,7 @@ public class EstateService(IDbContextFactory<BankDbContext> dbFactory, IPlayerPr
         }
         catch (Exception)
         {
-            return ApiResult<List<Estate>>.Error(ErrorCode.UnexpectedError);
+            return ApiResult<List<Estate>>.Fail(ErrorCode.UnexpectedError);
         }
     }
 
@@ -68,7 +68,7 @@ public class EstateService(IDbContextFactory<BankDbContext> dbFactory, IPlayerPr
             var player = await profileService.GetNameByUuidAsync(uuid) ?? current?.Player;
             if (player == null)
             {
-                return ApiResult<bool>.NotFound(ErrorCode.PlayerNotFound);
+                return ApiResult<bool>.Fail(ErrorCode.PlayerNotFound);
             }
 
             // サーバーローンの残債（BorrowAmount が残債）
@@ -105,11 +105,11 @@ public class EstateService(IDbContextFactory<BankDbContext> dbFactory, IPlayerPr
         }
         catch (ArgumentException)
         {
-            return ApiResult<bool>.BadRequest(ErrorCode.ValidationError);
+            return ApiResult<bool>.Fail(ErrorCode.ValidationError);
         }
         catch (Exception)
         {
-            return ApiResult<bool>.Error(ErrorCode.UnexpectedError);
+            return ApiResult<bool>.Fail(ErrorCode.UnexpectedError);
         }
     }
 

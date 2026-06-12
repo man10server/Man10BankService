@@ -33,16 +33,16 @@ public class BankService
         }
         catch (Exception)
         {
-            return ApiResult<decimal>.Error(ErrorCode.UnexpectedError);
+            return ApiResult<decimal>.Fail(ErrorCode.UnexpectedError);
         }
     }
 
     public async Task<ApiResult<List<MoneyLog>>> GetLogsAsync(string uuid, int limit = 100, int offset = 0)
     {
         if (limit is < 1 or > 1000)
-            return ApiResult<List<MoneyLog>>.BadRequest(ErrorCode.LimitOutOfRange);
+            return ApiResult<List<MoneyLog>>.Fail(ErrorCode.LimitOutOfRange);
         if (offset < 0)
-            return ApiResult<List<MoneyLog>>.BadRequest(ErrorCode.OffsetOutOfRange);
+            return ApiResult<List<MoneyLog>>.Fail(ErrorCode.OffsetOutOfRange);
         try
         {
             var repo = new BankRepository(_dbFactory);
@@ -51,7 +51,7 @@ public class BankService
         }
         catch (Exception)
         {
-            return ApiResult<List<MoneyLog>>.Error(ErrorCode.UnexpectedError);
+            return ApiResult<List<MoneyLog>>.Fail(ErrorCode.UnexpectedError);
         }
     }
 
@@ -65,18 +65,18 @@ public class BankService
                 var player = await _profileService.GetNameByUuidAsync(req.Uuid);
                 if (player == null)
                 {
-                    return ApiResult<decimal>.NotFound(ErrorCode.PlayerNotFound);
+                    return ApiResult<decimal>.Fail(ErrorCode.PlayerNotFound);
                 }
                 var bal = await repo.ChangeBalanceAsync(req.Uuid, player, req.Amount, req.PluginName, req.Note, req.DisplayNote, req.Server);
                 return ApiResult<decimal>.Ok(bal);
             }
             catch (ArgumentException)
             {
-                return ApiResult<decimal>.BadRequest(ErrorCode.ValidationError);
+                return ApiResult<decimal>.Fail(ErrorCode.ValidationError);
             }
             catch (Exception)
             {
-                return ApiResult<decimal>.Error(ErrorCode.UnexpectedError);
+                return ApiResult<decimal>.Fail(ErrorCode.UnexpectedError);
             }
         });
     }
@@ -90,23 +90,23 @@ public class BankService
                 var repo = new BankRepository(_dbFactory);
                 var current = await repo.GetBalanceAsync(req.Uuid);
                 if (current < req.Amount)
-                    return ApiResult<decimal>.Conflict(ErrorCode.InsufficientFunds);
+                    return ApiResult<decimal>.Fail(ErrorCode.InsufficientFunds);
 
                 var player = await _profileService.GetNameByUuidAsync(req.Uuid);
                 if (player == null)
                 {
-                    return ApiResult<decimal>.NotFound(ErrorCode.PlayerNotFound);
+                    return ApiResult<decimal>.Fail(ErrorCode.PlayerNotFound);
                 }
                 var bal = await repo.ChangeBalanceAsync(req.Uuid, player, -req.Amount, req.PluginName, req.Note, req.DisplayNote, req.Server);
                 return ApiResult<decimal>.Ok(bal);
             }
             catch (ArgumentException)
             {
-                return ApiResult<decimal>.BadRequest(ErrorCode.ValidationError);
+                return ApiResult<decimal>.Fail(ErrorCode.ValidationError);
             }
             catch (Exception)
             {
-                return ApiResult<decimal>.Error(ErrorCode.UnexpectedError);
+                return ApiResult<decimal>.Fail(ErrorCode.UnexpectedError);
             }
         });
     }
@@ -129,7 +129,7 @@ public class BankService
             }
             catch (Exception)
             {
-                item.Tcs.SetResult(ApiResult<decimal>.Error(ErrorCode.UnexpectedError));
+                item.Tcs.SetResult(ApiResult<decimal>.Fail(ErrorCode.UnexpectedError));
             }
         }
     }

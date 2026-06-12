@@ -67,7 +67,7 @@ public class ChequesControllerTests
             Note = "seed",
             DisplayNote = "初期入金",
             Server = "dev"
-        })).StatusCode.Should().Be(200);
+        })).IsSuccess.Should().BeTrue();
 
         var post = await ctrl.Create(create);
         var created = post.Result
@@ -111,7 +111,7 @@ public class ChequesControllerTests
             Note = "seed",
             DisplayNote = "初期入金",
             Server = "dev"
-        })).StatusCode.Should().Be(200);
+        })).IsSuccess.Should().BeTrue();
 
         var createdRes = await ctrl.Create(create);
         var id = createdRes.Result
@@ -191,7 +191,7 @@ public class ChequesControllerTests
             Note = "seed",
             DisplayNote = "初期入金",
             Server = "dev"
-        })).StatusCode.Should().Be(200);
+        })).IsSuccess.Should().BeTrue();
         var created = await ctrl.Create(create);
         var id = created.Result
             .Should().BeOfType<OkObjectResult>().Which.Value

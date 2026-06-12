@@ -106,22 +106,7 @@ public class ServerLoanController(ServerLoanService service) : ControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<PaymentInfoResponse>> GetPaymentInfo([FromRoute] string uuid)
     {
-        // ユーザーデータ取得（存在確認）
-        var (statusCode, errorCode, loan) = await service.GetByUuidAsync(uuid);
-        if (statusCode != StatusCodes.Status200OK || loan is null)
-        {
-            // 404/500 を既存の規約に合わせてそのまま返す
-            return this.ToActionResult(new ApiResult<PaymentInfoResponse>(statusCode, errorCode));
-        }
-
-        // 日あたりの金利増加額（StopInterest や残債 0 は 0 とする）
-        var perDay = loan.StopInterest || loan.BorrowAmount <= 0m
-            ? 0m
-            : ServerLoanService.CalculateDailyInterestAmount(loan.BorrowAmount);
-
-        // 次回支払日（設定に基づく週次支払日時の次回）
-        var nextRepay = ServerLoanService.GetNextWeeklyRepayDateTime();
-
-        return Ok(new PaymentInfoResponse(nextRepay, perDay));
+        var res = await service.GetPaymentInfoAsync(uuid);
+        return this.ToActionResult(res);
     }
 }

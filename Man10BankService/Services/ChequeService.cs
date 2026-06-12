@@ -34,7 +34,7 @@ public class ChequeService
                 var player = await _profileService.GetNameByUuidAsync(req.Uuid);
                 if (player == null)
                 {
-                    return ApiResult<Cheque>.NotFound(ErrorCode.PlayerNotFound);
+                    return ApiResult<Cheque>.Fail(ErrorCode.PlayerNotFound);
                 }
                 var withdrew = false;
                 // Op が false の場合のみ残高を引き落とし
@@ -49,8 +49,8 @@ public class ChequeService
                         DisplayNote = $"小切手作成: {req.Note}",
                         Server = "system"
                     });
-                    if (wres.StatusCode != 200)
-                        return new ApiResult<Cheque>(wres.StatusCode, wres.Code);
+                    if (!wres.IsSuccess)
+                        return ApiResult<Cheque>.Fail(wres.Code);
                     withdrew = true;
                 }
 
@@ -81,11 +81,11 @@ public class ChequeService
             }
             catch (ArgumentException)
             {
-                return ApiResult<Cheque>.BadRequest(ErrorCode.ValidationError);
+                return ApiResult<Cheque>.Fail(ErrorCode.ValidationError);
             }
             catch (Exception)
             {
-                return ApiResult<Cheque>.Error(ErrorCode.UnexpectedError);
+                return ApiResult<Cheque>.Fail(ErrorCode.UnexpectedError);
             }
         });
     }
@@ -99,14 +99,14 @@ public class ChequeService
                 var player = await _profileService.GetNameByUuidAsync(req.Uuid);
                 if (player == null)
                 {
-                    return ApiResult<Cheque>.NotFound(ErrorCode.PlayerNotFound);
+                    return ApiResult<Cheque>.Fail(ErrorCode.PlayerNotFound);
                 }
                 var repo = new ChequeRepository(_dbFactory);
                 var cheque = await repo.GetChequeAsync(id);
                 if (cheque == null)
-                    return ApiResult<Cheque>.NotFound(ErrorCode.ChequeNotFound);
+                    return ApiResult<Cheque>.Fail(ErrorCode.ChequeNotFound);
                 if (cheque.Used)
-                    return ApiResult<Cheque>.Conflict(ErrorCode.ChequeAlreadyUsed);
+                    return ApiResult<Cheque>.Fail(ErrorCode.ChequeAlreadyUsed);
 
                 // 先に使用済みへ更新（更新失敗時はここで終了し入金しない）
                 cheque = await repo.UseChequeAsync(id, player) ?? cheque;
@@ -121,18 +121,18 @@ public class ChequeService
                     DisplayNote = "小切手使用",
                     Server = "system"
                 });
-                if (dres.StatusCode != 200)
-                    return new ApiResult<Cheque>(dres.StatusCode, dres.Code);
+                if (!dres.IsSuccess)
+                    return ApiResult<Cheque>.Fail(dres.Code);
 
                 return ApiResult<Cheque>.Ok(cheque);
             }
             catch (ArgumentException)
             {
-                return ApiResult<Cheque>.BadRequest(ErrorCode.ValidationError);
+                return ApiResult<Cheque>.Fail(ErrorCode.ValidationError);
             }
             catch (Exception)
             {
-                return ApiResult<Cheque>.Error(ErrorCode.UnexpectedError);
+                return ApiResult<Cheque>.Fail(ErrorCode.UnexpectedError);
             }
         });
     }
@@ -144,12 +144,12 @@ public class ChequeService
             var repo = new ChequeRepository(_dbFactory);
             var cheque = await repo.GetChequeAsync(id);
             if (cheque == null)
-                return ApiResult<Cheque>.NotFound(ErrorCode.ChequeNotFound);
+                return ApiResult<Cheque>.Fail(ErrorCode.ChequeNotFound);
             return ApiResult<Cheque>.Ok(cheque);
         }
         catch (Exception)
         {
-            return ApiResult<Cheque>.Error(ErrorCode.UnexpectedError);
+            return ApiResult<Cheque>.Fail(ErrorCode.UnexpectedError);
         }
     }
     

@@ -23,22 +23,22 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
             await using var db = await dbFactory.CreateDbContextAsync();
             var repo = new LoanRepository(db);
             var loan = await repo.GetByIdAsync(id);
-            return loan == null ? ApiResult<Loan>.NotFound(ErrorCode.LoanNotFound) : ApiResult<Loan>.Ok(loan);
+            return loan == null ? ApiResult<Loan>.Fail(ErrorCode.LoanNotFound) : ApiResult<Loan>.Ok(loan);
         }
         catch (Exception)
         {
-            return ApiResult<Loan>.Error(ErrorCode.UnexpectedError);
+            return ApiResult<Loan>.Fail(ErrorCode.UnexpectedError);
         }
     }
 
     public async Task<ApiResult<List<Loan>>> GetByBorrowerUuidAsync(string borrowUuid, int limit = 100, int offset = 0)
     {
         if (string.IsNullOrWhiteSpace(borrowUuid))
-            return ApiResult<List<Loan>>.BadRequest(ErrorCode.BorrowerUuidRequired);
+            return ApiResult<List<Loan>>.Fail(ErrorCode.BorrowerUuidRequired);
         if (limit is < 1 or > 1000)
-            return ApiResult<List<Loan>>.BadRequest(ErrorCode.LimitOutOfRange);
+            return ApiResult<List<Loan>>.Fail(ErrorCode.LimitOutOfRange);
         if (offset < 0)
-            return ApiResult<List<Loan>>.BadRequest(ErrorCode.OffsetOutOfRange);
+            return ApiResult<List<Loan>>.Fail(ErrorCode.OffsetOutOfRange);
 
         try
         {
@@ -49,28 +49,28 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
         }
         catch (Exception)
         {
-            return ApiResult<List<Loan>>.Error(ErrorCode.UnexpectedError);
+            return ApiResult<List<Loan>>.Fail(ErrorCode.UnexpectedError);
         }
     }
 
     public async Task<ApiResult<Loan?>> CreateAsync(LoanCreateRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.LendUuid))
-            return ApiResult<Loan?>.BadRequest(ErrorCode.LenderUuidRequired);
+            return ApiResult<Loan?>.Fail(ErrorCode.LenderUuidRequired);
         if (string.IsNullOrWhiteSpace(request.BorrowUuid))
-            return ApiResult<Loan?>.BadRequest(ErrorCode.BorrowerUuidRequired);
+            return ApiResult<Loan?>.Fail(ErrorCode.BorrowerUuidRequired);
         if (string.Equals(request.LendUuid, request.BorrowUuid, StringComparison.OrdinalIgnoreCase))
-            return ApiResult<Loan?>.BadRequest(ErrorCode.LenderAndBorrowerMustDiffer);
+            return ApiResult<Loan?>.Fail(ErrorCode.LenderAndBorrowerMustDiffer);
         if (request.BorrowAmount <= 0m)
-            return ApiResult<Loan?>.BadRequest(ErrorCode.BorrowAmountMustBePositive);
+            return ApiResult<Loan?>.Fail(ErrorCode.BorrowAmountMustBePositive);
         if (request.RepayAmount <= 0m)
-            return ApiResult<Loan?>.BadRequest(ErrorCode.RepayAmountMustBePositive);
+            return ApiResult<Loan?>.Fail(ErrorCode.RepayAmountMustBePositive);
         if (request.RepayAmount <= request.BorrowAmount)
-            return ApiResult<Loan?>.BadRequest(ErrorCode.RepayAmountMustExceedBorrowAmount);
+            return ApiResult<Loan?>.Fail(ErrorCode.RepayAmountMustExceedBorrowAmount);
 
         var (lendName, borrowName) = await GetNamesAsync(request.LendUuid, request.BorrowUuid);
         if (lendName == null || borrowName == null)
-            return ApiResult<Loan?>.NotFound(ErrorCode.PlayerNotFound);
+            return ApiResult<Loan?>.Fail(ErrorCode.PlayerNotFound);
 
         var w = await bank.WithdrawAsync(new WithdrawRequest
         {
@@ -82,8 +82,8 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
             Server = "system"
         });
 
-        if (w.StatusCode != 200)
-            return new ApiResult<Loan?>(w.StatusCode, w.Code);
+        if (!w.IsSuccess)
+            return ApiResult<Loan?>.Fail(w.Code);
 
         try
         {
@@ -113,11 +113,11 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
                 Server = "system"
             });
 
-            if (deposit.StatusCode != 200)
+            if (!deposit.IsSuccess)
             {
                 await repo.DeleteByIdAsync(entity.Id);
                 await CompensateAsync(request.LendUuid, request.BorrowAmount);
-                return ApiResult<Loan?>.Error(ErrorCode.UnexpectedError);
+                return ApiResult<Loan?>.Fail(ErrorCode.UnexpectedError);
             }
 
             return ApiResult<Loan?>.Ok(entity);
@@ -125,14 +125,14 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
         catch (Exception)
         {
             await CompensateAsync(request.LendUuid, request.BorrowAmount);
-            return ApiResult<Loan?>.Error(ErrorCode.UnexpectedError);
+            return ApiResult<Loan?>.Fail(ErrorCode.UnexpectedError);
         }
     }
 
     public async Task<ApiResult<LoanRepayResponse>> RepayAsync(int id, string collectorUuid)
     {
         if (string.IsNullOrWhiteSpace(collectorUuid))
-            return ApiResult<LoanRepayResponse>.BadRequest(ErrorCode.CollectorUuidRequired);
+            return ApiResult<LoanRepayResponse>.Fail(ErrorCode.CollectorUuidRequired);
 
         try
         {
@@ -141,17 +141,17 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
             var repo = new LoanRepository(db);
             var loan = await repo.GetByIdForUpdateAsync(id);
             if (loan == null)
-                return ApiResult<LoanRepayResponse>.NotFound(ErrorCode.LoanNotFound);
+                return ApiResult<LoanRepayResponse>.Fail(ErrorCode.LoanNotFound);
             if (loan.CollateralReleased)
-                return ApiResult<LoanRepayResponse>.Conflict(ErrorCode.CollateralAlreadyReleased);
+                return ApiResult<LoanRepayResponse>.Fail(ErrorCode.CollateralAlreadyReleased);
             if (loan.Amount <= 0m)
-                return ApiResult<LoanRepayResponse>.BadRequest(ErrorCode.NoRepaymentNeeded);
+                return ApiResult<LoanRepayResponse>.Fail(ErrorCode.NoRepaymentNeeded);
             if (loan.PaybackDate > DateTime.UtcNow)
-                return ApiResult<LoanRepayResponse>.Conflict(ErrorCode.BeforePaybackDate);
+                return ApiResult<LoanRepayResponse>.Fail(ErrorCode.BeforePaybackDate);
 
             var (borrowPlayer, collectPlayer) = await GetNamesAsync(loan.BorrowUuid, collectorUuid);
             if (borrowPlayer == null || collectPlayer == null)
-                return ApiResult<LoanRepayResponse>.NotFound(ErrorCode.PlayerNotFound);
+                return ApiResult<LoanRepayResponse>.Fail(ErrorCode.PlayerNotFound);
 
             if (string.IsNullOrWhiteSpace(loan.CollateralItem))
                 return await RepayWithoutCollateralAsync(db, tx, loan, collectorUuid);
@@ -159,7 +159,7 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
         }
         catch (Exception)
         {
-            return ApiResult<LoanRepayResponse>.Error(ErrorCode.UnexpectedError);
+            return ApiResult<LoanRepayResponse>.Fail(ErrorCode.UnexpectedError);
         }
     }
 
@@ -170,20 +170,20 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
         string collectorUuid)
     {
         var bal = await bank.GetBalanceAsync(loan.BorrowUuid);
-        if (bal.StatusCode != 200)
-            return new ApiResult<LoanRepayResponse>(bal.StatusCode, bal.Code);
+        if (!bal.IsSuccess)
+            return ApiResult<LoanRepayResponse>.Fail(bal.Code);
 
         var toCollect = Math.Min(bal.Data, loan.Amount);
         if (toCollect <= 0m)
-            return ApiResult<LoanRepayResponse>.Conflict(ErrorCode.InsufficientFunds);
+            return ApiResult<LoanRepayResponse>.Fail(ErrorCode.InsufficientFunds);
 
         var withdraw = await WithdrawBorrowerAsync(
             loan.BorrowUuid,
             toCollect,
             "user_loan_collect_withdraw",
             "個人間貸付 回収(出金)");
-        if (withdraw.StatusCode != 200)
-            return ApiResult<LoanRepayResponse>.Conflict(ErrorCode.InsufficientFunds);
+        if (!withdraw.IsSuccess)
+            return ApiResult<LoanRepayResponse>.Fail(ErrorCode.InsufficientFunds);
 
         var rollbackAmount = loan.Amount;
         var remainingAmount = Math.Max(0m, loan.Amount - toCollect);
@@ -212,7 +212,7 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
             "user_loan_full_collect_withdraw",
             "個人間貸付 一括回収(出金)");
 
-        if (withdraw.StatusCode == 200)
+        if (withdraw.IsSuccess)
             return await ApplyRepayAsync(
                 db,
                 tx,
@@ -224,16 +224,16 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
                 collectorDepositNote: "user_loan_full_collect_deposit",
                 collectorDepositDisplayNote: "個人間貸付 一括回収(入金)");
 
-        if (withdraw.StatusCode == 409)
+        if (withdraw.Code == ErrorCode.InsufficientFunds)
         {
             var period = loan.PaybackDate - loan.BorrowDate;
             var collateralUnlockAt = loan.PaybackDate + period;
             if (DateTime.UtcNow < collateralUnlockAt)
-                return ApiResult<LoanRepayResponse>.Conflict(ErrorCode.InsufficientFunds);
+                return ApiResult<LoanRepayResponse>.Fail(ErrorCode.InsufficientFunds);
             return await CollectCollateralAsync(db, tx, loan);
         }
 
-        return new ApiResult<LoanRepayResponse>(withdraw.StatusCode, withdraw.Code);
+        return ApiResult<LoanRepayResponse>.Fail(withdraw.Code);
     }
 
     private static async Task<ApiResult<LoanRepayResponse>> CollectCollateralAsync(BankDbContext db, IDbContextTransaction? tx, Loan loan)
@@ -275,7 +275,7 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
                 collectedAmount,
                 collectorDepositNote,
                 collectorDepositDisplayNote);
-            if (deposit.StatusCode != 200)
+            if (!deposit.IsSuccess)
             {
                 return await RecoverAfterRepayAsync(db, loan, rollbackAmount, collectedAmount);
             }
@@ -342,23 +342,23 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
         }
         catch (Exception)
         {
-            return ApiResult<LoanRepayResponse>.Error(ErrorCode.UnexpectedError);
+            return ApiResult<LoanRepayResponse>.Fail(ErrorCode.UnexpectedError);
         }
 
         try
         {
             var compensate = await CompensateAsync(loan.BorrowUuid, compensateAmount);
-            if (compensate.StatusCode != 200)
+            if (!compensate.IsSuccess)
             {
-                return new ApiResult<LoanRepayResponse>(compensate.StatusCode, compensate.Code);
+                return ApiResult<LoanRepayResponse>.Fail(compensate.Code);
             }
         }
         catch (Exception)
         {
-            return ApiResult<LoanRepayResponse>.Error(ErrorCode.UnexpectedError);
+            return ApiResult<LoanRepayResponse>.Fail(ErrorCode.UnexpectedError);
         }
 
-        return ApiResult<LoanRepayResponse>.Error(ErrorCode.UnexpectedError);
+        return ApiResult<LoanRepayResponse>.Fail(ErrorCode.UnexpectedError);
     }
 
     private Task<ApiResult<decimal>> CompensateAsync(string uuid, decimal amount)
@@ -388,7 +388,7 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
     public async Task<ApiResult<Loan?>> ReleaseCollateralAsync(int id, string borrowerUuid)
     {
         if (string.IsNullOrWhiteSpace(borrowerUuid))
-            return ApiResult<Loan?>.BadRequest(ErrorCode.BorrowerUuidRequired);
+            return ApiResult<Loan?>.Fail(ErrorCode.BorrowerUuidRequired);
 
         try
         {
@@ -398,19 +398,19 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
             var loan = await repo.GetByIdForUpdateAsync(id);
             
             if (loan == null)
-                return ApiResult<Loan?>.NotFound(ErrorCode.LoanNotFound);
+                return ApiResult<Loan?>.Fail(ErrorCode.LoanNotFound);
             
             if (!string.Equals(loan.BorrowUuid, borrowerUuid, StringComparison.OrdinalIgnoreCase))
-                return ApiResult<Loan?>.BadRequest(ErrorCode.BorrowerMismatch);
+                return ApiResult<Loan?>.Fail(ErrorCode.BorrowerMismatch);
 
             if (loan.Amount > 0m)
-                return ApiResult<Loan?>.Conflict(ErrorCode.LoanNotRepaid);
+                return ApiResult<Loan?>.Fail(ErrorCode.LoanNotRepaid);
 
             if (string.IsNullOrWhiteSpace(loan.CollateralItem))
-                return ApiResult<Loan?>.Conflict(ErrorCode.CollateralNotFound);
+                return ApiResult<Loan?>.Fail(ErrorCode.CollateralNotFound);
 
             if (loan.CollateralReleased)
-                return ApiResult<Loan?>.Conflict(ErrorCode.CollateralAlreadyReleased);
+                return ApiResult<Loan?>.Fail(ErrorCode.CollateralAlreadyReleased);
 
             loan.CollateralReleased = true;
             SetCollateralReleaseMetadata(loan, CollateralReleaseReason.BorrowerReturn);
@@ -420,12 +420,12 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
             
             var updatedLoan = await repo.GetByIdAsync(id);
             if (updatedLoan == null)
-                return ApiResult<Loan?>.Error(ErrorCode.UnexpectedError);
+                return ApiResult<Loan?>.Fail(ErrorCode.UnexpectedError);
             return ApiResult<Loan?>.Ok(updatedLoan);
         }
         catch (Exception)
         {
-            return ApiResult<Loan?>.Error(ErrorCode.UnexpectedError);
+            return ApiResult<Loan?>.Fail(ErrorCode.UnexpectedError);
         }
     }
 

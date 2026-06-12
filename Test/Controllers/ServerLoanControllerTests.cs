@@ -221,15 +221,15 @@ public class ServerLoanControllerTests
         pd.Extensions["code"].Should().Be(ErrorCode.BorrowAmountMustBeZeroOrGreater.ToString());
     }
 
-    [Fact(DisplayName = "borrow-amount: UUID不正時は400になる")]
-    public async Task SetBorrowAmount_InvalidUuid_ShouldReturn400()
+    [Fact(DisplayName = "borrow-amount: プレイヤー未登録時は404になる")]
+    public async Task SetBorrowAmount_InvalidUuid_ShouldReturn404()
     {
         using var env = BuildController(profile => profile.SetName("invalid-uuid", null));
         var ctrl = (ServerLoanController)env.Host.Controller;
 
         var res = await ctrl.SetBorrowAmount("invalid-uuid", 1000m);
-        var bad = res.Result.Should().BeOfType<BadRequestObjectResult>().Which;
-        var pd = bad.Value.Should().BeOfType<ProblemDetails>().Which;
+        var notFound = res.Result.Should().BeOfType<NotFoundObjectResult>().Which;
+        var pd = notFound.Value.Should().BeOfType<ProblemDetails>().Which;
         pd.Extensions["code"].Should().Be(ErrorCode.PlayerNotFound.ToString());
     }
 
