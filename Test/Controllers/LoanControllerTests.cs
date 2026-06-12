@@ -15,6 +15,7 @@ using Test.Infrastructure;
 
 namespace Test.Controllers;
 
+[Collection(MySqlCollection.Name)]
 public class LoanControllerTests
 {
     private sealed record TestEnv(ControllerHost Host, BankService Bank, IDbContextFactory<BankDbContext> DbFactory) : IDisposable
