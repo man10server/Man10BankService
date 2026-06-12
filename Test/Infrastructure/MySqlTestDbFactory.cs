@@ -15,6 +15,26 @@ public sealed class MySqlTestDbFactory : IDisposable
     public required IDbContextFactory<BankDbContext> Factory { get; init; }
     public required ServiceProvider ServiceProvider { get; init; }
 
+    // 共有 MySQL コンテナを起動済みにし、本番スキーマ(db.sql)を流し込んだ上で
+    // 接続文字列を返す。WebApplicationFactory など DbContext を直接組み立てる
+    // テストから、コンテナの接続情報を再利用するために公開する。
+    public static string EnsureSchemaAndGetConnectionString()
+    {
+        EnsureContainerStarted();
+        var connectionString = _container!.GetConnectionString();
+        ResetDatabase(connectionString);
+
+        var services = new ServiceCollection();
+        services.AddPooledDbContextFactory<BankDbContext>(o =>
+            o.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString)));
+        using var sp = services.BuildServiceProvider();
+        using var scope = sp.CreateScope();
+        var f = scope.ServiceProvider.GetRequiredService<IDbContextFactory<BankDbContext>>();
+        using var db = f.CreateDbContext();
+        ApplySchema(db);
+        return connectionString;
+    }
+
     public static MySqlTestDbFactory Create()
     {
         EnsureContainerStarted();
