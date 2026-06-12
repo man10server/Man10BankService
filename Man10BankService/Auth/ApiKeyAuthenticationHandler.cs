@@ -1,4 +1,6 @@
 using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
@@ -28,7 +30,9 @@ public sealed class ApiKeyAuthenticationHandler : AuthenticationHandler<Authenti
 
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
     {
-        var keys = _settings.ApiKeys;
+        // 空文字/空白のみのキーは未設定として扱う(appsettings.json の雛形エントリが
+        // Key:"" のまま残っていても「キー未設定」と判定を揃える。Program.cs の本番チェックと同条件)
+        var keys = _settings.ApiKeys.Where(k => !string.IsNullOrWhiteSpace(k.Key)).ToList();
 
         // キー未設定時の環境別挙動
         if (keys.Count == 0)
@@ -56,7 +60,14 @@ public sealed class ApiKeyAuthenticationHandler : AuthenticationHandler<Authenti
         if (string.IsNullOrEmpty(presented))
             return Task.FromResult(AuthenticateResult.NoResult());
 
-        var matched = keys.FirstOrDefault(k => !string.IsNullOrEmpty(k.Key) && k.Key == presented);
+        // 比較時間からキーを推測されないよう固定時間比較を使う
+        var presentedBytes = Encoding.UTF8.GetBytes(presented);
+        var matched = keys.FirstOrDefault(k =>
+        {
+            var keyBytes = Encoding.UTF8.GetBytes(k.Key);
+            return keyBytes.Length == presentedBytes.Length
+                   && CryptographicOperations.FixedTimeEquals(keyBytes, presentedBytes);
+        });
         if (matched == null)
             return Task.FromResult(AuthenticateResult.Fail("APIキーが無効です。"));
 
