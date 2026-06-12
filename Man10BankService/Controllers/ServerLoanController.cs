@@ -1,6 +1,8 @@
+using System.ComponentModel.DataAnnotations;
 using Man10BankService.Models.Requests;
 using Man10BankService.Models.Responses;
 using Man10BankService.Services;
+using Man10BankService.Validation;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
@@ -45,7 +47,9 @@ public class ServerLoanController(ServerLoanService service) : ControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
-    public async Task<ActionResult<ServerLoanResponse>> Repay([FromRoute] string uuid, [FromQuery] decimal? amount)
+    public async Task<ActionResult<ServerLoanResponse>> Repay(
+        [FromRoute] string uuid,
+        [FromQuery, Range(typeof(decimal), AmountLimits.MinText, AmountLimits.MaxText, ErrorMessage = "金額は 0 以上 1 兆以下で指定してください。")] decimal? amount)
     {
         var res = await service.RepayAsync(uuid, amount);
         return this.ToActionResult(res, e => ServerLoanResponse.From(e!));
@@ -58,7 +62,9 @@ public class ServerLoanController(ServerLoanService service) : ControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
-    public async Task<ActionResult<ServerLoanResponse>> SetPaymentAmount([FromRoute] string uuid, [FromQuery, BindRequired] decimal paymentAmount)
+    public async Task<ActionResult<ServerLoanResponse>> SetPaymentAmount(
+        [FromRoute] string uuid,
+        [FromQuery, BindRequired, Range(typeof(decimal), AmountLimits.MinText, AmountLimits.MaxText, ErrorMessage = "金額は 0 以上 1 兆以下で指定してください。")] decimal paymentAmount)
     {
         var res = await service.SetPaymentAmountAsync(uuid, paymentAmount);
         return this.ToActionResult(res, e => ServerLoanResponse.From(e!));
@@ -71,7 +77,9 @@ public class ServerLoanController(ServerLoanService service) : ControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
-    public async Task<ActionResult<ServerLoanResponse>> SetBorrowAmount([FromRoute] string uuid, [FromQuery, BindRequired] decimal amount)
+    public async Task<ActionResult<ServerLoanResponse>> SetBorrowAmount(
+        [FromRoute] string uuid,
+        [FromQuery, BindRequired, Range(typeof(decimal), AmountLimits.MinText, AmountLimits.MaxText, ErrorMessage = "金額は 0 以上 1 兆以下で指定してください。")] decimal amount)
     {
         var res = await service.SetBorrowAmountAsync(uuid, amount);
         return this.ToActionResult(res, e => ServerLoanResponse.From(e!));

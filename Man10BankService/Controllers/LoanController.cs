@@ -1,6 +1,8 @@
+using System.ComponentModel.DataAnnotations;
 using Man10BankService.Models.Requests;
 using Man10BankService.Models.Responses;
 using Man10BankService.Services;
+using Man10BankService.Validation;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
@@ -60,7 +62,9 @@ public class LoanController(LoanService service) : ControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
-    public async Task<ActionResult<LoanRepayResponse>> Repay([FromRoute] int id, [FromQuery, BindRequired] string collectorUuid)
+    public async Task<ActionResult<LoanRepayResponse>> Repay(
+        [FromRoute] int id,
+        [FromQuery, BindRequired, RegularExpression(UuidValidation.Pattern, ErrorMessage = "UUID の形式が不正です。")] string collectorUuid)
     {
         var res = await service.RepayAsync(id, collectorUuid);
         return this.ToActionResult(res);
@@ -74,7 +78,9 @@ public class LoanController(LoanService service) : ControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
-    public async Task<ActionResult<LoanResponse>> ReleaseCollateral([FromRoute] int id, [FromQuery, BindRequired] string borrowerUuid)
+    public async Task<ActionResult<LoanResponse>> ReleaseCollateral(
+        [FromRoute] int id,
+        [FromQuery, BindRequired, RegularExpression(UuidValidation.Pattern, ErrorMessage = "UUID の形式が不正です。")] string borrowerUuid)
     {
         var res = await service.ReleaseCollateralAsync(id, borrowerUuid);
         return this.ToActionResult(res, e => LoanResponse.From(e!));
