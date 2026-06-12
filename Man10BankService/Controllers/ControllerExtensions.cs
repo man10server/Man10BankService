@@ -13,12 +13,27 @@ public static class ControllerExtensions
             return controller.Ok(res.Data);
         }
 
-        return controller.ToErrorResult<T>(res.Code);
+        return controller.BuildErrorResult(res.Code);
+    }
+
+    // サービスがエンティティ等を返す場合に、成功時のみレスポンスDTOへ変換して 200 を返す。
+    // 失敗時は元の ErrorCode に基づく ProblemDetails を返す(DBエンティティ直返しの防止)。
+    public static ActionResult<TOut> ToActionResult<TIn, TOut>(
+        this ControllerBase controller,
+        ApiResult<TIn> res,
+        Func<TIn, TOut> map)
+    {
+        if (res.IsSuccess)
+        {
+            return controller.Ok(map(res.Data!));
+        }
+
+        return controller.BuildErrorResult(res.Code);
     }
 
     // ErrorCode から ProblemDetails(title=日本語文言・extensions.code=ErrorCode名)を構築して返す。
     // type には enum 名を入れず、既定(about:blank 相当)のままにする。
-    public static ActionResult<T> ToErrorResult<T>(this ControllerBase controller, ErrorCode code)
+    public static ObjectResult BuildErrorResult(this ControllerBase controller, ErrorCode code)
     {
         var status = ErrorCodeMapper.ToHttpStatus(code);
         var pd = new ProblemDetails

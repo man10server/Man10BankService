@@ -1,7 +1,6 @@
-using Man10BankService.Models.Database;
 using Man10BankService.Models.Requests;
-using Man10BankService.Services;
 using Man10BankService.Models.Responses;
+using Man10BankService.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
@@ -15,88 +14,88 @@ public class ServerLoanController(ServerLoanService service) : ControllerBase
 
     [HttpGet("")]
     [Produces("application/json")]
-    [ProducesResponseType(typeof(ServerLoan), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ServerLoanResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
-    public async Task<ActionResult<ServerLoan>> GetByUuid([FromRoute] string uuid)
+    public async Task<ActionResult<ServerLoanResponse>> GetByUuid([FromRoute] string uuid)
     {
         var res = await service.GetByUuidAsync(uuid);
-        return this.ToActionResult(res);
+        return this.ToActionResult(res, ServerLoanResponse.From);
     }
 
     [HttpPost("borrow")]
     [Authorize(Policy = "RequireWriteScope")]
     [Consumes("application/json")]
     [Produces("application/json")]
-    [ProducesResponseType(typeof(ServerLoan), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ServerLoanResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
-    public async Task<ActionResult<ServerLoan?>> Borrow([FromRoute] string uuid, [FromBody] ServerLoanBorrowBodyRequest request)
+    public async Task<ActionResult<ServerLoanResponse>> Borrow([FromRoute] string uuid, [FromBody] ServerLoanBorrowBodyRequest request)
     {
-        if (!ModelState.IsValid) return ValidationProblem(ModelState);
         var res = await service.BorrowAsync(uuid, request.Amount);
-        return this.ToActionResult(res);
+        return this.ToActionResult(res, e => ServerLoanResponse.From(e!));
     }
 
     [HttpPost("repay")]
     [Authorize(Policy = "RequireWriteScope")]
     [Produces("application/json")]
-    [ProducesResponseType(typeof(ServerLoan), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ServerLoanResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
-    public async Task<ActionResult<ServerLoan?>> Repay([FromRoute] string uuid, [FromQuery] decimal? amount)
+    public async Task<ActionResult<ServerLoanResponse>> Repay([FromRoute] string uuid, [FromQuery] decimal? amount)
     {
         var res = await service.RepayAsync(uuid, amount);
-        return this.ToActionResult(res);
+        return this.ToActionResult(res, e => ServerLoanResponse.From(e!));
     }
 
     [HttpPost("payment-amount")]
     [Authorize(Policy = "RequireWriteScope")]
     [Produces("application/json")]
-    [ProducesResponseType(typeof(ServerLoan), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ServerLoanResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
-    public async Task<ActionResult<ServerLoan?>> SetPaymentAmount([FromRoute] string uuid, [FromQuery] decimal paymentAmount)
+    public async Task<ActionResult<ServerLoanResponse>> SetPaymentAmount([FromRoute] string uuid, [FromQuery] decimal paymentAmount)
     {
         var res = await service.SetPaymentAmountAsync(uuid, paymentAmount);
-        return this.ToActionResult(res);
+        return this.ToActionResult(res, e => ServerLoanResponse.From(e!));
     }
 
     [HttpPost("borrow-amount")]
     [Authorize(Policy = "RequireWriteScope")]
     [Produces("application/json")]
-    [ProducesResponseType(typeof(ServerLoan), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ServerLoanResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
-    public async Task<ActionResult<ServerLoan?>> SetBorrowAmount([FromRoute] string uuid, [FromQuery, BindRequired] decimal amount)
+    public async Task<ActionResult<ServerLoanResponse>> SetBorrowAmount([FromRoute] string uuid, [FromQuery, BindRequired] decimal amount)
     {
         var res = await service.SetBorrowAmountAsync(uuid, amount);
-        return this.ToActionResult(res);
+        return this.ToActionResult(res, e => ServerLoanResponse.From(e!));
     }
 
     [HttpGet("borrow-limit")]
     [Produces("application/json")]
-    [ProducesResponseType(typeof(decimal), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(BorrowLimitResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
-    public async Task<ActionResult<decimal>> GetBorrowLimit([FromRoute] string uuid)
+    public async Task<ActionResult<BorrowLimitResponse>> GetBorrowLimit([FromRoute] string uuid)
     {
         var res = await service.CalculateBorrowLimitAsync(uuid);
-        return this.ToActionResult(res);
+        return this.ToActionResult(res, limit => new BorrowLimitResponse(limit));
     }
 
     [HttpGet("logs")]
     [Produces("application/json")]
-    [ProducesResponseType(typeof(List<ServerLoanLog>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(List<ServerLoanLogResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
-    public async Task<ActionResult<List<ServerLoanLog>>> GetLogs([FromRoute] string uuid, [FromQuery] int limit = 100, [FromQuery] int offset = 0)
+    public async Task<ActionResult<List<ServerLoanLogResponse>>> GetLogs([FromRoute] string uuid, [FromQuery] int limit = 100, [FromQuery] int offset = 0)
     {
         var res = await service.GetLogsAsync(uuid, limit, offset);
-        return this.ToActionResult(res);
+        return this.ToActionResult(res, logs => logs.Select(ServerLoanLogResponse.From).ToList());
     }
 
     [HttpGet("payment-info")]
