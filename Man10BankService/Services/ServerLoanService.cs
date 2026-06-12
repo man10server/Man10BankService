@@ -119,11 +119,13 @@ public class ServerLoanService
             if (loan.BorrowAmount + amount > limit)
                 return ApiResult<ServerLoan?>.Fail(ErrorCode.BorrowLimitExceeded);
 
-            // 3) 債務加算 + ServerLoanLog
-            await repo.AdjustLoanCoreAsync(db, uuid, resolvedPlayer, amount, ServerLoanRepository.ServerLoanLogAction.Borrow);
+            // 支払額未設定なら初回返済額を設定(債務加算前の判定)
+            var needPayment = loan.PaymentAmount <= 0m;
 
-            // 支払額未設定なら初回返済額を設定
-            if (loan.PaymentAmount <= 0m)
+            // 3) 債務加算 + ServerLoanLog
+            ServerLoanRepository.AdjustLoanCore(db, loan, resolvedPlayer, amount, ServerLoanRepository.ServerLoanLogAction.Borrow);
+
+            if (needPayment)
                 loan.PaymentAmount = CalculateRepaymentAmount(amount);
 
             // 4) user_bank 残高加算 + MoneyLog(同一 tx)
@@ -169,7 +171,7 @@ public class ServerLoanService
                 // 残高不足は返済失敗としてカウントし、失敗ログを残す。
                 // この失敗カウントは確定させたいので、Ok + InsufficientFunds コードで返して
                 // 同一 tx をコミットさせる(ラッパ側で 409 失敗へ変換する)。
-                await repo.AdjustLoanCoreAsync(db, uuid, loan.Player, amount, ServerLoanRepository.ServerLoanLogAction.RepayFailure);
+                ServerLoanRepository.AdjustLoanCore(db, loan, loan.Player, amount, ServerLoanRepository.ServerLoanLogAction.RepayFailure);
                 return ApiResult<ServerLoan?>.Ok(loan, ErrorCode.InsufficientFunds);
             }
 
@@ -179,7 +181,7 @@ public class ServerLoanService
                 "server_loan", "loan_repay", "サーバーローン返済", "system");
 
             // 4) 債務減算 + RepaySuccess ログ
-            await repo.AdjustLoanCoreAsync(db, uuid, loan.Player, -amount, ServerLoanRepository.ServerLoanLogAction.RepaySuccess);
+            ServerLoanRepository.AdjustLoanCore(db, loan, loan.Player, -amount, ServerLoanRepository.ServerLoanLogAction.RepaySuccess);
 
             return ApiResult<ServerLoan?>.Ok(loan);
         });

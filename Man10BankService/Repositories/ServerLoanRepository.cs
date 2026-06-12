@@ -83,12 +83,11 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
     }
 
     // トランザクション合成用のコアメソッド。
-    // 呼び出し側が用意した db(=トランザクション内)で行ロック付きの取得/作成を行い、
-    // 残債(BorrowAmount)を更新してログを同一 context に追加する。SaveChanges / Commit は呼び出し側。
-    public async Task<ServerLoan> AdjustLoanCoreAsync(
-        BankDbContext db, string uuid, string player, decimal delta, ServerLoanLogAction action)
+    // 既にロック取得済みの loan エンティティ(同一 context にアタッチ済み)に対して
+    // 残債(BorrowAmount)を更新し、ログを同一 context に追加する。SaveChanges / Commit は呼び出し側。
+    public static void AdjustLoanCore(
+        BankDbContext db, ServerLoan loan, string player, decimal delta, ServerLoanLogAction action)
     {
-        var loan = await GetOrCreateForUpdateAsync(db, uuid, player);
         if (!string.IsNullOrWhiteSpace(player))
             loan.Player = player;
 
@@ -119,7 +118,6 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
         }
 
         AddLog(db, loan.Uuid, loan.Player, action, delta);
-        return loan;
     }
 
     // 単一 DbContext・単一トランザクションで残債を更新する独立メソッド。
@@ -128,7 +126,8 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
         await using var db = await factory.CreateDbContextAsync();
         await using var tx = await db.Database.BeginTransactionAsync();
 
-        var loan = await AdjustLoanCoreAsync(db, uuid, player, delta, action);
+        var loan = await GetOrCreateForUpdateAsync(db, uuid, player);
+        AdjustLoanCore(db, loan, player, delta, action);
         await db.SaveChangesAsync();
         await tx.CommitAsync();
         return loan;
