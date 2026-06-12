@@ -99,8 +99,8 @@ public class BankControllerTests
         });
     }
     
-    [Fact(DisplayName = "入金失敗: 金額不正残高とログは変化なし")]
-    public async Task Deposit_Invalid_ShouldNotChangeBalance_AndReturn400()
+    [Fact(DisplayName = "入金失敗: 金額不正はモデル検証で弾かれる")]
+    public void Deposit_Invalid_ShouldFailModelValidation()
     {
         using var host = BuildController();
         var ctrl = (BankController)host.Controller;
