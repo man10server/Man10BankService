@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using Man10BankService.Validation;
 
 namespace Man10BankService.Models.Requests;
 
@@ -6,10 +7,11 @@ public class AtmLogRequest : IValidatableObject
 {
     [Required]
     [StringLength(36)]
-    [RegularExpression(@"^[0-9a-fA-F-]{36}$", ErrorMessage = "UUID の形式が不正です。")]
+    [RegularExpression(@"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$", ErrorMessage = "UUID の形式が不正です。")]
     public required string Uuid { get; set; }
 
     [Required]
+    [Range(typeof(decimal), AmountLimits.MinText, AmountLimits.MaxText, ErrorMessage = "金額が上限を超えています。")]
     public decimal Amount { get; set; }
 
     [Required]

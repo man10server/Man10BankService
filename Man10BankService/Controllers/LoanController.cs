@@ -3,6 +3,7 @@ using Man10BankService.Models.Responses;
 using Man10BankService.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 
 namespace Man10BankService.Controllers;
 
@@ -10,7 +11,7 @@ namespace Man10BankService.Controllers;
 [Route("api/[controller]")]
 public class LoanController(LoanService service) : ControllerBase
 {
-    [HttpGet("borrower/{uuid}")]
+    [HttpGet("borrower/{uuid:uuid}")]
     [Produces("application/json")]
     [ProducesResponseType(typeof(List<LoanResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -59,7 +60,7 @@ public class LoanController(LoanService service) : ControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
-    public async Task<ActionResult<LoanRepayResponse>> Repay([FromRoute] int id, [FromQuery] string collectorUuid)
+    public async Task<ActionResult<LoanRepayResponse>> Repay([FromRoute] int id, [FromQuery, BindRequired] string collectorUuid)
     {
         var res = await service.RepayAsync(id, collectorUuid);
         return this.ToActionResult(res);
@@ -73,7 +74,7 @@ public class LoanController(LoanService service) : ControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
-    public async Task<ActionResult<LoanResponse>> ReleaseCollateral([FromRoute] int id, [FromQuery] string borrowerUuid)
+    public async Task<ActionResult<LoanResponse>> ReleaseCollateral([FromRoute] int id, [FromQuery, BindRequired] string borrowerUuid)
     {
         var res = await service.ReleaseCollateralAsync(id, borrowerUuid);
         return this.ToActionResult(res, e => LoanResponse.From(e!));

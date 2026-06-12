@@ -9,6 +9,12 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOpenApi();
 
+// ルート制約 {uuid:uuid} に厳密UUID検証を登録
+builder.Services.Configure<Microsoft.AspNetCore.Routing.RouteOptions>(options =>
+{
+    options.ConstraintMap["uuid"] = typeof(Man10BankService.Validation.UuidRouteConstraint);
+});
+
 // 自動400(モデルバリデーション)にも code:"ValidationError" を付与
 builder.Services.AddControllers();
 builder.Services.Configure<ApiBehaviorOptions>(options =>

@@ -10,7 +10,7 @@ namespace Man10BankService.Controllers;
 [Route("api/[controller]")]
 public class BankController(BankService service) : ControllerBase
 {
-    [HttpGet("{uuid}/balance")]
+    [HttpGet("{uuid:uuid}/balance")]
     [Produces("application/json")]
     [ProducesResponseType(typeof(BalanceResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
@@ -20,7 +20,7 @@ public class BankController(BankService service) : ControllerBase
         return this.ToActionResult(res, balance => new BalanceResponse(balance));
     }
 
-    [HttpGet("{uuid}/logs")]
+    [HttpGet("{uuid:uuid}/logs")]
     [Produces("application/json")]
     [ProducesResponseType(typeof(List<MoneyLogResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]

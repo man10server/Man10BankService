@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Man10BankService.Controllers;
 
 [ApiController]
-[Route("api/[controller]/{uuid}")]
+[Route("api/[controller]/{uuid:uuid}")]
 public class EstateController(EstateService service) : ControllerBase
 {
     [HttpGet]

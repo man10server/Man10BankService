@@ -10,7 +10,7 @@ namespace Man10BankService.Controllers;
 [Route("api/[controller]")]
 public class AtmController(AtmService service) : ControllerBase
 {
-    [HttpGet("{uuid}/logs")]
+    [HttpGet("{uuid:uuid}/logs")]
     [Produces("application/json")]
     [ProducesResponseType(typeof(List<AtmLogResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]

@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.Mvc.ModelBinding;
 namespace Man10BankService.Controllers;
 
 [ApiController]
-[Route("api/[controller]/{uuid}")]
+[Route("api/[controller]/{uuid:uuid}")]
 public class ServerLoanController(ServerLoanService service) : ControllerBase
 {
 
@@ -58,7 +58,7 @@ public class ServerLoanController(ServerLoanService service) : ControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
-    public async Task<ActionResult<ServerLoanResponse>> SetPaymentAmount([FromRoute] string uuid, [FromQuery] decimal paymentAmount)
+    public async Task<ActionResult<ServerLoanResponse>> SetPaymentAmount([FromRoute] string uuid, [FromQuery, BindRequired] decimal paymentAmount)
     {
         var res = await service.SetPaymentAmountAsync(uuid, paymentAmount);
         return this.ToActionResult(res, e => ServerLoanResponse.From(e!));
