@@ -57,4 +57,19 @@ public class BankController(BankService service) : ControllerBase
         var res = await service.WithdrawAsync(request);
         return this.ToActionResult(res, balance => new BalanceResponse(balance));
     }
+
+    // 送金: 単一トランザクションで出金+入金+MoneyLog2件。成功時は送金元の新残高を返す。
+    [HttpPost("transfer")]
+    [Authorize(Policy = "RequireWriteScope")]
+    [Consumes("application/json")]
+    [Produces("application/json")]
+    [ProducesResponseType(typeof(BalanceResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<BalanceResponse>> Transfer([FromBody] TransferRequest request)
+    {
+        var res = await service.TransferAsync(request);
+        return this.ToActionResult(res, balance => new BalanceResponse(balance));
+    }
 }

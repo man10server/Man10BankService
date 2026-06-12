@@ -10,15 +10,7 @@ public class UserBank
     [StringLength(36)]
     public required string Uuid { get; set; }
 
-    private decimal _balance;
-    public decimal Balance
-    {
-        get => _balance;
-        set
-        {
-            if (value < 0)
-                throw new ArgumentOutOfRangeException(nameof(Balance), "所持金がマイナスになることはできません");
-            _balance = value;
-        }
-    }
+    // 残高のマイナス突き抜け防止は、行ロック下のサービス/リポジトリ層の事前チェックで担保する。
+    // セッターでの負値例外は廃止(EF の実体化でも発火しうるため。DESIGN 2.2)。
+    public decimal Balance { get; set; }
 }
