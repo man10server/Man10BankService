@@ -1,4 +1,5 @@
 using Man10BankService.Data;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Man10BankService.Models.Responses;
@@ -11,6 +12,7 @@ public class HealthController(IDbContextFactory<BankDbContext> dbFactory) : Cont
 {
 
     [HttpGet]
+    [AllowAnonymous]
     [Produces("application/json")]
     [ProducesResponseType(typeof(HealthPayload), StatusCodes.Status200OK)]
     public async Task<ActionResult<HealthPayload>> Get()

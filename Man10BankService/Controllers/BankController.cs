@@ -1,6 +1,7 @@
 using Man10BankService.Models.Database;
 using Man10BankService.Models.Requests;
 using Man10BankService.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Man10BankService.Controllers;
@@ -31,6 +32,7 @@ public class BankController(BankService service) : ControllerBase
     }
 
     [HttpPost("deposit")]
+    [Authorize(Policy = "RequireWriteScope")]
     [Consumes("application/json")]
     [Produces("application/json")]
     [ProducesResponseType(typeof(decimal), StatusCodes.Status200OK)]
@@ -44,6 +46,7 @@ public class BankController(BankService service) : ControllerBase
     }
 
     [HttpPost("withdraw")]
+    [Authorize(Policy = "RequireWriteScope")]
     [Consumes("application/json")]
     [Produces("application/json")]
     [ProducesResponseType(typeof(decimal), StatusCodes.Status200OK)]

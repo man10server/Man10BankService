@@ -1,6 +1,7 @@
 using Man10BankService.Models.Database;
 using Man10BankService.Models.Requests;
 using Man10BankService.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Man10BankService.Controllers;
@@ -32,6 +33,7 @@ public class EstateController(EstateService service) : ControllerBase
     }
 
     [HttpPost("snapshot")]
+    [Authorize(Policy = "RequireWriteScope")]
     [Consumes("application/json")]
     [Produces("application/json")]
     [ProducesResponseType(typeof(bool), StatusCodes.Status200OK)]

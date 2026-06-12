@@ -1,6 +1,7 @@
 using Man10BankService.Models.Database;
 using Man10BankService.Models.Requests;
 using Man10BankService.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Man10BankService.Controllers;
@@ -10,6 +11,7 @@ namespace Man10BankService.Controllers;
 public class ChequesController(ChequeService service) : ControllerBase
 {
     [HttpPost]
+    [Authorize(Policy = "RequireWriteScope")]
     [Consumes("application/json")]
     [Produces("application/json")]
     [ProducesResponseType(typeof(Cheque), StatusCodes.Status200OK)]
@@ -34,6 +36,7 @@ public class ChequesController(ChequeService service) : ControllerBase
     }
 
     [HttpPost("{id:int}/use")]
+    [Authorize(Policy = "RequireWriteScope")]
     [Consumes("application/json")]
     [Produces("application/json")]
     [ProducesResponseType(typeof(Cheque), StatusCodes.Status200OK)]

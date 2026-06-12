@@ -1,6 +1,7 @@
 using Man10BankService.Models.Database;
 using Man10BankService.Models.Requests;
 using Man10BankService.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Man10BankService.Controllers;
@@ -21,6 +22,7 @@ public class AtmController(AtmService service) : ControllerBase
     }
 
     [HttpPost("logs")]
+    [Authorize(Policy = "RequireWriteScope")]
     [Consumes("application/json")]
     [Produces("application/json")]
     [ProducesResponseType(typeof(AtmLog), StatusCodes.Status200OK)]

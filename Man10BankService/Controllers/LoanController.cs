@@ -2,6 +2,7 @@ using Man10BankService.Models.Database;
 using Man10BankService.Models.Requests;
 using Man10BankService.Models.Responses;
 using Man10BankService.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Man10BankService.Controllers;
@@ -22,6 +23,7 @@ public class LoanController(LoanService service) : ControllerBase
     }
 
     [HttpPost]
+    [Authorize(Policy = "RequireWriteScope")]
     [Consumes("application/json")]
     [Produces("application/json")]
     [ProducesResponseType(typeof(Loan), StatusCodes.Status200OK)]
@@ -45,7 +47,8 @@ public class LoanController(LoanService service) : ControllerBase
         return this.ToActionResult(res);
     }
 
-    [HttpPost("{id:int}/repay")] 
+    [HttpPost("{id:int}/repay")]
+    [Authorize(Policy = "RequireWriteScope")]
     [Produces("application/json")]
     [ProducesResponseType(typeof(LoanRepayResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -58,7 +61,8 @@ public class LoanController(LoanService service) : ControllerBase
         return this.ToActionResult(res);
     }
 
-    [HttpPost("{id:int}/collateral/release")] 
+    [HttpPost("{id:int}/collateral/release")]
+    [Authorize(Policy = "RequireWriteScope")]
     [Produces("application/json")]
     [ProducesResponseType(typeof(Loan), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]

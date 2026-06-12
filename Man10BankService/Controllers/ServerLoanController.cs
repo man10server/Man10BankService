@@ -2,6 +2,7 @@ using Man10BankService.Models.Database;
 using Man10BankService.Models.Requests;
 using Man10BankService.Services;
 using Man10BankService.Models.Responses;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 
@@ -24,6 +25,7 @@ public class ServerLoanController(ServerLoanService service) : ControllerBase
     }
 
     [HttpPost("borrow")]
+    [Authorize(Policy = "RequireWriteScope")]
     [Consumes("application/json")]
     [Produces("application/json")]
     [ProducesResponseType(typeof(ServerLoan), StatusCodes.Status200OK)]
@@ -38,6 +40,7 @@ public class ServerLoanController(ServerLoanService service) : ControllerBase
     }
 
     [HttpPost("repay")]
+    [Authorize(Policy = "RequireWriteScope")]
     [Produces("application/json")]
     [ProducesResponseType(typeof(ServerLoan), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -51,6 +54,7 @@ public class ServerLoanController(ServerLoanService service) : ControllerBase
     }
 
     [HttpPost("payment-amount")]
+    [Authorize(Policy = "RequireWriteScope")]
     [Produces("application/json")]
     [ProducesResponseType(typeof(ServerLoan), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -63,6 +67,7 @@ public class ServerLoanController(ServerLoanService service) : ControllerBase
     }
 
     [HttpPost("borrow-amount")]
+    [Authorize(Policy = "RequireWriteScope")]
     [Produces("application/json")]
     [ProducesResponseType(typeof(ServerLoan), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
