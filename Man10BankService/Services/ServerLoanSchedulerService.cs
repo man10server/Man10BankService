@@ -8,6 +8,11 @@ public sealed class ServerLoanSchedulerService(ServerLoanService loanService, IL
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        // 日次利息の冪等性はローン単位の DB 判定(HasInterestLogOnDateAsync)が担保する。
+        // lastDailyRun は毎分の全件クエリを避けるための省力化マーカーであり、
+        // 全件パスが例外なく完走した場合のみ更新する(途中クラッシュ時は次ティックで再走し、
+        // 処理済みローンはローン単位の判定でスキップされ、未処理ローンだけが拾われる)。
+        DateOnly? lastDailyRun = null;
         // 週次返済はサーバーローンログに専用の冪等マーカーが無いため、当日内の重複実行のみ
         // インメモリで抑止する(再起動時の冪等性は将来課題。日次利息は DB 由来で完全冪等)。
         DateOnly? lastWeeklyRun = null;
@@ -20,9 +25,10 @@ public sealed class ServerLoanSchedulerService(ServerLoanService loanService, IL
                 var today = DateOnly.FromDateTime(now);
 
                 var dailyDue = now.TimeOfDay >= ServerLoanService.DailyInterestTimeOfDay;
-                if (dailyDue && !await loanService.HasDailyInterestRunAsync(today))
+                if (dailyDue && lastDailyRun != today)
                 {
                     await loanService.RunDailyInterestForAllAsync(today);
+                    lastDailyRun = today;
                 }
 
                 var weeklyDue = now.DayOfWeek == ServerLoanService.WeeklyRepayDayOfWeek

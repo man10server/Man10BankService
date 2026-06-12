@@ -301,10 +301,10 @@ public class ServerLoanService
         return Math.Max(1m, paymentAmount);
     }
 
-    // 次回の週次返済日時を計算（ローカル時刻基準）
+    // 次回の週次返済日時を計算（UTC基準。スケジューラの発火判定と同じ時刻系で揃える）
     public static DateTime GetNextWeeklyRepayDateTime(DateTime? now = null)
     {
-        var baseNow = now ?? DateTime.Now;
+        var baseNow = now ?? DateTime.UtcNow;
         var todayStart = baseNow.Date;
         var daysAhead = ((int)WeeklyRepayDay - (int)baseNow.DayOfWeek + 7) % 7;
         var candidate = todayStart.AddDays(daysAhead).Add(WeeklyRepayTime);
@@ -348,8 +348,9 @@ public class ServerLoanService
         }
     }
     
-    // 当日分の Interest ログが既に存在するか(日次利息の冪等判定)。
-    // スケジューラはこれが true なら同日二重実行をスキップする。
+    // 当日分の Interest ログが既に存在するローンが1件でもあるか(検証・テスト用の参照クエリ)。
+    // 注意: ローン横断のORなので冪等ガードには使わないこと。スケジューラの冪等性は
+    // RunDailyInterestForAllAsync 内のローン単位判定(HasInterestLogOnDateAsync)が担保する。
     public async Task<bool> HasDailyInterestRunAsync(DateOnly date)
     {
         var repo = new ServerLoanRepository(_dbFactory, _profileService);
