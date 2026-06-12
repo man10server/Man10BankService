@@ -20,12 +20,28 @@ public class ServerEstateRepository(IDbContextFactory<BankDbContext> factory)
             .ToListAsync();
     }
 
+    // 指定時刻(時単位)のスナップショットが既に記録済みか(冪等判定に使用)。
+    public async Task<bool> HasSnapshotForHourAsync(DateTime hourUtc)
+    {
+        var ts = new DateTime(hourUtc.Year, hourUtc.Month, hourUtc.Day, hourUtc.Hour, 0, 0, DateTimeKind.Utc);
+        await using var db = await factory.CreateDbContextAsync();
+        return await db.ServerEstateHistories
+            .AsNoTracking()
+            .AnyAsync(x => x.Year == ts.Year && x.Month == ts.Month && x.Day == ts.Day && x.Hour == ts.Hour);
+    }
+
     public async Task RecordSnapshotAsync(DateTime? hourUtc = null)
     {
         var nowUtc = hourUtc ?? DateTime.UtcNow;
         var ts = new DateTime(nowUtc.Year, nowUtc.Month, nowUtc.Day, nowUtc.Hour, 0, 0, DateTimeKind.Utc);
 
         await using var db = await factory.CreateDbContextAsync();
+
+        // 同一時刻のスナップショットが既にあれば重複INSERTしない(冪等化)。
+        var exists = await db.ServerEstateHistories
+            .AsNoTracking()
+            .AnyAsync(x => x.Year == ts.Year && x.Month == ts.Month && x.Day == ts.Day && x.Hour == ts.Hour);
+        if (exists) return;
 
         var sums = await db.Estates
             .AsNoTracking()

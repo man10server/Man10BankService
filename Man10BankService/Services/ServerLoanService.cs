@@ -1,7 +1,6 @@
 using Man10BankService.Data;
 using Man10BankService.Models;
 using Man10BankService.Models.Database;
-using Man10BankService.Models.Requests;
 using Man10BankService.Models.Responses;
 using Man10BankService.Repositories;
 using Microsoft.EntityFrameworkCore;
@@ -91,61 +90,65 @@ public class ServerLoanService
         }
     }
     
+    // 借入: 単一トランザクションで「server_loan 行ロック→上限チェック→債務加算→
+    // user_bank 残高加算+MoneyLog→ServerLoanLog→Commit」を行う(補償 Saga 廃止)。
+    // ロック順序規約: 自リソース行(server_loan)→user_bank 行。
     public async Task<ApiResult<ServerLoan?>> BorrowAsync(string uuid, decimal amount)
     {
-        try
-        {
-            if (amount <= 0m)
-                return ApiResult<ServerLoan?>.Fail(ErrorCode.ValidationError);
+        if (amount <= 0m)
+            return ApiResult<ServerLoan?>.Fail(ErrorCode.ValidationError);
 
-            var repo = new ServerLoanRepository(_dbFactory, _profileService);
-            var limitRes = await CalculateBorrowLimitAsync(uuid);
-            if (!limitRes.IsSuccess)
-                return ApiResult<ServerLoan?>.Fail(limitRes.Code);
-            var limit = limitRes.Data;
-            
-            var currentData = await repo.GetOrCreateByUuidAsync(uuid);
-            if (currentData.BorrowAmount + amount > limit)
+        // 上限額の算定はログ集計のみで残高/債務を変更しないため、トランザクション前に読む。
+        var limitRes = await CalculateBorrowLimitAsync(uuid);
+        if (!limitRes.IsSuccess)
+            return ApiResult<ServerLoan?>.Fail(limitRes.Code);
+        var limit = limitRes.Data;
+
+        var resolvedPlayer = await _profileService.GetNameByUuidAsync(uuid);
+        if (resolvedPlayer == null)
+            return ApiResult<ServerLoan?>.Fail(ErrorCode.PlayerNotFound);
+
+        var repo = new ServerLoanRepository(_dbFactory, _profileService);
+
+        return await _bank.RunExclusiveAsync<ServerLoan?>(async db =>
+        {
+            // 1) server_loan 行ロック(MySQL 時 FOR UPDATE)
+            var loan = await repo.GetOrCreateForUpdateAsync(db, uuid, resolvedPlayer);
+
+            // 2) ロック下の確定値で上限チェック
+            if (loan.BorrowAmount + amount > limit)
                 return ApiResult<ServerLoan?>.Fail(ErrorCode.BorrowLimitExceeded);
 
-            var resolvedPlayer = await _profileService.GetNameByUuidAsync(uuid) ?? string.Empty;
-            var updated = await repo.AdjustLoanAsync(uuid, resolvedPlayer, amount, ServerLoanRepository.ServerLoanLogAction.Borrow);
+            // 3) 債務加算 + ServerLoanLog
+            await repo.AdjustLoanCoreAsync(db, uuid, resolvedPlayer, amount, ServerLoanRepository.ServerLoanLogAction.Borrow);
 
-            var dp = await _bank.DepositAsync(new DepositRequest
-            {
-                Uuid = uuid,
-                Amount = amount,
-                PluginName = "server_loan",
-                Note = "loan_borrow",
-                DisplayNote = "サーバーローン借入",
-                Server = "system"
-            });
+            // 支払額未設定なら初回返済額を設定
+            if (loan.PaymentAmount <= 0m)
+                loan.PaymentAmount = CalculateRepaymentAmount(amount);
 
-            if (!dp.IsSuccess) return ApiResult<ServerLoan?>.Fail(dp.Code);
-            
-            var paymentAmount = CalculateRepaymentAmount(amount);
-            
-            if (updated == null || updated.PaymentAmount > 0m) return ApiResult<ServerLoan?>.Ok(updated);
-            
-            var set = await repo.SetPaymentAmountAsync(uuid, paymentAmount);
-            return ApiResult<ServerLoan?>.Ok(set ?? updated);
-        }
-        catch (ArgumentException)
-        {
-            return ApiResult<ServerLoan?>.Fail(ErrorCode.ValidationError);
-        }
-        catch (Exception)
-        {
-            return ApiResult<ServerLoan?>.Fail(ErrorCode.UnexpectedError);
-        }
+            // 4) user_bank 残高加算 + MoneyLog(同一 tx)
+            await BankRepository.ChangeBalanceCoreAsync(
+                db, uuid, resolvedPlayer, amount,
+                "server_loan", "loan_borrow", "サーバーローン借入", "system");
+
+            return ApiResult<ServerLoan?>.Ok(loan);
+        });
     }
-    
+
+    // 返済: 単一トランザクションで「server_loan 行ロック→残高減算+MoneyLog→債務減算+ログ→Commit」。
+    // 出金成功後の債務減算が同一 tx 内のため、片方だけ成立する不整合が発生しない(補償 Saga 廃止)。
     public async Task<ApiResult<ServerLoan?>> RepayAsync(string uuid, decimal? payAmount)
     {
-        try
+        var resolvedPlayer = await _profileService.GetNameByUuidAsync(uuid);
+        if (resolvedPlayer == null)
+            return ApiResult<ServerLoan?>.Fail(ErrorCode.PlayerNotFound);
+
+        var repo = new ServerLoanRepository(_dbFactory, _profileService);
+
+        var result = await _bank.RunExclusiveAsync<ServerLoan?>(async db =>
         {
-            var repo = new ServerLoanRepository(_dbFactory, _profileService);
-            var loan = await repo.GetOrCreateByUuidAsync(uuid);
+            // 1) server_loan 行ロック
+            var loan = await repo.GetOrCreateForUpdateAsync(db, uuid, resolvedPlayer);
             var remain = loan.BorrowAmount;
             if (remain <= 0m)
                 return ApiResult<ServerLoan?>.Fail(ErrorCode.NoRepaymentNeeded);
@@ -158,33 +161,33 @@ public class ServerLoanService
             if (amount <= 0m)
                 return ApiResult<ServerLoan?>.Fail(ErrorCode.PaymentAmountZero);
 
-            var withdrawResult = await _bank.WithdrawAsync(new WithdrawRequest
+            // 2) user_bank 行ロック下で残高不足を判定
+            var bank = await DbLockHelper.GetUserBankForUpdateAsync(db, uuid);
+            var balance = bank?.Balance ?? 0m;
+            if (balance < amount)
             {
-                Uuid = uuid,
-                Amount = amount,
-                PluginName = "server_loan",
-                Note = "loan_repay",
-                DisplayNote = "サーバーローン返済",
-                Server = "system"
-            });
-
-            if (withdrawResult.IsSuccess)
-            {
-                var updated = await repo.AdjustLoanAsync(uuid, loan.Player, -amount, ServerLoanRepository.ServerLoanLogAction.RepaySuccess);
-                return ApiResult<ServerLoan?>.Ok(updated);
+                // 残高不足は返済失敗としてカウントし、失敗ログを残す。
+                // この失敗カウントは確定させたいので、Ok + InsufficientFunds コードで返して
+                // 同一 tx をコミットさせる(ラッパ側で 409 失敗へ変換する)。
+                await repo.AdjustLoanCoreAsync(db, uuid, loan.Player, amount, ServerLoanRepository.ServerLoanLogAction.RepayFailure);
+                return ApiResult<ServerLoan?>.Ok(loan, ErrorCode.InsufficientFunds);
             }
 
-            await repo.AdjustLoanAsync(uuid, loan.Player, amount, ServerLoanRepository.ServerLoanLogAction.RepayFailure);
-            return ApiResult<ServerLoan?>.Fail(withdrawResult.Code);
-        }
-        catch (ArgumentException)
-        {
-            return ApiResult<ServerLoan?>.Fail(ErrorCode.ValidationError);
-        }
-        catch (Exception)
-        {
-            return ApiResult<ServerLoan?>.Fail(ErrorCode.UnexpectedError);
-        }
+            // 3) 残高減算 + MoneyLog
+            await BankRepository.ChangeBalanceCoreAsync(
+                db, uuid, resolvedPlayer, -amount,
+                "server_loan", "loan_repay", "サーバーローン返済", "system");
+
+            // 4) 債務減算 + RepaySuccess ログ
+            await repo.AdjustLoanCoreAsync(db, uuid, loan.Player, -amount, ServerLoanRepository.ServerLoanLogAction.RepaySuccess);
+
+            return ApiResult<ServerLoan?>.Ok(loan);
+        });
+
+        // 残高不足でコミットした失敗ログは確定させつつ、呼び出し側へは 409 を返す。
+        if (result.IsSuccess && result.Code == ErrorCode.InsufficientFunds)
+            return ApiResult<ServerLoan?>.Fail(ErrorCode.InsufficientFunds);
+        return result;
     }
     
     public async Task<ApiResult<decimal>> CalculateBorrowLimitAsync(string uuid)
@@ -343,13 +346,31 @@ public class ServerLoanService
         }
     }
     
-    // 日次利息を全ローンへ加算（スケジューラから呼ばれる）
-    public async Task RunDailyInterestForAllAsync()
+    // 当日分の Interest ログが既に存在するか(日次利息の冪等判定)。
+    // スケジューラはこれが true なら同日二重実行をスキップする。
+    public async Task<bool> HasDailyInterestRunAsync(DateOnly date)
     {
         var repo = new ServerLoanRepository(_dbFactory, _profileService);
         var loans = await repo.GetAllAsync();
         foreach (var loan in loans)
         {
+            if (await repo.HasInterestLogOnDateAsync(loan.Uuid, date))
+                return true;
+        }
+        return false;
+    }
+
+    // 日次利息を全ローンへ加算（スケジューラから呼ばれる）。
+    // 冪等化: 当日分の Interest ログが既にあるローンはスキップし、再起動後の二重課金を防ぐ。
+    public async Task RunDailyInterestForAllAsync(DateOnly? today = null)
+    {
+        var date = today ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        var repo = new ServerLoanRepository(_dbFactory, _profileService);
+        var loans = await repo.GetAllAsync();
+        foreach (var loan in loans)
+        {
+            if (await repo.HasInterestLogOnDateAsync(loan.Uuid, date))
+                continue;
             await AddDailyInterestAsync(loan.Uuid, loan.Player);
         }
     }

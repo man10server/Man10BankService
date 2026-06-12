@@ -22,7 +22,7 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
         await using var db = await factory.CreateDbContextAsync();
         var loan = await db.ServerLoans.AsNoTracking().FirstOrDefaultAsync(x => x.Uuid == uuid);
         if (loan != null) return loan;
-        
+
         var player = await profileService.GetNameByUuidAsync(uuid);
         if (player == null) throw new ArgumentException("指定された UUID のプレイヤーが見つかりません。", nameof(uuid));
         loan = new ServerLoan
@@ -41,6 +41,35 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
         return loan;
     }
 
+    // トランザクション内で server_loan 行を取得/作成する。
+    // 既存行は FOR UPDATE で行ロックする(MySQL 時)。作成も同一 context で行い、SaveChanges は呼ばない。
+    public async Task<ServerLoan> GetOrCreateForUpdateAsync(BankDbContext db, string uuid, string player)
+    {
+        var loan = await DbLockHelper.GetServerLoanForUpdateAsync(db, uuid);
+        if (loan != null) return loan;
+
+        if (string.IsNullOrWhiteSpace(player))
+        {
+            var resolved = await profileService.GetNameByUuidAsync(uuid);
+            if (resolved == null)
+                throw new ArgumentException("指定された UUID のプレイヤーが見つかりません。", nameof(uuid));
+            player = resolved;
+        }
+
+        loan = new ServerLoan
+        {
+            Uuid = uuid,
+            Player = player,
+            BorrowAmount = 0m,
+            PaymentAmount = 0m,
+            LastPayDate = DateTime.UtcNow,
+            FailedPayment = 0,
+            StopInterest = false,
+        };
+        await db.ServerLoans.AddAsync(loan);
+        return loan;
+    }
+
     public async Task<List<ServerLoan>> GetAllAsync()
     {
         await using var db = await factory.CreateDbContextAsync();
@@ -53,12 +82,16 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
         return await db.ServerLoans.AsNoTracking().FirstOrDefaultAsync(x => x.Uuid == uuid);
     }
 
-    public async Task<ServerLoan?> AdjustLoanAsync(string uuid, string player, decimal delta, ServerLoanLogAction action)
+    // トランザクション合成用のコアメソッド。
+    // 呼び出し側が用意した db(=トランザクション内)で行ロック付きの取得/作成を行い、
+    // 残債(BorrowAmount)を更新してログを同一 context に追加する。SaveChanges / Commit は呼び出し側。
+    public async Task<ServerLoan> AdjustLoanCoreAsync(
+        BankDbContext db, string uuid, string player, decimal delta, ServerLoanLogAction action)
     {
-        await using var db = await factory.CreateDbContextAsync();
-        await using var tx = await db.Database.BeginTransactionAsync();
+        var loan = await GetOrCreateForUpdateAsync(db, uuid, player);
+        if (!string.IsNullOrWhiteSpace(player))
+            loan.Player = player;
 
-        var loan = await GetOrCreateByUuidAsync(uuid);
         switch (action)
         {
             case ServerLoanLogAction.Borrow:
@@ -84,13 +117,23 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
             default:
                 throw new ArgumentOutOfRangeException(nameof(action), action, null);
         }
-        db.Update(loan);
-        await AddLogAsync(db, loan.Uuid, loan.Player, action, delta);
+
+        AddLog(db, loan.Uuid, loan.Player, action, delta);
+        return loan;
+    }
+
+    // 単一 DbContext・単一トランザクションで残債を更新する独立メソッド。
+    public async Task<ServerLoan?> AdjustLoanAsync(string uuid, string player, decimal delta, ServerLoanLogAction action)
+    {
+        await using var db = await factory.CreateDbContextAsync();
+        await using var tx = await db.Database.BeginTransactionAsync();
+
+        var loan = await AdjustLoanCoreAsync(db, uuid, player, delta, action);
         await db.SaveChangesAsync();
         await tx.CommitAsync();
         return loan;
     }
-    
+
     public async Task<List<ServerLoanLog>> GetLogsAsync(string uuid, int limit = 100, int offset = 0)
     {
         limit = Math.Clamp(limit, 1, 1000);
@@ -106,6 +149,19 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
             .ToListAsync();
     }
 
+    // 当日分の Interest ログが存在するか(日次利息の冪等判定に使用)。
+    public async Task<bool> HasInterestLogOnDateAsync(string uuid, DateOnly date)
+    {
+        var start = date.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+        var end = start.AddDays(1);
+        var action = ServerLoanLogAction.Interest.ToString();
+
+        await using var db = await factory.CreateDbContextAsync();
+        return await db.ServerLoanLogs
+            .AsNoTracking()
+            .AnyAsync(x => x.Uuid == uuid && x.Action == action && x.Date >= start && x.Date < end);
+    }
+
     // 週次等の支払額を設定する
     public async Task<ServerLoan?> SetPaymentAmountAsync(string uuid, decimal paymentAmount)
     {
@@ -114,10 +170,9 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
         await using var db = await factory.CreateDbContextAsync();
         await using var tx = await db.Database.BeginTransactionAsync();
 
-        var loan = await GetOrCreateByUuidAsync(uuid);
+        var loan = await GetOrCreateForUpdateAsync(db, uuid, string.Empty);
 
         loan.PaymentAmount = paymentAmount;
-        db.Update(loan);
         await db.SaveChangesAsync();
         await tx.CommitAsync();
         return loan;
@@ -128,7 +183,7 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
         await using var db = await factory.CreateDbContextAsync();
         await using var tx = await db.Database.BeginTransactionAsync();
 
-        var loan = await db.ServerLoans.FirstOrDefaultAsync(x => x.Uuid == uuid);
+        var loan = await DbLockHelper.GetServerLoanForUpdateAsync(db, uuid);
         if (loan == null)
         {
             loan = new ServerLoan
@@ -147,13 +202,13 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
 
         loan.BorrowAmount = borrowAmount;
         loan.PaymentAmount = paymentAmount;
-        await AddLogAsync(db, loan.Uuid, loan.Player, ServerLoanLogAction.SetBorrowAmount, delta);
+        AddLog(db, loan.Uuid, loan.Player, ServerLoanLogAction.SetBorrowAmount, delta);
         await db.SaveChangesAsync();
         await tx.CommitAsync();
         return loan;
     }
-    
-    private static async Task AddLogAsync(BankDbContext db, string uuid, string player, ServerLoanLogAction action, decimal amount)
+
+    private static void AddLog(BankDbContext db, string uuid, string player, ServerLoanLogAction action, decimal amount)
     {
         var log = new ServerLoanLog
         {
@@ -163,6 +218,6 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
             Amount = amount,
             // Date は DB 既定値
         };
-        await db.ServerLoanLogs.AddAsync(log);
+        db.ServerLoanLogs.Add(log);
     }
 }

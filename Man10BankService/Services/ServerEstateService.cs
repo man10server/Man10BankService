@@ -30,7 +30,15 @@ public class ServerEstateService
         }
     }
 
-    // 指定時刻(時単位)のサーバー資産スナップショットを記録する（スケジューラから呼ばれる）
+    // 指定時刻(時単位)のスナップショットが既に記録済みか(冪等判定に使用)
+    public async Task<bool> HasSnapshotForHourAsync(DateTime hourUtc)
+    {
+        var repo = new ServerEstateRepository(_dbFactory);
+        return await repo.HasSnapshotForHourAsync(hourUtc);
+    }
+
+    // 指定時刻(時単位)のサーバー資産スナップショットを記録する（スケジューラから呼ばれる）。
+    // リポジトリ側でも同一時刻の重複INSERTを抑止する(冪等化)。
     public async Task RecordSnapshotAsync(DateTime hourUtc)
     {
         var repo = new ServerEstateRepository(_dbFactory);
