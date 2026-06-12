@@ -106,10 +106,4 @@ public sealed record ApiResult<T>
 
     // 失敗結果。HTTP ステータスは ErrorCodeMapper が Code から決定する。
     public static ApiResult<T> Fail(ErrorCode code) => new(false, code, default);
-
-    // 旧 API 互換のための薄いエイリアス(意味は Fail と同じ)。
-    public static ApiResult<T> BadRequest(ErrorCode code) => Fail(code);
-    public static ApiResult<T> NotFound(ErrorCode code) => Fail(code);
-    public static ApiResult<T> Conflict(ErrorCode code) => Fail(code);
-    public static ApiResult<T> Error(ErrorCode code) => Fail(code);
 }
