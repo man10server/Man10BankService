@@ -100,11 +100,24 @@ builder.Services.AddSingleton<Man10BankService.Services.LoanService>();
 builder.Services.AddSingleton<Man10BankService.Services.EstateService>();
 builder.Services.AddSingleton<Man10BankService.Services.ServerEstateService>();
 
-// スケジューラ(BackgroundService)を登録
-builder.Services.AddHostedService<Man10BankService.Services.ServerLoanSchedulerService>();
-builder.Services.AddHostedService<Man10BankService.Services.ServerEstateSchedulerService>();
+// スケジューラ(BackgroundService)を登録。
+// 複数インスタンスを並列起動すると各インスタンスでスケジューラが二重実行され、
+// 日次利息の多重課金・週次返済の多重引落し・スナップショット重複INSERTが起きうる。
+// そのため Scheduler:Enabled で起動可否を切り替える(既定 true: 単一インスタンス運用と互換)。
+// 水平スケール時はリーダー1台のみ true とし、他インスタンスは Scheduler__Enabled=false で起動すること。
+var schedulerEnabled = builder.Configuration.GetValue("Scheduler:Enabled", true);
+if (schedulerEnabled)
+{
+    builder.Services.AddHostedService<Man10BankService.Services.ServerLoanSchedulerService>();
+    builder.Services.AddHostedService<Man10BankService.Services.ServerEstateSchedulerService>();
+}
 
 var app = builder.Build();
+
+// 起動したインスタンスがスケジューラ担当かどうかをログに残す(運用時の取り違え防止)。
+app.Logger.LogInformation(
+    "スケジューラ(サーバーローン日次利息/週次返済・資産スナップショット): {State}",
+    schedulerEnabled ? "有効" : "無効");
 
 using (var scope = app.Services.CreateScope())
 {

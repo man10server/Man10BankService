@@ -44,6 +44,10 @@ services:
       #   Auth__ApiKeys__0__Key: "<長いランダム文字列>"
       #   Auth__ApiKeys__0__Name: "man10bank-plugin"
       #   Auth__ApiKeys__0__Scopes__0: "admin"
+      # スケジューラ（日次利息・週次返済・資産スナップショット）の起動可否。既定 true。
+      # 複数インスタンスを並列起動する場合は、リーダー1台のみ true（未指定でも可）にし、
+      # 残りのインスタンスでは二重実行防止のため必ず false を指定すること:
+      #   Scheduler__Enabled: "false"
     ports:
       - "8080:8080"
 
