@@ -16,7 +16,9 @@ public class BankDbContext : DbContext
     public DbSet<ServerLoan> ServerLoans => Set<ServerLoan>();
     public DbSet<ServerLoanLog> ServerLoanLogs => Set<ServerLoanLog>();
     public DbSet<UserBank> UserBanks => Set<UserBank>();
-    
+    public DbSet<UserVault> UserVaults => Set<UserVault>();
+    public DbSet<VaultLog> VaultLogs => Set<VaultLog>();
+
     public BankDbContext(DbContextOptions<BankDbContext> options) : base(options) {}
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -181,6 +183,31 @@ public class BankDbContext : DbContext
             e.HasKey(x => x.Id);
             e.HasIndex(x => new { x.Id, x.Uuid, x.Player });
             e.Property(x => x.Balance).HasPrecision(20, 0);
+        });
+
+        modelBuilder.Entity<UserVault>(e =>
+        {
+            e.ToTable("user_vault");
+            e.HasKey(x => x.Id);
+            // 1プレイヤー1行を Uuid の UNIQUE で保証する(VaultProvider 6.1)。
+            e.HasIndex(x => x.Uuid).IsUnique();
+            e.Property(x => x.Balance).HasPrecision(20, 0);
+        });
+
+        modelBuilder.Entity<VaultLog>(e =>
+        {
+            e.ToTable("vault_log");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.Uuid, x.Player, x.Date });
+            e.Property(x => x.Amount).HasPrecision(20, 0);
+            e.Property(x => x.PluginName).HasColumnName("plugin_name");
+            e.Property(x => x.DisplayNote).HasColumnName("display_note");
+            e.Property(x => x.PluginName).HasDefaultValue("");
+            e.Property(x => x.Note).HasDefaultValue("");
+            e.Property(x => x.DisplayNote).HasDefaultValue("");
+            e.Property(x => x.Server).HasDefaultValue("");
+            e.Property(x => x.Deposit).HasDefaultValue(true);
+            e.Property(x => x.Date).HasDefaultValueSql("CURRENT_TIMESTAMP").ValueGeneratedOnAdd();
         });
     }
 }

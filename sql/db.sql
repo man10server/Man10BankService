@@ -183,3 +183,33 @@ create table user_bank
 
 create index user_bank_player_uuid_index
     on user_bank (player, uuid);
+
+create table user_vault
+(
+    id      int auto_increment
+        primary key,
+    player  varchar(16)            not null,
+    uuid    varchar(36)            not null,
+    balance decimal(20) default 0  not null,
+    version bigint      default 0  not null,
+    constraint uq_user_vault_uuid unique (uuid)
+)
+    comment '電子マネー残高(真実)テーブル';
+
+create table vault_log
+(
+    id           int auto_increment
+        primary key,
+    player       varchar(16)                           not null,
+    uuid         varchar(36)                           not null,
+    plugin_name  varchar(16) default ''                not null,
+    note         varchar(64) default ''                not null,
+    display_note varchar(64) default ''                not null,
+    server       varchar(16) default ''                not null,
+    deposit      tinyint(1)  default 1                 not null,
+    date         datetime    default CURRENT_TIMESTAMP not null,
+    amount       decimal(20)                           not null
+);
+
+create index vault_log_uuid_player_date_index
+    on vault_log (uuid, player, date);
