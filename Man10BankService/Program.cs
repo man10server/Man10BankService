@@ -1,18 +1,96 @@
+using Man10BankService.Auth;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using MySqlConnector;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOpenApi();
+
+// ルート制約 {uuid:uuid} に厳密UUID検証を登録
+builder.Services.Configure<Microsoft.AspNetCore.Routing.RouteOptions>(options =>
+{
+    options.ConstraintMap["uuid"] = typeof(Man10BankService.Validation.UuidRouteConstraint);
+});
+
+// 自動400(モデルバリデーション)にも code:"ValidationError" を付与
 builder.Services.AddControllers();
+builder.Services.Configure<ApiBehaviorOptions>(options =>
+{
+    options.InvalidModelStateResponseFactory = context =>
+    {
+        var problem = new ValidationProblemDetails(context.ModelState)
+        {
+            Status = StatusCodes.Status400BadRequest
+        };
+        problem.Extensions["code"] = "ValidationError";
+        return new BadRequestObjectResult(problem)
+        {
+            ContentTypes = { "application/problem+json" }
+        };
+    };
+});
 
-// DB 接続設定を起動時に一度だけ設定（IConfiguration を渡す）
-Man10BankService.Data.BankDbContext.Configure(builder.Configuration);
+// 未処理例外を ProblemDetails(code:"UnexpectedError") として返す基盤
+builder.Services.AddProblemDetails();
 
-// DI 登録（プーリング有効）: DbContext のオプションは DI 側で構成
-var cs = Man10BankService.Data.BankDbContext.GetConnectionString();
+// DB 接続文字列を IConfiguration から組み立てる（値は MySqlConnectionStringBuilder でエスケープ）
+var dbSection = builder.Configuration.GetSection("Database");
+var csBuilder = new MySqlConnectionStringBuilder
+{
+    Server = dbSection["Host"] ?? "",
+    Port = uint.TryParse(dbSection["Port"], out var port) ? port : 3306,
+    Database = dbSection["Name"] ?? "",
+    UserID = dbSection["User"] ?? "",
+    Password = dbSection["Password"] ?? "",
+    TreatTinyAsBoolean = !bool.TryParse(dbSection["TreatTinyAsBoolean"], out var treatTiny) || treatTiny
+};
+var connectionString = csBuilder.ConnectionString;
+
+// DI 登録（プーリング有効）
 builder.Services.AddPooledDbContextFactory<Man10BankService.Data.BankDbContext>(o =>
-    o.UseMySql(cs, ServerVersion.AutoDetect(cs))
+    o.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString))
 );
+
+// 認証(APIキー)設定をバインド
+builder.Services.Configure<ApiKeyAuthSettings>(builder.Configuration.GetSection("Auth"));
+
+// Production: APIキー未設定なら起動時に例外で失敗（fail-closed）
+if (builder.Environment.IsProduction())
+{
+    var auth = builder.Configuration.GetSection("Auth").Get<ApiKeyAuthSettings>();
+    if (auth is null || auth.ApiKeys.Count == 0 || auth.ApiKeys.All(k => string.IsNullOrWhiteSpace(k.Key)))
+        throw new InvalidOperationException("本番環境では Auth:ApiKeys に有効なAPIキーを設定してください。");
+}
+
+builder.Services.AddAuthentication(ApiKeyAuthenticationHandler.SchemeName)
+    .AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(ApiKeyAuthenticationHandler.SchemeName, _ => { });
+
+builder.Services.AddAuthorization(options =>
+{
+    // すべてのエンドポイントで認証必須（[AllowAnonymous] を除く）
+    options.FallbackPolicy = new AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .Build();
+
+    // 書き込み系(POST全部)は admin スコープ必須
+    options.AddPolicy("RequireWriteScope", policy =>
+        policy.RequireClaim(ApiKeyAuthenticationHandler.ScopeClaimType, "admin"));
+});
+
+// CORS: 設定駆動（既定は無効。将来のWebサイト向けにポリシー雛形のみ用意）
+builder.Services.AddCors(options =>
+{
+    var origins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
+    options.AddPolicy("Default", policy =>
+    {
+        if (origins.Length > 0)
+            policy.WithOrigins(origins).AllowAnyHeader().AllowAnyMethod();
+    });
+});
+
 builder.Services.AddSingleton<Man10BankService.Services.IPlayerProfileService, Man10BankService.Services.MojangPlayerProfileService>();
 builder.Services.AddSingleton<Man10BankService.Services.BankService>();
 builder.Services.AddSingleton<Man10BankService.Services.AtmService>();
@@ -21,6 +99,10 @@ builder.Services.AddSingleton<Man10BankService.Services.ServerLoanService>();
 builder.Services.AddSingleton<Man10BankService.Services.LoanService>();
 builder.Services.AddSingleton<Man10BankService.Services.EstateService>();
 builder.Services.AddSingleton<Man10BankService.Services.ServerEstateService>();
+
+// スケジューラ(BackgroundService)を登録
+builder.Services.AddHostedService<Man10BankService.Services.ServerLoanSchedulerService>();
+builder.Services.AddHostedService<Man10BankService.Services.ServerEstateSchedulerService>();
 
 var app = builder.Build();
 
@@ -33,9 +115,30 @@ using (var scope = app.Services.CreateScope())
         throw new InvalidOperationException("このアプリケーションはMySQLプロバイダでのみ実行できます。");
 }
 
+// 未処理例外を ProblemDetails(code:"UnexpectedError")へ変換
+app.UseExceptionHandler(errorApp =>
+{
+    errorApp.Run(async context =>
+    {
+        var problemDetailsService = context.RequestServices.GetRequiredService<IProblemDetailsService>();
+        context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+        await problemDetailsService.WriteAsync(new ProblemDetailsContext
+        {
+            HttpContext = context,
+            ProblemDetails =
+            {
+                Status = StatusCodes.Status500InternalServerError,
+                Title = "予期しないエラーが発生しました。",
+                Extensions = { ["code"] = "UnexpectedError" }
+            }
+        });
+    });
+});
+
 if (app.Environment.IsDevelopment())
 {
-    app.MapOpenApi();
+    // Development 限定のため OpenAPI ドキュメントは匿名で取得可能にする（Swagger UI が参照する）
+    app.MapOpenApi().AllowAnonymous();
     // Swagger UI は組み込み OpenAPI (/openapi/v1.json) を表示
     app.UseSwaggerUI(o =>
     {
@@ -50,6 +153,10 @@ if (!app.Environment.IsDevelopment())
 {
     app.UseHttpsRedirection();
 }
+
+app.UseCors("Default");
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.MapControllers();
 

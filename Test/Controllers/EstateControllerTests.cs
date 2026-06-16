@@ -1,8 +1,8 @@
 using FluentAssertions;
 using Man10BankService.Controllers;
 using Man10BankService.Data;
-using Man10BankService.Models.Database;
 using Man10BankService.Models.Requests;
+using Man10BankService.Models.Responses;
 using Man10BankService.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -65,12 +65,12 @@ public class EstateControllerTests
 
         var post = await ctrl.UpdateSnapshot(uuid, req);
         var ok = post.Result.Should().BeOfType<OkObjectResult>().Which;
-        ((bool)ok.Value!).Should().BeTrue();
+        ok.Value.Should().BeOfType<SnapshotResponse>().Which.Updated.Should().BeTrue();
 
         var get = await ctrl.GetLatest(uuid);
         var latest = get.Result
             .Should().BeOfType<OkObjectResult>().Which.Value
-            .Should().BeOfType<Estate>().Which;
+            .Should().BeOfType<EstateResponse>().Which;
 
         latest.Should().BeEquivalentTo(new
         {
@@ -87,7 +87,7 @@ public class EstateControllerTests
         var histRes = await ctrl.GetHistory(uuid);
         var history = histRes.Result
             .Should().BeOfType<OkObjectResult>().Which.Value
-            .Should().BeOfType<List<EstateHistory>>().Which;
+            .Should().BeOfType<List<EstateHistoryResponse>>().Which;
         history.Count.Should().Be(1);
     }
 
@@ -108,28 +108,28 @@ public class EstateControllerTests
 
         var firstUpdate = await ctrl.UpdateSnapshot(uuid, req);
         var firstOk = firstUpdate.Result.Should().BeOfType<OkObjectResult>().Which;
-        ((bool)firstOk.Value!).Should().BeTrue();
+        firstOk.Value.Should().BeOfType<SnapshotResponse>().Which.Updated.Should().BeTrue();
 
         var firstHistory = await ctrl.GetHistory(uuid);
         var history1 = firstHistory.Result
             .Should().BeOfType<OkObjectResult>().Which.Value
-            .Should().BeOfType<List<EstateHistory>>().Which;
+            .Should().BeOfType<List<EstateHistoryResponse>>().Which;
         history1.Count.Should().Be(1);
 
         var secondUpdate = await ctrl.UpdateSnapshot(uuid, req);
         var secondOk = secondUpdate.Result.Should().BeOfType<OkObjectResult>().Which;
-        ((bool)secondOk.Value!).Should().BeFalse();
+        secondOk.Value.Should().BeOfType<SnapshotResponse>().Which.Updated.Should().BeFalse();
 
         var secondHistory = await ctrl.GetHistory(uuid);
         var history2 = secondHistory.Result
             .Should().BeOfType<OkObjectResult>().Which.Value
-            .Should().BeOfType<List<EstateHistory>>().Which;
+            .Should().BeOfType<List<EstateHistoryResponse>>().Which;
         history2.Count.Should().Be(1);
 
         var latestResult = await ctrl.GetLatest(uuid);
         var latest = latestResult.Result
             .Should().BeOfType<OkObjectResult>().Which.Value
-            .Should().BeOfType<Estate>().Which;
+            .Should().BeOfType<EstateResponse>().Which;
         latest.Should().BeEquivalentTo(new
         {
             Cash = 10m,

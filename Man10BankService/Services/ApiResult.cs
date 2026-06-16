@@ -87,11 +87,23 @@ public static class ErrorCodeExtensions
     }
 }
 
-public sealed record ApiResult<T>(int StatusCode, ErrorCode Code = ErrorCode.None, T? Data = default)
+// HTTP から切り離した処理結果。成功可否は IsSuccess、失敗内容は Code、値は Data で表現する。
+public sealed record ApiResult<T>
 {
-    public static ApiResult<T> Ok(T data, ErrorCode code = ErrorCode.None) => new(200, code, data);
-    public static ApiResult<T> BadRequest(ErrorCode code) => new(400, code);
-    public static ApiResult<T> NotFound(ErrorCode code) => new(404, code);
-    public static ApiResult<T> Conflict(ErrorCode code) => new(409, code);
-    public static ApiResult<T> Error(ErrorCode code) => new(500, code);
+    public bool IsSuccess { get; private init; }
+    public ErrorCode Code { get; private init; }
+    public T? Data { get; private init; }
+
+    private ApiResult(bool isSuccess, ErrorCode code, T? data)
+    {
+        IsSuccess = isSuccess;
+        Code = code;
+        Data = data;
+    }
+
+    // 成功結果。code には EstateNoChange など成功に付随する補足コードを渡せる(既定は None)。
+    public static ApiResult<T> Ok(T data, ErrorCode code = ErrorCode.None) => new(true, code, data);
+
+    // 失敗結果。HTTP ステータスは ErrorCodeMapper が Code から決定する。
+    public static ApiResult<T> Fail(ErrorCode code) => new(false, code, default);
 }

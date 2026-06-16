@@ -3,6 +3,10 @@
 1. APIサーバーをローカルにcloneで落として `docker compose up -d`
 これでAPIサーバーとテスト用のMySQLサーバーが立ち上がる。
 
+> `docker-compose.yml` の app は `ASPNETCORE_ENVIRONMENT=Production` で起動する。
+> 本番環境では APIキー(`Auth:ApiKeys`)の設定が必須で、未設定だと起動時に失敗する。
+> 詳細は後述の「APIキー認証の設定」を参照。
+
 2. 疎通確認
 ポート番号などは環境に合わせて変更
 - ヘルスチェックコマンド
@@ -30,7 +34,54 @@ Configの設定方法は以下の通り
     baseUrlのところに、ヘルスチェックなどで疎通確認したURLを入力
     同じDockerCompose内で起動した場合は `bank`  で繋がる
     ゲーム内またはマイクラコンソールから `/bankop health` で接続が確認できる
-    
+    apiKey にはサーバー側 `Auth:ApiKeys` に登録したキーと同じ値を設定する
+
+
+### APIキー認証の設定
+
+- リクエストヘッダ `Authorization: Bearer <APIキー>` を検証する（スキーム名 `ApiKey`）。
+- `GET /api/Health` のみ認証不要。それ以外は認証必須で、書き込み系(POST)は `admin` スコープが必要。
+- 設定は `appsettings.json` の `Auth` セクション。雛形は以下の通り。
+
+    ```json
+    "Auth": {
+      "ApiKeys": [
+        { "Key": "<長いランダム文字列>", "Name": "man10bank-plugin", "Scopes": [ "admin" ] }
+      ]
+    }
+    ```
+
+- 環境別の挙動:
+  - **Production**: `Auth:ApiKeys` が空(または全キーが空文字)なら起動時に例外で失敗する(fail-closed)。
+  - **Development**: キー未設定なら警告ログを出して匿名アクセスを許可する。キーを設定した場合は検証する。
+- Docker(`docker-compose.yml` は `Production`)では環境変数でキーを注入する。
+
+    ```yaml
+    Auth__ApiKeys__0__Key: "<長いランダム文字列>"
+    Auth__ApiKeys__0__Name: "man10bank-plugin"
+    Auth__ApiKeys__0__Scopes__0: "admin"
+    ```
+
+
+## テスト
+
+リポジトリルートで `dotnet test` を実行する。テストの DB 戦略は用途で2系統に分かれる。
+
+- **MySQL(Testcontainers, Docker 必須)**: 行ロック(`SELECT ... FOR UPDATE`)・トランザクション境界・
+  並行整合性・原子性(片側失敗時のロールバック)など、本番 MySQL の挙動に依存する検証に使う。
+  対象は `*MySqlTests`(送金/入出金/小切手の並行・原子性)と認証テスト(`AuthenticationTests`)、
+  個人間ローン(`LoanControllerTests`)。これらは `mysql:8.4` の単一コンテナを共有し、
+  `MySqlCollection` で束ねて並列実行を無効化する(コンテナ共有のため)。
+- **SQLite(:memory:, Docker 不要)**: 純粋なロジック・ステータスコード・DTO 契約の検証に使う。
+  軽量・高速だが、SQLite は書き込みを単一ライターへ直列化し行ロックを再現しないため、
+  金銭の並行整合性は MySQL 側で担保する(SQLite 版の並行テストは直列化前提のスモーク)。
+
+> **Docker が必要**: `*MySqlTests` と認証テスト、Loan テストは Docker デーモンが起動していないと失敗する。
+> Docker 無しで実行する場合は `dotnet test --filter "FullyQualifiedName!~MySql&FullyQualifiedName!~Auth&FullyQualifiedName!~Loan"`
+> のように MySQL 依存テストを除外する。
+
+認証/認可は `WebApplicationFactory`(`AuthTestWebApplicationFactory`)で実 HTTP パイプライン経由で
+検証し、401(キーなし)/403(read スコープで POST)/200(admin キー)/Health 匿名 を確認する。
 
 ### MySQLに繋がらない場合
 

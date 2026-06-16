@@ -15,6 +15,7 @@ using Test.Infrastructure;
 
 namespace Test.Controllers;
 
+[Collection(MySqlCollection.Name)]
 public class LoanControllerTests
 {
     private sealed record TestEnv(ControllerHost Host, BankService Bank, IDbContextFactory<BankDbContext> DbFactory) : IDisposable
@@ -72,19 +73,19 @@ public class LoanControllerTests
 
         var createRes = await ctrl.Create(createReq);
         var created = createRes.Result
-            .Should().BeOfType<OkObjectResult>().Which.Value
-            .Should().BeOfType<Loan>().Which;
+            .Should().BeOfType<CreatedAtActionResult>().Which.Value
+            .Should().BeOfType<LoanResponse>().Which;
 
         var listRes = await ctrl.GetByBorrower(borrowUuid);
         var list = listRes.Result
             .Should().BeOfType<OkObjectResult>().Which.Value
-            .Should().BeOfType<List<Loan>>().Which;
+            .Should().BeOfType<List<LoanResponse>>().Which;
         list.Any(l => l.Id == created.Id).Should().BeTrue();
 
         var getRes = await ctrl.GetById(created.Id);
         var got = getRes.Result
             .Should().BeOfType<OkObjectResult>().Which.Value
-            .Should().BeOfType<Loan>().Which;
+            .Should().BeOfType<LoanResponse>().Which;
         got.Id.Should().Be(created.Id);
         got.Amount.Should().Be(created.Amount);
         got.BorrowUuid.Should().Be(created.BorrowUuid);
@@ -110,8 +111,8 @@ public class LoanControllerTests
             CollateralItem = string.Empty
         });
         var loan = create.Result
-            .Should().BeOfType<OkObjectResult>().Which.Value
-            .Should().BeOfType<Loan>().Which;
+            .Should().BeOfType<CreatedAtActionResult>().Which.Value
+            .Should().BeOfType<LoanResponse>().Which;
 
         var repay = await ctrl.Repay(loan.Id, collectorUuid: lendUuid);
         repay.Result.Should().BeOfType<ConflictObjectResult>();
@@ -139,8 +140,8 @@ public class LoanControllerTests
             CollateralItem = string.Empty
         });
         var loan = create.Result
-            .Should().BeOfType<OkObjectResult>().Which.Value
-            .Should().BeOfType<Loan>().Which;
+            .Should().BeOfType<CreatedAtActionResult>().Which.Value
+            .Should().BeOfType<LoanResponse>().Which;
 
         await env.Bank.DepositAsync(new DepositRequest { Uuid = borrowUuid, Amount = 1000m, PluginName = "test", Note = "seed", DisplayNote = "seed", Server = "dev" });
         var repay = await ctrl.Repay(loan.Id, collectorUuid: lendUuid);
@@ -182,8 +183,8 @@ public class LoanControllerTests
             CollateralItem = string.Empty
         });
         var loan = create.Result
-            .Should().BeOfType<OkObjectResult>().Which.Value
-            .Should().BeOfType<Loan>().Which;
+            .Should().BeOfType<CreatedAtActionResult>().Which.Value
+            .Should().BeOfType<LoanResponse>().Which;
 
         var bal = await env.Bank.GetBalanceAsync(borrowUuid);
         if (bal.Data > 0)
@@ -214,8 +215,8 @@ public class LoanControllerTests
             CollateralItem = "diamond"
         });
         var loan = create.Result
-            .Should().BeOfType<OkObjectResult>().Which.Value
-            .Should().BeOfType<Loan>().Which;
+            .Should().BeOfType<CreatedAtActionResult>().Which.Value
+            .Should().BeOfType<LoanResponse>().Which;
 
         await env.Bank.DepositAsync(new DepositRequest { Uuid = borrowUuid, Amount = 2000m, PluginName = "test", Note = "seed", DisplayNote = "seed", Server = "dev" });
         var repay = await ctrl.Repay(loan.Id, collectorUuid: lendUuid);
@@ -252,8 +253,8 @@ public class LoanControllerTests
             CollateralItem = "gold"
         });
         var loan = create.Result
-            .Should().BeOfType<OkObjectResult>().Which.Value
-            .Should().BeOfType<Loan>().Which;
+            .Should().BeOfType<CreatedAtActionResult>().Which.Value
+            .Should().BeOfType<LoanResponse>().Which;
 
         await env.Bank.DepositAsync(new DepositRequest { Uuid = borrowUuid, Amount = 2000m, PluginName = "test", Note = "seed", DisplayNote = "seed", Server = "dev" });
         var repay = await ctrl.Repay(loan.Id, collectorUuid: lendUuid);
@@ -294,8 +295,8 @@ public class LoanControllerTests
             CollateralItem = "emerald"
         });
         var loan = create.Result
-            .Should().BeOfType<OkObjectResult>().Which.Value
-            .Should().BeOfType<Loan>().Which;
+            .Should().BeOfType<CreatedAtActionResult>().Which.Value
+            .Should().BeOfType<LoanResponse>().Which;
 
         await SetLoanDatesAsync(env.DbFactory, loan.Id, DateTime.UtcNow.AddDays(-10), DateTime.UtcNow.AddDays(-1));
 
@@ -338,8 +339,8 @@ public class LoanControllerTests
             CollateralItem = "emerald"
         });
         var loan = create.Result
-            .Should().BeOfType<OkObjectResult>().Which.Value
-            .Should().BeOfType<Loan>().Which;
+            .Should().BeOfType<CreatedAtActionResult>().Which.Value
+            .Should().BeOfType<LoanResponse>().Which;
 
         await SetLoanDatesAsync(env.DbFactory, loan.Id, DateTime.UtcNow.AddDays(-5), DateTime.UtcNow.AddDays(-3));
 

@@ -5,27 +5,50 @@ namespace Man10BankService.Controllers;
 
 public static class ControllerExtensions
 {
+    // 成功時は 200 OK + Data、失敗時は ErrorCodeMapper で決まる HTTP ステータス + ProblemDetails を返す。
     public static ActionResult<T> ToActionResult<T>(this ControllerBase controller, ApiResult<T> res)
     {
-        if (res.StatusCode == 200)
+        if (res.IsSuccess)
         {
             return controller.Ok(res.Data);
         }
 
+        return controller.BuildErrorResult(res.Code);
+    }
+
+    // サービスがエンティティ等を返す場合に、成功時のみレスポンスDTOへ変換して 200 を返す。
+    // 失敗時は元の ErrorCode に基づく ProblemDetails を返す(DBエンティティ直返しの防止)。
+    public static ActionResult<TOut> ToActionResult<TIn, TOut>(
+        this ControllerBase controller,
+        ApiResult<TIn> res,
+        Func<TIn, TOut> map)
+    {
+        if (res.IsSuccess)
+        {
+            return controller.Ok(map(res.Data!));
+        }
+
+        return controller.BuildErrorResult(res.Code);
+    }
+
+    // ErrorCode から ProblemDetails(title=日本語文言・extensions.code=ErrorCode名)を構築して返す。
+    // type には enum 名を入れず、既定(about:blank 相当)のままにする。
+    public static ObjectResult BuildErrorResult(this ControllerBase controller, ErrorCode code)
+    {
+        var status = ErrorCodeMapper.ToHttpStatus(code);
         var pd = new ProblemDetails
         {
-            Title = res.Code.GetJa(),
-            Type = res.Code.ToString(),
-            Status = res.StatusCode,
+            Title = code.GetJa(),
+            Status = status
         };
-        pd.Extensions["code"] = res.Code.ToString();
+        pd.Extensions["code"] = code.ToString();
 
-        return res.StatusCode switch
+        return status switch
         {
             400 => controller.BadRequest(pd),
             404 => controller.NotFound(pd),
             409 => controller.Conflict(pd),
-            _ => controller.StatusCode(res.StatusCode, pd)
+            _ => controller.StatusCode(status, pd)
         };
     }
 }

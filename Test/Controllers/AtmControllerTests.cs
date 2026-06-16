@@ -1,7 +1,7 @@
 using FluentAssertions;
 using Man10BankService.Controllers;
-using Man10BankService.Models.Database;
 using Man10BankService.Models.Requests;
+using Man10BankService.Models.Responses;
 using Man10BankService.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -57,13 +57,14 @@ public class AtmControllerTests
         ctrl.TryValidateModel(req).Should().BeTrue();
 
         var addResult = await ctrl.AddLog(req);
-        addResult.Result.Should().BeOfType<OkObjectResult>();
+        var created = addResult.Result.Should().BeOfType<CreatedAtActionResult>().Which;
+        created.Value.Should().BeOfType<AtmLogResponse>();
 
         var logsResult = await ctrl.GetLogs(uuid, 10);
         var logs = logsResult.Result
             .Should().BeOfType<OkObjectResult>().Which.Value
-            .Should().BeOfType<List<AtmLog>>().Which;
-        
+            .Should().BeOfType<List<AtmLogResponse>>().Which;
+
         logs.Should().NotBeEmpty();
         logs[0].Should().BeEquivalentTo(new
         {
@@ -73,30 +74,20 @@ public class AtmControllerTests
         }, opt => opt.ExcludingMissingMembers());
     }
 
-    [Fact(DisplayName = "ATMログ追加失敗: 金額不正でValidationProblem・ログ未作成")]
-    public async Task AddLog_Invalid_ShouldReturn400_AndNoLog()
+    [Fact(DisplayName = "ATMログ追加失敗: 金額不正はモデル検証で弾かれる")]
+    public void AddLog_Invalid_ShouldFailModelValidation()
     {
         using var host = BuildController();
         var ctrl = (AtmController)host.Controller;
-        const string uuid = TestConstants.Uuid;
 
         var req = new AtmLogRequest
         {
-            Uuid = uuid,
+            Uuid = TestConstants.Uuid,
             Amount = 0, // invalid
             Deposit = false,
         };
+        // [ApiController] の自動400 はフィルタ段で行われるため、ここではモデル検証属性で 400 相当を担保する
         ctrl.TryValidateModel(req).Should().BeFalse();
-
-        var post = await ctrl.AddLog(req);
-        var postResult = post.Result.Should().BeOfType<ObjectResult>().Which;
-        postResult.Value.Should().BeOfType<ValidationProblemDetails>();
-
-        var get = await ctrl.GetLogs(uuid, 10);
-        var logs = get.Result
-            .Should().BeOfType<OkObjectResult>().Which.Value
-            .Should().BeOfType<List<AtmLog>>().Which;
-        logs.Should().BeEmpty();
     }
 
     [Fact(DisplayName = "DBダウン時: ATMログ取得は500エラー")]
@@ -147,13 +138,13 @@ public class AtmControllerTests
             var req = new AtmLogRequest { Uuid = uuid, Amount = i, Deposit = true };
             ctrl.TryValidateModel(req).Should().BeTrue();
             var res = await ctrl.AddLog(req);
-            res.Result.Should().BeOfType<OkObjectResult>();
+            res.Result.Should().BeOfType<CreatedAtActionResult>();
         }
 
         var get = await ctrl.GetLogs(uuid, limit: 10, offset: 30);
         var logs = get.Result
             .Should().BeOfType<OkObjectResult>().Which.Value
-            .Should().BeOfType<List<AtmLog>>().Which;
+            .Should().BeOfType<List<AtmLogResponse>>().Which;
         logs.Should().HaveCount(10);
         var amounts = logs.Select(x => x.Amount).ToArray();
         amounts.Should().BeEquivalentTo(new decimal[] { 70, 69, 68, 67, 66, 65, 64, 63, 62, 61 }, opt => opt.WithStrictOrdering());

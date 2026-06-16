@@ -1,8 +1,11 @@
-using Man10BankService.Models.Database;
+using System.ComponentModel.DataAnnotations;
 using Man10BankService.Models.Requests;
 using Man10BankService.Models.Responses;
 using Man10BankService.Services;
+using Man10BankService.Validation;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 
 namespace Man10BankService.Controllers;
 
@@ -10,64 +13,76 @@ namespace Man10BankService.Controllers;
 [Route("api/[controller]")]
 public class LoanController(LoanService service) : ControllerBase
 {
-    [HttpGet("borrower/{uuid}")]
+    [HttpGet("borrower/{uuid:uuid}")]
     [Produces("application/json")]
-    [ProducesResponseType(typeof(List<Loan>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(List<LoanResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
-    public async Task<ActionResult<List<Loan>>> GetByBorrower([FromRoute] string uuid, [FromQuery] int limit = 100, [FromQuery] int offset = 0)
+    public async Task<ActionResult<List<LoanResponse>>> GetByBorrower([FromRoute] string uuid, [FromQuery] int limit = 100, [FromQuery] int offset = 0)
     {
         var res = await service.GetByBorrowerUuidAsync(uuid, limit, offset);
-        return this.ToActionResult(res);
+        return this.ToActionResult(res, list => list.Select(LoanResponse.From).ToList());
     }
 
     [HttpPost]
+    [Authorize(Policy = "RequireWriteScope")]
     [Consumes("application/json")]
     [Produces("application/json")]
-    [ProducesResponseType(typeof(Loan), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(LoanResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
-    public async Task<ActionResult<Loan?>> Create([FromBody] LoanCreateRequest request)
+    public async Task<ActionResult<LoanResponse>> Create([FromBody] LoanCreateRequest request)
     {
-        if (!ModelState.IsValid) return ValidationProblem(ModelState);
         var res = await service.CreateAsync(request);
-        return this.ToActionResult(res);
+        if (!res.IsSuccess)
+            return this.BuildErrorResult(res.Code);
+
+        var dto = LoanResponse.From(res.Data!);
+        return CreatedAtAction(nameof(GetById), new { id = dto.Id }, dto);
     }
 
     [HttpGet("{id:int}")]
     [Produces("application/json")]
-    [ProducesResponseType(typeof(Loan), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(LoanResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
-    public async Task<ActionResult<Loan>> GetById([FromRoute] int id)
+    public async Task<ActionResult<LoanResponse>> GetById([FromRoute] int id)
     {
         var res = await service.GetByIdAsync(id);
-        return this.ToActionResult(res);
+        return this.ToActionResult(res, LoanResponse.From);
     }
 
-    [HttpPost("{id:int}/repay")] 
+    [HttpPost("{id:int}/repay")]
+    [Authorize(Policy = "RequireWriteScope")]
     [Produces("application/json")]
     [ProducesResponseType(typeof(LoanRepayResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
-    public async Task<ActionResult<LoanRepayResponse>> Repay([FromRoute] int id, [FromQuery] string collectorUuid)
+    public async Task<ActionResult<LoanRepayResponse>> Repay(
+        [FromRoute] int id,
+        [FromQuery, BindRequired, RegularExpression(UuidValidation.Pattern, ErrorMessage = "UUID の形式が不正です。")] string collectorUuid)
     {
         var res = await service.RepayAsync(id, collectorUuid);
         return this.ToActionResult(res);
     }
 
-    [HttpPost("{id:int}/collateral/release")] 
+    [HttpPost("{id:int}/collateral/release")]
+    [Authorize(Policy = "RequireWriteScope")]
     [Produces("application/json")]
-    [ProducesResponseType(typeof(Loan), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(LoanResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
-    public async Task<ActionResult<Loan?>> ReleaseCollateral([FromRoute] int id, [FromQuery] string borrowerUuid)
+    public async Task<ActionResult<LoanResponse>> ReleaseCollateral(
+        [FromRoute] int id,
+        [FromQuery, BindRequired, RegularExpression(UuidValidation.Pattern, ErrorMessage = "UUID の形式が不正です。")] string borrowerUuid)
     {
         var res = await service.ReleaseCollateralAsync(id, borrowerUuid);
-        return this.ToActionResult(res);
+        return this.ToActionResult(res, e => LoanResponse.From(e!));
     }
 }

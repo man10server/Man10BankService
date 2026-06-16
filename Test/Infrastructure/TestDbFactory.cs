@@ -17,8 +17,10 @@ public sealed class TestDbFactory : IDisposable
         var services = new ServiceCollection();
         services.AddLogging();
 
-        // SQLite :memory: を共有接続で使用
-        var connection = new SqliteConnection("DataSource=:memory:;Cache=Shared");
+        // テストごとに一意な名前付きインメモリDBを使用。
+        // "DataSource=:memory:;Cache=Shared" は同一接続文字列の全接続が1つのDBを共有するため、
+        // 並列実行されるテストクラス間でデータが混ざる。一意名にして完全に分離する。
+        var connection = new SqliteConnection($"DataSource=test_{Guid.NewGuid():N};Mode=Memory;Cache=Shared");
         connection.Open();
         services.AddSingleton(connection);
         services.AddPooledDbContextFactory<BankDbContext>(o => o.UseSqlite(connection));

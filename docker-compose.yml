@@ -32,13 +32,18 @@ services:
       db:
         condition: service_healthy
     environment:
-      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_ENVIRONMENT: Production
       Database__Host: db
       Database__Port: "3306"
       Database__Name: man10_bank
       Database__User: root
       Database__Password: root_pw
       Database__TreatTinyAsBoolean: "true"
+      # 本番環境では APIキーの設定が必須（未設定だと起動時に失敗する）。
+      # 環境変数でキーを注入する例（インデックス 0 を上書き）:
+      #   Auth__ApiKeys__0__Key: "<長いランダム文字列>"
+      #   Auth__ApiKeys__0__Name: "man10bank-plugin"
+      #   Auth__ApiKeys__0__Scopes__0: "admin"
     ports:
       - "8080:8080"
 

@@ -12,13 +12,12 @@ public class ServerEstateService
     public ServerEstateService(IDbContextFactory<BankDbContext> dbFactory)
     {
         _dbFactory = dbFactory;
-        Task.Run(SchedulerLoopAsync);
     }
 
     public async Task<ApiResult<List<ServerEstateHistory>>> GetHistoryAsync(int limit = 100, int offset = 0)
     {
-        if (limit is < 1 or > 1000) return ApiResult<List<ServerEstateHistory>>.BadRequest(ErrorCode.LimitOutOfRange);
-        if (offset < 0) return ApiResult<List<ServerEstateHistory>>.BadRequest(ErrorCode.OffsetOutOfRange);
+        if (limit is < 1 or > 1000) return ApiResult<List<ServerEstateHistory>>.Fail(ErrorCode.LimitOutOfRange);
+        if (offset < 0) return ApiResult<List<ServerEstateHistory>>.Fail(ErrorCode.OffsetOutOfRange);
         try
         {
             var repo = new ServerEstateRepository(_dbFactory);
@@ -27,33 +26,22 @@ public class ServerEstateService
         }
         catch (Exception)
         {
-            return ApiResult<List<ServerEstateHistory>>.Error(ErrorCode.UnexpectedError);
+            return ApiResult<List<ServerEstateHistory>>.Fail(ErrorCode.UnexpectedError);
         }
     }
 
-    private async Task SchedulerLoopAsync()
+    // 指定時刻(時単位)のスナップショットが既に記録済みか(冪等判定に使用)
+    public async Task<bool> HasSnapshotForHourAsync(DateTime hourUtc)
     {
-        DateTime? lastRunHourUtc = null;
-        while (true)
-        {
-            try
-            {
-                var nowUtc = DateTime.UtcNow;
-                var currentHourUtc = new DateTime(nowUtc.Year, nowUtc.Month, nowUtc.Day, nowUtc.Hour, 0, 0, DateTimeKind.Utc);
-                if (lastRunHourUtc != currentHourUtc)
-                {
-                    var repo = new ServerEstateRepository(_dbFactory);
-                    await repo.RecordSnapshotAsync(currentHourUtc);
-                    lastRunHourUtc = currentHourUtc;
-                }
-            }
-            catch
-            {
-                // ignore
-            }
+        var repo = new ServerEstateRepository(_dbFactory);
+        return await repo.HasSnapshotForHourAsync(hourUtc);
+    }
 
-            try { await Task.Delay(TimeSpan.FromMinutes(1)); }
-            catch (TaskCanceledException) { break; }
-        }
+    // 指定時刻(時単位)のサーバー資産スナップショットを記録する（スケジューラから呼ばれる）。
+    // リポジトリ側でも同一時刻の重複INSERTを抑止する(冪等化)。
+    public async Task RecordSnapshotAsync(DateTime hourUtc)
+    {
+        var repo = new ServerEstateRepository(_dbFactory);
+        await repo.RecordSnapshotAsync(hourUtc);
     }
 }
