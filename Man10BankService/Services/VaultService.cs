@@ -100,8 +100,9 @@ public class VaultService
             var player = await ResolvePlayerAsync(db, req.Uuid);
             if (player == null) return ApiResult<VaultBalanceData>.Fail(ErrorCode.PlayerNotFound);
 
-            // 残高を増やす操作: 操作金額と更新後残高の双方が上限以下であること。
-            var current = (await db.UserVaults.AsNoTracking().FirstOrDefaultAsync(x => x.Uuid == req.Uuid))?.Balance ?? 0m;
+            // 残高を増やす操作: 行ロックを取得してから更新後残高の上限を検証する(正しさの根拠を行ロックに置く)。
+            var locked = await DbLockHelper.GetUserVaultForUpdateAsync(db, req.Uuid);
+            var current = locked?.Balance ?? 0m;
             if (req.Amount > _options.MaxBalance || current + req.Amount > _options.MaxBalance)
                 return ApiResult<VaultBalanceData>.Fail(ErrorCode.BalanceLimitExceeded);
 
