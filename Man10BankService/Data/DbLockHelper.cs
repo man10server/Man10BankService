@@ -29,6 +29,20 @@ public static class DbLockHelper
         return await db.UserBanks.FirstOrDefaultAsync(x => x.Uuid == uuid);
     }
 
+    // user_vault の行を UUID で取得する。MySQL 時は FOR UPDATE で行ロックする。
+    // 該当行が無ければ null。move のロック順序は user_vault -> user_bank に統一する(設計書 §8.3)。
+    public static async Task<Models.Database.UserVault?> GetUserVaultForUpdateAsync(BankDbContext db, string uuid)
+    {
+        if (IsMySql(db))
+        {
+            return await db.UserVaults
+                .FromSqlInterpolated($"SELECT * FROM user_vault WHERE uuid = {uuid} FOR UPDATE")
+                .FirstOrDefaultAsync();
+        }
+
+        return await db.UserVaults.FirstOrDefaultAsync(x => x.Uuid == uuid);
+    }
+
     // server_loan の行を UUID で取得する。MySQL 時は FOR UPDATE で行ロックする。
     // 該当行が無ければ null。
     public static async Task<Models.Database.ServerLoan?> GetServerLoanForUpdateAsync(BankDbContext db, string uuid)

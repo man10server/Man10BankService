@@ -40,10 +40,12 @@ public static class ErrorCodeMapper
         ErrorCode.CollateralNotFound => 409,
         ErrorCode.CollateralAlreadyReleased => 409,
         ErrorCode.BeforePaybackDate => 409,
+        ErrorCode.BalanceLimitExceeded => 409,
 
         // 予期せぬエラー・補償失敗(500)
         ErrorCode.UnexpectedError => 500,
         ErrorCode.SetBorrowAmountFailed => 500,
+        ErrorCode.VaultConfigInvalid => 500,
 
         // それ以外(成功に付随する補足コード等が誤って渡された場合)は 500 とする
         _ => 500

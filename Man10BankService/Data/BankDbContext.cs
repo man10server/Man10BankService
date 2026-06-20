@@ -16,7 +16,9 @@ public class BankDbContext : DbContext
     public DbSet<ServerLoan> ServerLoans => Set<ServerLoan>();
     public DbSet<ServerLoanLog> ServerLoanLogs => Set<ServerLoanLog>();
     public DbSet<UserBank> UserBanks => Set<UserBank>();
-    
+    public DbSet<UserVault> UserVaults => Set<UserVault>();
+    public DbSet<VaultLog> VaultLogs => Set<VaultLog>();
+
     public BankDbContext(DbContextOptions<BankDbContext> options) : base(options) {}
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -180,7 +182,43 @@ public class BankDbContext : DbContext
             e.ToTable("user_bank");
             e.HasKey(x => x.Id);
             e.HasIndex(x => new { x.Id, x.Uuid, x.Player });
+            // move(user_vault <-> user_bank)が同一 UUID を 1 口座として扱うため uuid を UNIQUE 化する。
+            // SELECT ... WHERE uuid = ... FOR UPDATE の対象を 1 行に固定するためにも必要(設計書 §9.2)。
+            e.HasIndex(x => x.Uuid).IsUnique();
             e.Property(x => x.Balance).HasPrecision(20, 0);
+        });
+
+        modelBuilder.Entity<UserVault>(e =>
+        {
+            e.ToTable("user_vault");
+            e.HasKey(x => x.Id);
+            // uuid は UNIQUE(唯一の真実を 1 行に固定)。
+            e.HasIndex(x => x.Uuid).IsUnique();
+            e.Property(x => x.Balance).HasPrecision(20, 0);
+            e.Property(x => x.Version).HasDefaultValue(0L);
+        });
+
+        modelBuilder.Entity<VaultLog>(e =>
+        {
+            e.ToTable("vault_log");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.Uuid, x.Date });
+            e.Property(x => x.Amount).HasPrecision(20, 0);
+            e.Property(x => x.BalanceAfter).HasColumnName("balance_after").HasPrecision(20, 0);
+            e.Property(x => x.PluginName).HasColumnName("plugin_name").HasMaxLength(32);
+            e.Property(x => x.DisplayNote).HasColumnName("display_note");
+            e.Property(x => x.OperationId).HasColumnName("operation_id").HasMaxLength(64);
+            // source は文字列(PROVIDER/MAN10_API/ADMIN/SYSTEM)で保存する。
+            e.Property(x => x.Source).HasConversion<string>().HasMaxLength(16);
+            // operation_id は指定時のみ UNIQUE(冪等キー)。MySQL は NULL を重複扱いしないため
+            // 通常の UNIQUE インデックスで「指定時 UNIQUE」を満たす。
+            e.HasIndex(x => x.OperationId).IsUnique();
+            e.Property(x => x.PluginName).HasDefaultValue("");
+            e.Property(x => x.Note).HasDefaultValue("");
+            e.Property(x => x.DisplayNote).HasDefaultValue("");
+            e.Property(x => x.Server).HasDefaultValue("");
+            e.Property(x => x.Deposit).HasDefaultValue(true);
+            e.Property(x => x.Date).HasDefaultValueSql("CURRENT_TIMESTAMP").ValueGeneratedOnAdd();
         });
     }
 }

@@ -16,7 +16,11 @@ builder.Services.Configure<Microsoft.AspNetCore.Routing.RouteOptions>(options =>
 });
 
 // 自動400(モデルバリデーション)にも code:"ValidationError" を付与
-builder.Services.AddControllers();
+// JSON の enum は文字列で受ける(VaultMoveDirection / VaultSource など)。
+builder.Services.AddControllers().AddJsonOptions(options =>
+{
+    options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
+});
 builder.Services.Configure<ApiBehaviorOptions>(options =>
 {
     options.InvalidModelStateResponseFactory = context =>
@@ -100,6 +104,15 @@ builder.Services.AddSingleton<Man10BankService.Services.LoanService>();
 builder.Services.AddSingleton<Man10BankService.Services.EstateService>();
 builder.Services.AddSingleton<Man10BankService.Services.ServerEstateService>();
 
+// 電子マネー(Vault)関連の登録。
+// Vault 設定(残高上限・移動緩和)を "Vault" セクションからバインドする。
+builder.Services.Configure<Man10BankService.Services.VaultOptions>(builder.Configuration.GetSection("Vault"));
+// push 通知器 = WebSocket ハブ(IVaultNotifier の実体)。同一インスタンスを両者へ解決する。
+builder.Services.AddSingleton<Man10BankService.Hubs.VaultWsHub>();
+builder.Services.AddSingleton<Man10BankService.Services.IVaultNotifier>(sp =>
+    sp.GetRequiredService<Man10BankService.Hubs.VaultWsHub>());
+builder.Services.AddSingleton<Man10BankService.Services.VaultService>();
+
 // スケジューラ(BackgroundService)を登録。
 // 複数インスタンスを並列起動すると各インスタンスでスケジューラが二重実行され、
 // 日次利息の多重課金・週次返済の多重引落し・スナップショット重複INSERTが起きうる。
@@ -166,6 +179,12 @@ if (!app.Environment.IsDevelopment())
 {
     app.UseHttpsRedirection();
 }
+
+// WebSocket(電子マネー push)を有効化する。KeepAliveInterval で ping/pong による生存監視を行う。
+app.UseWebSockets(new WebSocketOptions
+{
+    KeepAliveInterval = TimeSpan.FromSeconds(15)
+});
 
 app.UseCors("Default");
 app.UseAuthentication();
