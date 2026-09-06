@@ -16,7 +16,12 @@ builder.Services.Configure<Microsoft.AspNetCore.Routing.RouteOptions>(options =>
 });
 
 // 自動400(モデルバリデーション)にも code:"ValidationError" を付与
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(o =>
+    {
+        // enum(VaultMoveDirection 等)を文字列で授受できるようにする(既定は数値)。
+        o.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
+    });
 builder.Services.Configure<ApiBehaviorOptions>(options =>
 {
     options.InvalidModelStateResponseFactory = context =>
@@ -93,6 +98,15 @@ builder.Services.AddCors(options =>
 
 builder.Services.AddSingleton<Man10BankService.Services.IPlayerProfileService, Man10BankService.Services.LocalDbPlayerProfileService>();
 builder.Services.AddSingleton<Man10BankService.Services.BankService>();
+
+// 電子マネー(Vault Provider): session 管理・WebSocket ハブ(=IVaultSessionChannel 実体)・サービス。
+// VaultService は書き込みを BankService の直列化キューに相乗りさせ(VaultProvider 7.1)、
+// すべての書き込みで session claim の一致を検証する。残高 push は行わない(7.4)。
+builder.Services.AddSingleton<Man10BankService.Services.VaultSessionManager>();
+builder.Services.AddSingleton<Man10BankService.Hubs.VaultWsHub>();
+builder.Services.AddSingleton<Man10BankService.Services.IVaultSessionChannel>(sp =>
+    sp.GetRequiredService<Man10BankService.Hubs.VaultWsHub>());
+builder.Services.AddSingleton<Man10BankService.Services.VaultService>();
 builder.Services.AddSingleton<Man10BankService.Services.AtmService>();
 builder.Services.AddSingleton<Man10BankService.Services.ChequeService>();
 builder.Services.AddSingleton<Man10BankService.Services.ServerLoanService>();
@@ -166,6 +180,9 @@ if (!app.Environment.IsDevelopment())
 {
     app.UseHttpsRedirection();
 }
+
+// Vault Provider の session/presence チャネル(/api/Vault/ws)で使う WebSocket を有効化する。
+app.UseWebSockets();
 
 app.UseCors("Default");
 app.UseAuthentication();
