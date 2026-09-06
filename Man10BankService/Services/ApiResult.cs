@@ -38,7 +38,13 @@ public enum ErrorCode
     BorrowAmountMustBeZeroOrGreater,
     RepayAmountMustBePositive,
     RepayAmountMustExceedBorrowAmount,
-    BorrowerMismatch
+    BorrowerMismatch,
+
+    // Vault(電子マネー)
+    SessionMismatch,
+    ServerNotConnected,
+    MaxBalanceExceeded,
+    VaultConfigInvalid
 }
 
 public static class ErrorCodeExtensions
@@ -82,6 +88,10 @@ public static class ErrorCodeExtensions
             ErrorCode.RepayAmountMustBePositive => "返済金額は 0 より大きく指定してください。",
             ErrorCode.RepayAmountMustExceedBorrowAmount => "返済金額は借入金額より大きく指定してください。",
             ErrorCode.BorrowerMismatch => "借手UUIDが貸付情報と一致しません。",
+            ErrorCode.SessionMismatch => "セッションが一致しません。対象プレイヤーの在席サーバーから操作してください。",
+            ErrorCode.ServerNotConnected => "サーバーの同期チャネルが未接続のため claim できません。",
+            ErrorCode.MaxBalanceExceeded => "残高上限を超えるため実行できません。",
+            ErrorCode.VaultConfigInvalid => "電子マネー設定が不正なため機能を停止しています。",
             _ => "不明なエラーが発生しました。"
         };
     }
