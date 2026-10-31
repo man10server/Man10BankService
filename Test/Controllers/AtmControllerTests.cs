@@ -97,7 +97,7 @@ public class AtmControllerTests
         var ctrl = (AtmController)host.Controller;
 
         var db = host.Resources.OfType<TestDbFactory>().First();
-        db.Connection.Close();
+        db.SimulateDbDown();
 
         var res = await ctrl.GetLogs(TestConstants.Uuid, 10);
         res.Result.Should().BeOfType<ObjectResult>()
@@ -119,7 +119,7 @@ public class AtmControllerTests
         ctrl.TryValidateModel(req).Should().BeTrue();
 
         var db = host.Resources.OfType<TestDbFactory>().First();
-        db.Connection.Close();
+        db.SimulateDbDown();
 
         var res = await ctrl.AddLog(req);
         res.Result.Should().BeOfType<ObjectResult>()
