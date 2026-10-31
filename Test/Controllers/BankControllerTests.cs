@@ -49,7 +49,7 @@ public class BankControllerTests
         var ctrl = (BankController)host.Controller;
 
         var db = host.Resources.OfType<TestDbFactory>().First();
-        db.Connection.Close();
+        db.SimulateDbDown();
 
         var res = await ctrl.GetBalance(TestConstants.Uuid);
         (res.Result as ObjectResult)!.StatusCode.Should().Be(500);
@@ -137,7 +137,7 @@ public class BankControllerTests
 
         // DB をダウン
         var db = host.Resources.OfType<TestDbFactory>().First();
-        db.Connection.Close();
+        db.SimulateDbDown();
 
         var res = await ctrl.Deposit(req);
         (res.Result as ObjectResult)!.StatusCode.Should().Be(500);
@@ -266,7 +266,7 @@ public class BankControllerTests
 
         // DB をダウン
         var db = host.Resources.OfType<TestDbFactory>().First();
-        db.Connection.Close();
+        db.SimulateDbDown();
 
         var res2 = await ctrl.Withdraw(req);
         (res2.Result as ObjectResult)!.StatusCode.Should().Be(500);

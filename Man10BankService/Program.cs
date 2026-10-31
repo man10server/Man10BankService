@@ -91,7 +91,9 @@ builder.Services.AddCors(options =>
     });
 });
 
-builder.Services.AddSingleton<Man10BankService.Services.IPlayerProfileService, Man10BankService.Services.MojangPlayerProfileService>();
+// 名前解決はログイン時登録の名簿(player_profile)→口座(user_bank)の順。外部 API(Mojang)には依存しない。
+builder.Services.AddSingleton<Man10BankService.Services.IPlayerProfileService, Man10BankService.Services.RegistryPlayerProfileService>();
+builder.Services.AddSingleton<Man10BankService.Services.PlayerRegistryService>();
 builder.Services.AddSingleton<Man10BankService.Services.BankService>();
 builder.Services.AddSingleton<Man10BankService.Services.AtmService>();
 builder.Services.AddSingleton<Man10BankService.Services.ChequeService>();

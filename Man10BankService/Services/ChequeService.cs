@@ -10,24 +10,24 @@ public class ChequeService
 {
     private readonly IDbContextFactory<BankDbContext> _dbFactory;
     private readonly BankService _bank;
-    private readonly IPlayerProfileService _profileService;
 
     private const string PluginName = "Man10Bank";
 
-    public ChequeService(IDbContextFactory<BankDbContext> dbFactory, BankService bank, IPlayerProfileService profileService)
+    public ChequeService(IDbContextFactory<BankDbContext> dbFactory, BankService bank)
     {
         _dbFactory = dbFactory;
         _bank = bank;
-        _profileService = profileService;
     }
 
     // 小切手発行: 単一トランザクションで「発行者残高減算(op時はスキップ)+MoneyLog→小切手INSERT→Commit」。
     // BankService の直列化キュー上で実行し、補償(返金)Saga を廃止する。
     public async Task<ApiResult<Cheque>> CreateAsync(ChequeCreateRequest req)
     {
-        var player = await _profileService.GetNameByUuidAsync(req.Uuid);
-        if (player == null)
-            return ApiResult<Cheque>.Fail(ErrorCode.PlayerNotFound);
+        // 名前解決(ログイン時登録の名簿 → 口座の名前)はワーカー外で行う。
+        var resolved = await _bank.ResolvePlayerNameAsync(req.Uuid);
+        if (!resolved.IsSuccess)
+            return ApiResult<Cheque>.Fail(resolved.Code);
+        var player = resolved.Data!;
 
         return await _bank.RunExclusiveAsync<Cheque>(async db =>
         {
@@ -53,9 +53,10 @@ public class ChequeService
     // ロック順序: 自リソース(cheque)行→user_bank 行。入金とUsed更新の原子性を保証する。
     public async Task<ApiResult<Cheque>> UseAsync(int id, ChequeUseRequest req)
     {
-        var player = await _profileService.GetNameByUuidAsync(req.Uuid);
-        if (player == null)
-            return ApiResult<Cheque>.Fail(ErrorCode.PlayerNotFound);
+        var resolved = await _bank.ResolvePlayerNameAsync(req.Uuid);
+        if (!resolved.IsSuccess)
+            return ApiResult<Cheque>.Fail(resolved.Code);
+        var player = resolved.Data!;
 
         return await _bank.RunExclusiveAsync<Cheque>(async db =>
         {

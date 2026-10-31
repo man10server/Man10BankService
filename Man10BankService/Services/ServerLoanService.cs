@@ -104,9 +104,11 @@ public class ServerLoanService
             return ApiResult<ServerLoan?>.Fail(limitRes.Code);
         var limit = limitRes.Data;
 
-        var resolvedPlayer = await _profileService.GetNameByUuidAsync(uuid);
-        if (resolvedPlayer == null)
-            return ApiResult<ServerLoan?>.Fail(ErrorCode.PlayerNotFound);
+        // 名前解決(ログイン時登録の名簿 → 口座の名前)はワーカー外で行う。
+        var resolved = await _bank.ResolvePlayerNameAsync(uuid);
+        if (!resolved.IsSuccess)
+            return ApiResult<ServerLoan?>.Fail(resolved.Code);
+        var resolvedPlayer = resolved.Data!;
 
         var repo = new ServerLoanRepository(_dbFactory, _profileService);
 
@@ -141,9 +143,10 @@ public class ServerLoanService
     // 出金成功後の債務減算が同一 tx 内のため、片方だけ成立する不整合が発生しない(補償 Saga 廃止)。
     public async Task<ApiResult<ServerLoan?>> RepayAsync(string uuid, decimal? payAmount)
     {
-        var resolvedPlayer = await _profileService.GetNameByUuidAsync(uuid);
-        if (resolvedPlayer == null)
-            return ApiResult<ServerLoan?>.Fail(ErrorCode.PlayerNotFound);
+        var resolved = await _bank.ResolvePlayerNameAsync(uuid);
+        if (!resolved.IsSuccess)
+            return ApiResult<ServerLoan?>.Fail(resolved.Code);
+        var resolvedPlayer = resolved.Data!;
 
         var repo = new ServerLoanRepository(_dbFactory, _profileService);
 

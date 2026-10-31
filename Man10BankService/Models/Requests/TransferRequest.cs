@@ -37,6 +37,11 @@ public class TransferRequest : IValidatableObject
     [StringLength(16)]
     public required string Server { get; set; }
 
+    // 冪等キー(任意)。プラグインが要求ごとに生成する UUID。同じキーの再送には初回の結果を返す。
+    [StringLength(36)]
+    [RegularExpression(@"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$", ErrorMessage = "requestId の形式が不正です。")]
+    public string? RequestId { get; set; }
+
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
         if (Amount <= 0m)

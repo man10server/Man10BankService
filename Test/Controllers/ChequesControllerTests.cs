@@ -26,7 +26,7 @@ public class ChequesControllerTests
 
         var profile = new FakePlayerProfileService();
         var bank = new BankService(db.Factory, profile);
-        var service = new ChequeService(db.Factory, bank, profile);
+        var service = new ChequeService(db.Factory, bank);
         var ctrl = new ChequesController(service)
         {
             ControllerContext = new ControllerContext

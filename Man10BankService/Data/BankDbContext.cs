@@ -10,8 +10,10 @@ public class BankDbContext : DbContext
     public DbSet<Cheque> Cheques => Set<Cheque>();
     public DbSet<Estate> Estates => Set<Estate>();
     public DbSet<EstateHistory> EstateHistories => Set<EstateHistory>();
+    public DbSet<IdempotencyKey> IdempotencyKeys => Set<IdempotencyKey>();
     public DbSet<Loan> Loans => Set<Loan>();
     public DbSet<MoneyLog> MoneyLogs => Set<MoneyLog>();
+    public DbSet<PlayerProfile> PlayerProfiles => Set<PlayerProfile>();
     public DbSet<ServerEstateHistory> ServerEstateHistories => Set<ServerEstateHistory>();
     public DbSet<ServerLoan> ServerLoans => Set<ServerLoan>();
     public DbSet<ServerLoanLog> ServerLoanLogs => Set<ServerLoanLog>();
@@ -82,6 +84,17 @@ public class BankDbContext : DbContext
             e.Property(x => x.Date).HasDefaultValueSql("CURRENT_TIMESTAMP").ValueGeneratedOnAdd();
         });
 
+        modelBuilder.Entity<IdempotencyKey>(e =>
+        {
+            e.ToTable("idempotency_key");
+            e.HasKey(x => x.RequestId);
+            e.HasIndex(x => x.CreatedAt);
+            e.Property(x => x.RequestId).HasColumnName("request_id");
+            e.Property(x => x.Amount).HasPrecision(20, 0);
+            e.Property(x => x.ResultBalance).HasColumnName("result_balance").HasPrecision(20, 0);
+            e.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("CURRENT_TIMESTAMP").ValueGeneratedOnAdd();
+        });
+
         modelBuilder.Entity<Loan>(e =>
         {
             e.ToTable("loan_table");
@@ -122,6 +135,14 @@ public class BankDbContext : DbContext
             e.Property(x => x.Server).HasDefaultValue("");
             e.Property(x => x.Deposit).HasDefaultValue(true);
             e.Property(x => x.Date).HasDefaultValueSql("CURRENT_TIMESTAMP").ValueGeneratedOnAdd();
+        });
+
+        modelBuilder.Entity<PlayerProfile>(e =>
+        {
+            e.ToTable("player_profile");
+            e.HasKey(x => x.Uuid);
+            e.HasIndex(x => x.Name);
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
         });
 
         modelBuilder.Entity<ServerEstateHistory>(e =>

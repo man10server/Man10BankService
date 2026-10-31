@@ -94,6 +94,13 @@ public class AuthenticationTests : IClassFixture<AuthTestWebApplicationFactory>
         var client = _factory.CreateClient();
         client.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Bearer", AuthTestWebApplicationFactory.AdminKey);
+
+        // 実運用と同じく、ログイン時の名簿登録(POST /api/Players)を済ませてから入金する。
+        // 名前解決は名簿(player_profile)→口座の順で行われ、未登録かつ口座無しの UUID への入金は 404 になるため。
+        var register = await client.PostAsJsonAsync("/api/Players",
+            new PlayerRegisterRequest { Uuid = DepositUuid, Name = "auth-test" });
+        register.StatusCode.Should().Be(HttpStatusCode.OK);
+
         var res = await client.PostAsJsonAsync("/api/Bank/deposit", NewDeposit());
         res.StatusCode.Should().Be(HttpStatusCode.OK);
     }

@@ -40,6 +40,7 @@ public static class ErrorCodeMapper
         ErrorCode.CollateralNotFound => 409,
         ErrorCode.CollateralAlreadyReleased => 409,
         ErrorCode.BeforePaybackDate => 409,
+        ErrorCode.IdempotencyKeyMismatch => 409,
 
         // 予期せぬエラー・補償失敗(500)
         ErrorCode.UnexpectedError => 500,
