@@ -74,6 +74,20 @@ create table estate_tbl
 create index estate_tbl_player_uuid_index
     on estate_tbl (player, uuid);
 
+create table idempotency_key
+(
+    request_id     varchar(36)                        not null
+        primary key,
+    operation      varchar(16)                        not null comment 'deposit/withdraw/transfer',
+    uuid           varchar(36)                        not null,
+    amount         decimal(20)                        not null,
+    result_balance decimal(20)                        not null,
+    created_at     datetime default CURRENT_TIMESTAMP not null
+);
+
+create index idempotency_key_created_at_index
+    on idempotency_key (created_at);
+
 create table loan_table
 (
     id              int auto_increment

@@ -38,7 +38,8 @@ public enum ErrorCode
     BorrowAmountMustBeZeroOrGreater,
     RepayAmountMustBePositive,
     RepayAmountMustExceedBorrowAmount,
-    BorrowerMismatch
+    BorrowerMismatch,
+    IdempotencyKeyMismatch
 }
 
 public static class ErrorCodeExtensions
@@ -82,6 +83,7 @@ public static class ErrorCodeExtensions
             ErrorCode.RepayAmountMustBePositive => "返済金額は 0 より大きく指定してください。",
             ErrorCode.RepayAmountMustExceedBorrowAmount => "返済金額は借入金額より大きく指定してください。",
             ErrorCode.BorrowerMismatch => "借手UUIDが貸付情報と一致しません。",
+            ErrorCode.IdempotencyKeyMismatch => "同じrequestIdで内容の異なる要求は処理できません。",
             _ => "不明なエラーが発生しました。"
         };
     }

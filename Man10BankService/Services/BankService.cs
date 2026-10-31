@@ -19,6 +19,11 @@ public class BankService
     private readonly Channel<Func<Task>> _txChannel = Channel.CreateUnbounded<Func<Task>>(
         new UnboundedChannelOptions { SingleReader = true, SingleWriter = false });
 
+    // 冪等キーの保持期間と掃除間隔。再送はタイムアウト直後〜数分以内に起きるため7日あれば十分。
+    private static readonly TimeSpan IdempotencyKeyRetention = TimeSpan.FromDays(7);
+    private static readonly TimeSpan IdempotencyKeyPruneInterval = TimeSpan.FromHours(1);
+    private long _lastPruneTicks;
+
     public BankService(IDbContextFactory<BankDbContext> dbFactory, IPlayerProfileService profileService)
     {
         _dbFactory = dbFactory;
@@ -93,7 +98,7 @@ public class BankService
         if (!player.IsSuccess)
             return ApiResult<decimal>.Fail(player.Code);
 
-        return await RunExclusiveAsync(async db =>
+        return await RunMoneyOpAsync(IdempotencyRequest.From(req.RequestId, "deposit", req.Uuid, req.Amount), async db =>
         {
             var bal = await BankRepository.ChangeBalanceCoreAsync(
                 db, req.Uuid, player.Data!, req.Amount, req.PluginName, req.Note, req.DisplayNote, req.Server);
@@ -107,7 +112,7 @@ public class BankService
         if (!player.IsSuccess)
             return ApiResult<decimal>.Fail(player.Code);
 
-        return await RunExclusiveAsync(async db =>
+        return await RunMoneyOpAsync(IdempotencyRequest.From(req.RequestId, "withdraw", req.Uuid, req.Amount), async db =>
         {
             // 行ロック下で残高不足を判定してから減算する。
             var bank = await DbLockHelper.GetUserBankForUpdateAsync(db, req.Uuid);
@@ -136,7 +141,7 @@ public class BankService
         if (!toPlayer.IsSuccess)
             return ApiResult<decimal>.Fail(toPlayer.Code);
 
-        return await RunExclusiveAsync(async db =>
+        return await RunMoneyOpAsync(IdempotencyRequest.From(req.RequestId, "transfer", req.FromUuid, req.Amount), async db =>
         {
             // デッドロック防止のため UUID 昇順で行ロックを取得する。
             var ordered = string.CompareOrdinal(req.FromUuid, req.ToUuid) <= 0
@@ -162,6 +167,115 @@ public class BankService
                 req.PluginName, req.Note, req.DisplayNote, req.Server);
 
             return ApiResult<decimal>.Ok(newFromBalance);
+        });
+    }
+
+    // 冪等キーの照合に使う要求の要約。同じ requestId は同じ操作・対象・金額でなければならない。
+    private sealed record IdempotencyRequest(string RequestId, string Operation, string Uuid, decimal Amount)
+    {
+        public static IdempotencyRequest? From(string? requestId, string operation, string uuid, decimal amount)
+            => string.IsNullOrWhiteSpace(requestId)
+                ? null
+                : new IdempotencyRequest(requestId.Trim().ToLowerInvariant(), operation, uuid, amount);
+    }
+
+    // 冪等キー付きの金銭操作。requestId が無い要求は従来どおり毎回実行する。
+    // 同じ requestId が処理済みなら work を実行せず初回の結果(残高)を返す。
+    // キーの保存は残高変更と同一トランザクションで行い、「残高は変わったがキーが無い」状態を作らない。
+    private async Task<ApiResult<decimal>> RunMoneyOpAsync(
+        IdempotencyRequest? idem,
+        Func<BankDbContext, Task<ApiResult<decimal>>> work)
+    {
+        if (idem == null)
+            return await RunExclusiveAsync(work);
+
+        var result = await RunExclusiveAsync(async db =>
+        {
+            var replay = await FindReplayAsync(db, idem);
+            if (replay != null)
+                return replay;
+
+            var fresh = await work(db);
+            if (fresh.IsSuccess)
+            {
+                db.IdempotencyKeys.Add(new IdempotencyKey
+                {
+                    RequestId = idem.RequestId,
+                    Operation = idem.Operation,
+                    Uuid = idem.Uuid,
+                    Amount = idem.Amount,
+                    ResultBalance = fresh.Data,
+                });
+            }
+            return fresh;
+        });
+
+        // 複数インスタンスで同一キーが同時に処理された場合、後着側は主キー重複で失敗(UnexpectedError)する。
+        // コミット済みのキーがあれば初回結果を返し、呼び出し側に「二重実行」や「失敗」を見せない。
+        if (!result.IsSuccess && result.Code == ErrorCode.UnexpectedError)
+        {
+            var committed = await FindCommittedReplayAsync(idem);
+            if (committed != null)
+                return committed;
+        }
+
+        if (result.IsSuccess)
+            SchedulePruneIfDue();
+        return result;
+    }
+
+    // 処理済みキーがあれば再送として初回結果を返す。内容が異なる場合はキーの使い回しとして拒否する。
+    private static async Task<ApiResult<decimal>?> FindReplayAsync(BankDbContext db, IdempotencyRequest idem)
+    {
+        var stored = await db.IdempotencyKeys
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.RequestId == idem.RequestId);
+        if (stored == null)
+            return null;
+
+        var matches = stored.Operation == idem.Operation
+                      && string.Equals(stored.Uuid, idem.Uuid, StringComparison.OrdinalIgnoreCase)
+                      && stored.Amount == idem.Amount;
+        return matches
+            ? ApiResult<decimal>.Ok(stored.ResultBalance)
+            : ApiResult<decimal>.Fail(ErrorCode.IdempotencyKeyMismatch);
+    }
+
+    private async Task<ApiResult<decimal>?> FindCommittedReplayAsync(IdempotencyRequest idem)
+    {
+        try
+        {
+            await using var db = await _dbFactory.CreateDbContextAsync();
+            return await FindReplayAsync(db, idem);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    // 保持期間を過ぎた冪等キーを1時間に1回だけ、ワーカー上の独立ジョブとして削除する。
+    private void SchedulePruneIfDue()
+    {
+        var now = DateTime.UtcNow.Ticks;
+        var last = Interlocked.Read(ref _lastPruneTicks);
+        if (now - last < IdempotencyKeyPruneInterval.Ticks)
+            return;
+        if (Interlocked.CompareExchange(ref _lastPruneTicks, now, last) != last)
+            return;
+
+        _txChannel.Writer.TryWrite(async () =>
+        {
+            try
+            {
+                await using var db = await _dbFactory.CreateDbContextAsync();
+                var cutoff = DateTime.UtcNow - IdempotencyKeyRetention;
+                await db.IdempotencyKeys.Where(x => x.CreatedAt < cutoff).ExecuteDeleteAsync();
+            }
+            catch (Exception)
+            {
+                // 掃除の失敗は金銭操作に影響させない。次回の間隔で再試行される。
+            }
         });
     }
 
