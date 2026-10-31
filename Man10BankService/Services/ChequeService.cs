@@ -23,7 +23,7 @@ public class ChequeService
     // BankService の直列化キュー上で実行し、補償(返金)Saga を廃止する。
     public async Task<ApiResult<Cheque>> CreateAsync(ChequeCreateRequest req)
     {
-        // 名前解決は DB 優先(口座が無い初回のみ Mojang)。ワーカー外で行う。
+        // 名前解決(ログイン時登録の名簿 → 口座の名前)はワーカー外で行う。
         var resolved = await _bank.ResolvePlayerNameAsync(req.Uuid);
         if (!resolved.IsSuccess)
             return ApiResult<Cheque>.Fail(resolved.Code);

@@ -104,7 +104,7 @@ public class ServerLoanService
             return ApiResult<ServerLoan?>.Fail(limitRes.Code);
         var limit = limitRes.Data;
 
-        // 名前解決は DB 優先(口座が無い初回のみ Mojang)。ワーカー外で行う。
+        // 名前解決(ログイン時登録の名簿 → 口座の名前)はワーカー外で行う。
         var resolved = await _bank.ResolvePlayerNameAsync(uuid);
         if (!resolved.IsSuccess)
             return ApiResult<ServerLoan?>.Fail(resolved.Code);

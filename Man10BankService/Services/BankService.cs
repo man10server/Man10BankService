@@ -63,24 +63,14 @@ public class BankService
         }
     }
 
-    // プレイヤー名の解決。user_bank に口座があればその名前を使い、口座が無い(初回)場合のみ
-    // Mojang へ問い合わせる。直列化ワーカーの外で呼ぶこと:
-    // ワーカー内で外部 API を待つと、Mojang の遅延/障害が全金銭操作のキュー詰まりとなり、
+    // プレイヤー名の解決(IPlayerProfileService: ログイン時登録の名簿 → 口座の名前)。
+    // 直列化ワーカーの外で呼ぶこと: ワーカー内で待つと、解決の遅延が全金銭操作のキュー詰まりとなり、
     // プラグイン側のタイムアウト(結果不明のまま後からコミットされる)を誘発する。
-    // 口座が無く Mojang でも見つからない UUID は PlayerNotFound とし、実在しない口座への入金を防ぐ。
+    // 解決できない UUID は PlayerNotFound とし、実在しない口座への入金を防ぐ。
     public async Task<ApiResult<string>> ResolvePlayerNameAsync(string uuid)
     {
         try
         {
-            await using var db = await _dbFactory.CreateDbContextAsync();
-            var stored = await db.UserBanks
-                .AsNoTracking()
-                .Where(x => x.Uuid == uuid)
-                .Select(x => x.Player)
-                .FirstOrDefaultAsync();
-            if (!string.IsNullOrWhiteSpace(stored))
-                return ApiResult<string>.Ok(stored);
-
             var resolved = await _profileService.GetNameByUuidAsync(uuid);
             return resolved == null
                 ? ApiResult<string>.Fail(ErrorCode.PlayerNotFound)
@@ -283,7 +273,7 @@ public class BankService
     // 成功(IsSuccess)時のみ Commit し、失敗時はロールバックする。
     // 小切手・ローンなど横断的な金銭操作はこのメソッドに自身の処理(残高変更+自リソース更新)を
     // 載せることで、補償 Saga を使わず1トランザクションで原子性を担保する。
-    // 外部 API(Mojang 等)の待ちはワーカーを塞ぐため、work の中では行わないこと。
+    // 外部 API や名前解決の待ちはワーカーを塞ぐため、work の中では行わないこと。
     public Task<ApiResult<T>> RunExclusiveAsync<T>(Func<BankDbContext, Task<ApiResult<T>>> work)
     {
         var tcs = new TaskCompletionSource<ApiResult<T>>(TaskCreationOptions.RunContinuationsAsynchronously);
