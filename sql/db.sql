@@ -130,6 +130,17 @@ create table money_log
 create index money_log_uuid_player_date_index
     on money_log (uuid, player, date);
 
+create table player_profile
+(
+    uuid       varchar(36)                        not null
+        primary key,
+    name       varchar(16)                        not null,
+    updated_at datetime default CURRENT_TIMESTAMP not null
+);
+
+create index player_profile_name_index
+    on player_profile (name);
+
 create table server_estate_history
 (
     id     int auto_increment

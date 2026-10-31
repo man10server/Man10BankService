@@ -92,6 +92,7 @@ builder.Services.AddCors(options =>
 });
 
 builder.Services.AddSingleton<Man10BankService.Services.IPlayerProfileService, Man10BankService.Services.MojangPlayerProfileService>();
+builder.Services.AddSingleton<Man10BankService.Services.PlayerRegistryService>();
 builder.Services.AddSingleton<Man10BankService.Services.BankService>();
 builder.Services.AddSingleton<Man10BankService.Services.AtmService>();
 builder.Services.AddSingleton<Man10BankService.Services.ChequeService>();

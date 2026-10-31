@@ -13,6 +13,7 @@ public class BankDbContext : DbContext
     public DbSet<IdempotencyKey> IdempotencyKeys => Set<IdempotencyKey>();
     public DbSet<Loan> Loans => Set<Loan>();
     public DbSet<MoneyLog> MoneyLogs => Set<MoneyLog>();
+    public DbSet<PlayerProfile> PlayerProfiles => Set<PlayerProfile>();
     public DbSet<ServerEstateHistory> ServerEstateHistories => Set<ServerEstateHistory>();
     public DbSet<ServerLoan> ServerLoans => Set<ServerLoan>();
     public DbSet<ServerLoanLog> ServerLoanLogs => Set<ServerLoanLog>();
@@ -134,6 +135,14 @@ public class BankDbContext : DbContext
             e.Property(x => x.Server).HasDefaultValue("");
             e.Property(x => x.Deposit).HasDefaultValue(true);
             e.Property(x => x.Date).HasDefaultValueSql("CURRENT_TIMESTAMP").ValueGeneratedOnAdd();
+        });
+
+        modelBuilder.Entity<PlayerProfile>(e =>
+        {
+            e.ToTable("player_profile");
+            e.HasKey(x => x.Uuid);
+            e.HasIndex(x => x.Name);
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
         });
 
         modelBuilder.Entity<ServerEstateHistory>(e =>
