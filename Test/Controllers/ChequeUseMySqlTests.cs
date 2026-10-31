@@ -22,7 +22,7 @@ public class ChequeUseMySqlTests
         using var db = MySqlTestDbFactory.Create();
         var profile = new FakePlayerProfileService();
         var bank = new BankService(db.Factory, profile);
-        var cheque = new ChequeService(db.Factory, bank, profile);
+        var cheque = new ChequeService(db.Factory, bank);
 
         // 発行者残高を用意し op=false で小切手を発行(額面1000)
         (await bank.DepositAsync(new DepositRequest
@@ -76,7 +76,7 @@ public class ChequeUseMySqlTests
         // 発行は正常名で行う(発行者残高を引き落として小切手を作る)
         var normalProfile = new FakePlayerProfileService("issuer");
         var normalBank = new BankService(db.Factory, normalProfile);
-        var normalCheque = new ChequeService(db.Factory, normalBank, normalProfile);
+        var normalCheque = new ChequeService(db.Factory, normalBank);
         (await normalBank.DepositAsync(new DepositRequest
         {
             Uuid = IssuerUuid, Amount = 1000m, PluginName = "test", Note = "seed", DisplayNote = "初期", Server = "dev"
@@ -88,7 +88,7 @@ public class ChequeUseMySqlTests
         // 使用は受取人入金が失敗するプロファイルで実行
         var badProfile = new OversizedReceiverProfileService();
         var badBank = new BankService(db.Factory, badProfile);
-        var badCheque = new ChequeService(db.Factory, badBank, badProfile);
+        var badCheque = new ChequeService(db.Factory, badBank);
         var res = await badCheque.UseAsync(id, new ChequeUseRequest { Uuid = ReceiverUuid });
 
         // 例外は RunExclusiveAsync で握られ UnexpectedError として返る

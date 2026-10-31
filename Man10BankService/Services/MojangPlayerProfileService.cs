@@ -5,9 +5,11 @@ namespace Man10BankService.Services;
 
 public partial class MojangPlayerProfileService : IPlayerProfileService
 {
+    // プラグイン側のリクエストタイムアウト(既定10秒)より十分短くし、
+    // Mojang 障害時に「結果不明のまま後からコミットされる」事態を避ける。
     private static readonly HttpClient Http = new()
     {
-        Timeout = TimeSpan.FromSeconds(8)
+        Timeout = TimeSpan.FromSeconds(5)
     };
 
     private static readonly Regex UuidHex32 = MyRegex();

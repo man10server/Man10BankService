@@ -36,7 +36,7 @@ public class ChequeAtomicityTests
 
         var profile = new FakePlayerProfileService();
         var bank = new BankService(db.Factory, profile);
-        var cheque = new ChequeService(db.Factory, bank, profile);
+        var cheque = new ChequeService(db.Factory, bank);
         var ctrl = new ChequesController(cheque)
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },

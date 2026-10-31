@@ -58,28 +58,57 @@ public class BankService
         }
     }
 
-    public Task<ApiResult<decimal>> DepositAsync(DepositRequest req)
+    // プレイヤー名の解決。user_bank に口座があればその名前を使い、口座が無い(初回)場合のみ
+    // Mojang へ問い合わせる。直列化ワーカーの外で呼ぶこと:
+    // ワーカー内で外部 API を待つと、Mojang の遅延/障害が全金銭操作のキュー詰まりとなり、
+    // プラグイン側のタイムアウト(結果不明のまま後からコミットされる)を誘発する。
+    // 口座が無く Mojang でも見つからない UUID は PlayerNotFound とし、実在しない口座への入金を防ぐ。
+    public async Task<ApiResult<string>> ResolvePlayerNameAsync(string uuid)
     {
-        return RunExclusiveAsync(async db =>
+        try
         {
-            var player = await _profileService.GetNameByUuidAsync(req.Uuid);
-            if (player == null)
-                return ApiResult<decimal>.Fail(ErrorCode.PlayerNotFound);
+            await using var db = await _dbFactory.CreateDbContextAsync();
+            var stored = await db.UserBanks
+                .AsNoTracking()
+                .Where(x => x.Uuid == uuid)
+                .Select(x => x.Player)
+                .FirstOrDefaultAsync();
+            if (!string.IsNullOrWhiteSpace(stored))
+                return ApiResult<string>.Ok(stored);
 
+            var resolved = await _profileService.GetNameByUuidAsync(uuid);
+            return resolved == null
+                ? ApiResult<string>.Fail(ErrorCode.PlayerNotFound)
+                : ApiResult<string>.Ok(resolved);
+        }
+        catch (Exception)
+        {
+            return ApiResult<string>.Fail(ErrorCode.UnexpectedError);
+        }
+    }
+
+    public async Task<ApiResult<decimal>> DepositAsync(DepositRequest req)
+    {
+        var player = await ResolvePlayerNameAsync(req.Uuid);
+        if (!player.IsSuccess)
+            return ApiResult<decimal>.Fail(player.Code);
+
+        return await RunExclusiveAsync(async db =>
+        {
             var bal = await BankRepository.ChangeBalanceCoreAsync(
-                db, req.Uuid, player, req.Amount, req.PluginName, req.Note, req.DisplayNote, req.Server);
+                db, req.Uuid, player.Data!, req.Amount, req.PluginName, req.Note, req.DisplayNote, req.Server);
             return ApiResult<decimal>.Ok(bal);
         });
     }
 
-    public Task<ApiResult<decimal>> WithdrawAsync(WithdrawRequest req)
+    public async Task<ApiResult<decimal>> WithdrawAsync(WithdrawRequest req)
     {
-        return RunExclusiveAsync(async db =>
-        {
-            var player = await _profileService.GetNameByUuidAsync(req.Uuid);
-            if (player == null)
-                return ApiResult<decimal>.Fail(ErrorCode.PlayerNotFound);
+        var player = await ResolvePlayerNameAsync(req.Uuid);
+        if (!player.IsSuccess)
+            return ApiResult<decimal>.Fail(player.Code);
 
+        return await RunExclusiveAsync(async db =>
+        {
             // 行ロック下で残高不足を判定してから減算する。
             var bank = await DbLockHelper.GetUserBankForUpdateAsync(db, req.Uuid);
             var current = bank?.Balance ?? 0m;
@@ -87,7 +116,7 @@ public class BankService
                 return ApiResult<decimal>.Fail(ErrorCode.InsufficientFunds);
 
             var bal = await BankRepository.ChangeBalanceCoreAsync(
-                db, req.Uuid, player, -req.Amount, req.PluginName, req.Note, req.DisplayNote, req.Server);
+                db, req.Uuid, player.Data!, -req.Amount, req.PluginName, req.Note, req.DisplayNote, req.Server);
             return ApiResult<decimal>.Ok(bal);
         });
     }
@@ -95,20 +124,20 @@ public class BankService
     // 送金: 単一トランザクションで送金元出金+送金先入金+MoneyLog2件。
     // user_bank の行ロックは UUID 昇順で取得しデッドロックを防ぐ。
     // 残高不足は InsufficientFunds(409)、同一UUIDは ValidationError(コントローラ前段でも拒否)。
-    public Task<ApiResult<decimal>> TransferAsync(TransferRequest req)
+    public async Task<ApiResult<decimal>> TransferAsync(TransferRequest req)
     {
-        return RunExclusiveAsync(async db =>
+        if (string.Equals(req.FromUuid, req.ToUuid, StringComparison.OrdinalIgnoreCase))
+            return ApiResult<decimal>.Fail(ErrorCode.ValidationError);
+
+        var fromPlayer = await ResolvePlayerNameAsync(req.FromUuid);
+        if (!fromPlayer.IsSuccess)
+            return ApiResult<decimal>.Fail(fromPlayer.Code);
+        var toPlayer = await ResolvePlayerNameAsync(req.ToUuid);
+        if (!toPlayer.IsSuccess)
+            return ApiResult<decimal>.Fail(toPlayer.Code);
+
+        return await RunExclusiveAsync(async db =>
         {
-            if (string.Equals(req.FromUuid, req.ToUuid, StringComparison.OrdinalIgnoreCase))
-                return ApiResult<decimal>.Fail(ErrorCode.ValidationError);
-
-            var fromPlayer = await _profileService.GetNameByUuidAsync(req.FromUuid);
-            if (fromPlayer == null)
-                return ApiResult<decimal>.Fail(ErrorCode.PlayerNotFound);
-            var toPlayer = await _profileService.GetNameByUuidAsync(req.ToUuid);
-            if (toPlayer == null)
-                return ApiResult<decimal>.Fail(ErrorCode.PlayerNotFound);
-
             // デッドロック防止のため UUID 昇順で行ロックを取得する。
             var ordered = string.CompareOrdinal(req.FromUuid, req.ToUuid) <= 0
                 ? new[] { req.FromUuid, req.ToUuid }
@@ -124,12 +153,12 @@ public class BankService
 
             // 送金元: 出金ログ
             var newFromBalance = await BankRepository.ChangeBalanceCoreAsync(
-                db, req.FromUuid, fromPlayer, -req.Amount,
+                db, req.FromUuid, fromPlayer.Data!, -req.Amount,
                 req.PluginName, req.Note, req.DisplayNote, req.Server);
 
             // 送金先: 入金ログ
             await BankRepository.ChangeBalanceCoreAsync(
-                db, req.ToUuid, toPlayer, req.Amount,
+                db, req.ToUuid, toPlayer.Data!, req.Amount,
                 req.PluginName, req.Note, req.DisplayNote, req.Server);
 
             return ApiResult<decimal>.Ok(newFromBalance);
@@ -140,6 +169,7 @@ public class BankService
     // 成功(IsSuccess)時のみ Commit し、失敗時はロールバックする。
     // 小切手・ローンなど横断的な金銭操作はこのメソッドに自身の処理(残高変更+自リソース更新)を
     // 載せることで、補償 Saga を使わず1トランザクションで原子性を担保する。
+    // 外部 API(Mojang 等)の待ちはワーカーを塞ぐため、work の中では行わないこと。
     public Task<ApiResult<T>> RunExclusiveAsync<T>(Func<BankDbContext, Task<ApiResult<T>>> work)
     {
         var tcs = new TaskCompletionSource<ApiResult<T>>(TaskCreationOptions.RunContinuationsAsynchronously);
