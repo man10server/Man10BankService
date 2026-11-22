@@ -81,7 +81,10 @@ public class ServerLoanService
         // 次回支払日(設定に基づく週次支払日時の次回)
         var nextRepay = GetNextWeeklyRepayDateTime();
 
-        return ApiResult<PaymentInfoResponse>.Ok(new PaymentInfoResponse(nextRepay, perDay));
+        // 次回の定期返済で引き落とす額(現時点の残債で計算。最低返済額を反映する)
+        var nextPayment = CalculateScheduledPayment(loan.BorrowAmount, loan.PaymentAmount);
+
+        return ApiResult<PaymentInfoResponse>.Ok(new PaymentInfoResponse(nextRepay, perDay, nextPayment));
     }
 
     public async Task<ApiResult<List<ServerLoanLog>>> GetLogsAsync(string uuid, int limit = 100, int offset = 0)

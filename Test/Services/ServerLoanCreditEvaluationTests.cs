@@ -328,6 +328,8 @@ public class ServerLoanCreditEvaluationTests
         (await loan.BorrowAsync(Uuid, MinAmount)).IsSuccess.Should().BeTrue();
         (await loan.SetPaymentAmountAsync(Uuid, paymentAmount)).IsSuccess.Should().BeTrue();
 
+        (await loan.GetPaymentInfoAsync(Uuid)).Data!.NextPaymentAmount.Should().Be(expectedPaid);
+
         await loan.RunWeeklyRepayForAllAsync();
 
         (await GetLogsAsync(db)).Should().ContainSingle(l => l.Action == "RepaySuccess" && l.Amount == -expectedPaid);
