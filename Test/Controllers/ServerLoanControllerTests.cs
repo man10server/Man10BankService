@@ -269,8 +269,8 @@ public class ServerLoanControllerTests
         logs.Any(x => x.Action == "SetBorrowAmount" && x.Amount == 300m).Should().BeTrue();
     }
 
-    [Fact(DisplayName = "repay: 所持金不足で409・借入ログは変化せず失敗ログが記録される")]
-    public async Task Repay_InsufficientBalance_Should409_And_LogFailure()
+    [Fact(DisplayName = "repay: 所持金不足で409・手動返済は失敗ログも失敗回数も記録しない")]
+    public async Task Repay_InsufficientBalance_Should409_And_NotCountAsFailure()
     {
         using var env = BuildController();
         var ctrl = (ServerLoanController)env.Host.Controller;
@@ -298,7 +298,12 @@ public class ServerLoanControllerTests
         var loanLogs = loanLogRes.Result
             .Should().BeOfType<OkObjectResult>().Which.Value
             .Should().BeOfType<List<ServerLoanLogResponse>>().Which;
-        loanLogs.Any(l => l.Action == "RepayFailure").Should().BeTrue();
+        loanLogs.Any(l => l.Action == "RepayFailure").Should().BeFalse();
+
+        var loanRes = await ctrl.GetByUuid(uuid);
+        loanRes.Result
+            .Should().BeOfType<OkObjectResult>().Which.Value
+            .Should().BeOfType<ServerLoanResponse>().Which.FailedPayment.Should().Be(0);
     }
 
     [Fact(DisplayName = "repay: 出金・残債減少・ログ追記を検証する")]
@@ -334,7 +339,7 @@ public class ServerLoanControllerTests
         var loanLogs = loanLogRes.Result
             .Should().BeOfType<OkObjectResult>().Which.Value
             .Should().BeOfType<List<ServerLoanLogResponse>>().Which;
-        loanLogs.Any(l => l.Action == "RepaySuccess" && l.Amount == -expectedRepayAmount).Should().BeTrue();
+        loanLogs.Any(l => l.Action == "EarlyRepay" && l.Amount == -expectedRepayAmount).Should().BeTrue();
     }
 
     [Fact(DisplayName = "repay: 金額未指定と過払い要求は残債にクリップして成功する")]
@@ -375,8 +380,8 @@ public class ServerLoanControllerTests
         var loanLogs = loanLogRes2.Result
             .Should().BeOfType<OkObjectResult>().Which.Value
             .Should().BeOfType<List<ServerLoanLogResponse>>().Which;
-        loanLogs.Any(l => l.Action == "RepaySuccess" && l.Amount == -used1).Should().BeTrue();
-        loanLogs.Any(l => l.Action == "RepaySuccess" && l.Amount == -remain).Should().BeTrue();
+        loanLogs.Any(l => l.Action == "EarlyRepay" && l.Amount == -used1).Should().BeTrue();
+        loanLogs.Any(l => l.Action == "EarlyRepay" && l.Amount == -remain).Should().BeTrue();
     }
 
     private static async Task<List<MoneyLog>> GetMoneyLogsAsync(IDbContextFactory<BankDbContext> f, string uuid)

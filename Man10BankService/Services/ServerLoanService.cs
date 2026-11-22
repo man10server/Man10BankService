@@ -141,7 +141,9 @@ public class ServerLoanService
 
     // 返済: 単一トランザクションで「server_loan 行ロック→残高減算+MoneyLog→債務減算+ログ→Commit」。
     // 出金成功後の債務減算が同一 tx 内のため、片方だけ成立する不整合が発生しない(補償 Saga 廃止)。
-    public async Task<ApiResult<ServerLoan?>> RepayAsync(string uuid, decimal? payAmount)
+    // 与信評価(CalculateBorrowLimitAsync)の対象は週次の定期返済(scheduled)のみ。
+    // プレイヤーによる手動返済は EarlyRepay として記録し、残高不足でも失敗に数えない。
+    public async Task<ApiResult<ServerLoan?>> RepayAsync(string uuid, decimal? payAmount, bool scheduled = false)
     {
         var resolved = await _bank.ResolvePlayerNameAsync(uuid);
         if (!resolved.IsSuccess)
@@ -171,7 +173,10 @@ public class ServerLoanService
             var balance = bank?.Balance ?? 0m;
             if (balance < amount)
             {
-                // 残高不足は返済失敗としてカウントし、失敗ログを残す。
+                if (!scheduled)
+                    return ApiResult<ServerLoan?>.Fail(ErrorCode.InsufficientFunds);
+
+                // 定期返済の残高不足は返済失敗としてカウントし、失敗ログを残す。
                 // この失敗カウントは確定させたいので、Ok + InsufficientFunds コードで返して
                 // 同一 tx をコミットさせる(ラッパ側で 409 失敗へ変換する)。
                 ServerLoanRepository.AdjustLoanCore(db, loan, loan.Player, amount, ServerLoanRepository.ServerLoanLogAction.RepayFailure);
@@ -183,8 +188,11 @@ public class ServerLoanService
                 db, uuid, resolvedPlayer, -amount,
                 "server_loan", "loan_repay", "サーバーローン返済", "system");
 
-            // 4) 債務減算 + RepaySuccess ログ
-            ServerLoanRepository.AdjustLoanCore(db, loan, loan.Player, -amount, ServerLoanRepository.ServerLoanLogAction.RepaySuccess);
+            // 4) 債務減算 + 返済ログ
+            var action = scheduled
+                ? ServerLoanRepository.ServerLoanLogAction.RepaySuccess
+                : ServerLoanRepository.ServerLoanLogAction.EarlyRepay;
+            ServerLoanRepository.AdjustLoanCore(db, loan, loan.Player, -amount, action);
 
             return ApiResult<ServerLoan?>.Ok(loan);
         });
@@ -388,7 +396,7 @@ public class ServerLoanService
         var loans = await repo.GetAllAsync();
         foreach (var loan in loans)
         {
-            await RepayAsync(loan.Uuid, null);
+            await RepayAsync(loan.Uuid, null, scheduled: true);
         }
     }
 

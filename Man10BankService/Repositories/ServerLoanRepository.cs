@@ -15,6 +15,7 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
         RepayFailure,
         Interest,
         SetBorrowAmount,
+        EarlyRepay,
     }
 
     public async Task<ServerLoan> GetOrCreateByUuidAsync(string uuid)
@@ -107,6 +108,7 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
                 }
                 break;
             case ServerLoanLogAction.RepaySuccess:
+            case ServerLoanLogAction.EarlyRepay:
                 loan.BorrowAmount += delta;
                 loan.LastPayDate = DateTime.UtcNow;
                 break;
