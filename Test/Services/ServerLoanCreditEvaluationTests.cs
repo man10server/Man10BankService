@@ -23,6 +23,8 @@ public class ServerLoanCreditEvaluationTests
             ["ServerLoan:DailyInterestRate"] = "0.01",
             ["ServerLoan:MinAmount"] = "1000",
             ["ServerLoan:MaxAmount"] = "3000000",
+            ["ServerLoan:GrowthFactor"] = "0.5",
+            ["ServerLoan:MaxGrowthRate"] = "0.5",
             ["ServerLoan:MinPaymentRate"] = "0",
             ["ServerLoan:MinPaymentAmount"] = "0"
         };
@@ -181,6 +183,24 @@ public class ServerLoanCreditEvaluationTests
         await AddRepayLogsAsync(db, ("RepaySuccess", -300m), ("RepaySuccess", -5000m));
 
         (await loan.CalculateBorrowLimitAsync(Uuid)).Data.Should().Be(3200m);
+    }
+
+    [Theory(DisplayName = "借入上限: 下限10万・上限300万・増加率10%では最短36回の定期返済で上限に届く")]
+    [InlineData(35, false)]
+    [InlineData(36, true)]
+    public async Task BorrowLimit_TenPercentGrowth_ShouldReachMaxAfter36Successes(int successes, bool reachesMax)
+    {
+        var (loan, _, db) = Build(new Dictionary<string, string?>
+        {
+            ["ServerLoan:MinAmount"] = "100000",
+            ["ServerLoan:MaxGrowthRate"] = "0.1"
+        });
+        using var _1 = db;
+
+        await AddRepayLogsAsync(db, Enumerable.Repeat(("RepaySuccess", -10000000m), successes).ToArray());
+
+        var limit = (await loan.CalculateBorrowLimitAsync(Uuid)).Data;
+        (limit == 3000000m).Should().Be(reachesMax);
     }
 
     [Fact(DisplayName = "借入上限: 週次返済の失敗で枠が半減し端数は切り捨てる")]

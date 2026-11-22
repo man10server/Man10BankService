@@ -13,7 +13,7 @@ public class ServerLoanService
     private static decimal MinAmount { get; set; } = 100000m;
     private static decimal MaxAmount { get; set; } = 3000000m;
     private static decimal GrowthFactor { get; set; } = 0.5m;
-    private static decimal MaxGrowthRate { get; set; } = 0.5m;
+    private static decimal MaxGrowthRate { get; set; } = 0.1m;
     private static decimal FailureCutRate { get; set; } = 0.5m;
     private static decimal MinPaymentRate { get; set; } = 0.02m;
     private static decimal MinPaymentAmount { get; set; } = 10000m;
@@ -476,7 +476,7 @@ public class ServerLoanService
         MinAmount = s.GetValue("MinAmount", 100000m);
         MaxAmount = s.GetValue("MaxAmount", 3000000m);
         GrowthFactor = s.GetValue("GrowthFactor", 0.5m);
-        MaxGrowthRate = s.GetValue("MaxGrowthRate", 0.5m);
+        MaxGrowthRate = s.GetValue("MaxGrowthRate", 0.1m);
         FailureCutRate = s.GetValue("FailureCutRate", 0.5m);
         MinPaymentRate = s.GetValue("MinPaymentRate", 0.02m);
         MinPaymentAmount = s.GetValue("MinPaymentAmount", 10000m);
