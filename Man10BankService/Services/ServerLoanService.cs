@@ -106,6 +106,13 @@ public class ServerLoanService
             return ApiResult<ServerLoan?>.Fail(limitRes.Code);
         var limit = limitRes.Data;
 
+        // 定期返済に失敗したままの間は、次の返済(手動でも可)が成功するまで新規借入を止める。
+        var overdueRes = await IsRepaymentOverdueAsync(uuid);
+        if (!overdueRes.IsSuccess)
+            return ApiResult<ServerLoan?>.Fail(overdueRes.Code);
+        if (overdueRes.Data)
+            return ApiResult<ServerLoan?>.Fail(ErrorCode.RepaymentOverdue);
+
         // 名前解決(ログイン時登録の名簿 → 口座の名前)はワーカー外で行う。
         var resolved = await _bank.ResolvePlayerNameAsync(uuid);
         if (!resolved.IsSuccess)
@@ -216,6 +223,19 @@ public class ServerLoanService
         catch (Exception)
         {
             return ApiResult<decimal>.Fail(ErrorCode.UnexpectedError);
+        }
+    }
+
+    private async Task<ApiResult<bool>> IsRepaymentOverdueAsync(string uuid)
+    {
+        try
+        {
+            var repo = new ServerLoanRepository(_dbFactory, _profileService);
+            return ApiResult<bool>.Ok(await repo.IsLatestRepayFailureAsync(uuid));
+        }
+        catch (Exception)
+        {
+            return ApiResult<bool>.Fail(ErrorCode.UnexpectedError);
         }
     }
 

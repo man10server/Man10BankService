@@ -203,4 +203,53 @@ public class ServerLoanCreditEvaluationTests
 
         (await loan.CalculateBorrowLimitAsync(Uuid)).Data.Should().Be(3000000m);
     }
+
+    [Fact(DisplayName = "借入: 定期返済に失敗したままの間は新規借入できない")]
+    public async Task Borrow_AfterWeeklyRepayFailure_ShouldFailWithRepaymentOverdue()
+    {
+        var (loan, bank, db) = Build();
+        using var _1 = db;
+
+        (await loan.BorrowAsync(Uuid, 500m)).IsSuccess.Should().BeTrue();
+        await WithdrawAllAsync(bank, 500m);
+        await loan.RunWeeklyRepayForAllAsync();
+
+        var res = await loan.BorrowAsync(Uuid, 100m);
+
+        res.IsSuccess.Should().BeFalse();
+        res.Code.Should().Be(ErrorCode.RepaymentOverdue);
+        (await loan.GetByUuidAsync(Uuid)).Data!.BorrowAmount.Should().Be(500m);
+    }
+
+    [Fact(DisplayName = "借入: 定期返済の失敗後に手動返済すると借入を再開できる")]
+    public async Task Borrow_AfterManualRepayFollowingFailure_ShouldSucceed()
+    {
+        var (loan, bank, db) = Build();
+        using var _1 = db;
+
+        (await loan.BorrowAsync(Uuid, 500m)).IsSuccess.Should().BeTrue();
+        await WithdrawAllAsync(bank, 500m);
+        await loan.RunWeeklyRepayForAllAsync();
+
+        await bank.DepositAsync(new DepositRequest { Uuid = Uuid, Amount = 1000m, PluginName = "test", Note = "seed", DisplayNote = "seed", Server = "dev" });
+        (await loan.RepayAsync(Uuid, 100m)).IsSuccess.Should().BeTrue();
+
+        (await loan.BorrowAsync(Uuid, 100m)).IsSuccess.Should().BeTrue();
+    }
+
+    [Fact(DisplayName = "借入: 定期返済の失敗後に次の定期返済が成功すると借入を再開できる")]
+    public async Task Borrow_AfterWeeklyRepaySuccessFollowingFailure_ShouldSucceed()
+    {
+        var (loan, bank, db) = Build();
+        using var _1 = db;
+
+        (await loan.BorrowAsync(Uuid, 500m)).IsSuccess.Should().BeTrue();
+        await WithdrawAllAsync(bank, 500m);
+        await loan.RunWeeklyRepayForAllAsync();
+
+        await bank.DepositAsync(new DepositRequest { Uuid = Uuid, Amount = 1000m, PluginName = "test", Note = "seed", DisplayNote = "seed", Server = "dev" });
+        await loan.RunWeeklyRepayForAllAsync();
+
+        (await loan.BorrowAsync(Uuid, 100m)).IsSuccess.Should().BeTrue();
+    }
 }
