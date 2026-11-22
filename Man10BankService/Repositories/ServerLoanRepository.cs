@@ -16,6 +16,7 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
         Interest,
         SetBorrowAmount,
         EarlyRepay,
+        OverdueCollect,
     }
 
     public async Task<ServerLoan> GetOrCreateByUuidAsync(string uuid)
@@ -109,6 +110,7 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
                 break;
             case ServerLoanLogAction.RepaySuccess:
             case ServerLoanLogAction.EarlyRepay:
+            case ServerLoanLogAction.OverdueCollect:
                 loan.BorrowAmount += delta;
                 loan.LastPayDate = DateTime.UtcNow;
                 break;
@@ -173,16 +175,38 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
 
     public static async Task<bool> IsLatestScheduledRepayFailureAsync(BankDbContext db, string uuid)
     {
+        var latest = await GetLatestScheduledRepayLogAsync(db, uuid);
+        return latest?.Action == ServerLoanLogAction.RepayFailure.ToString();
+    }
+
+    // 延滞分(直近の定期返済の失敗額)のうち未回収の額。延滞中でなければ null。
+    public static async Task<decimal?> GetUncollectedOverdueAmountAsync(BankDbContext db, string uuid)
+    {
+        var latest = await GetLatestScheduledRepayLogAsync(db, uuid);
+        if (latest?.Action != ServerLoanLogAction.RepayFailure.ToString())
+            return null;
+
+        var collect = ServerLoanLogAction.OverdueCollect.ToString();
+        var collected = await db.ServerLoanLogs
+            .AsNoTracking()
+            .Where(x => x.Uuid == uuid && x.Action == collect && x.Id > latest.Id)
+            .Select(x => x.Amount)
+            .ToListAsync();
+
+        // 回収ログの金額は残債の増減(負数)で記録される。
+        return Math.Max(0m, latest.Amount + collected.Sum());
+    }
+
+    private static async Task<ServerLoanLog?> GetLatestScheduledRepayLogAsync(BankDbContext db, string uuid)
+    {
         var success = ServerLoanLogAction.RepaySuccess.ToString();
         var failure = ServerLoanLogAction.RepayFailure.ToString();
 
-        var latest = await db.ServerLoanLogs
+        return await db.ServerLoanLogs
             .AsNoTracking()
             .Where(x => x.Uuid == uuid && (x.Action == success || x.Action == failure))
             .OrderByDescending(x => x.Date).ThenByDescending(x => x.Id)
-            .Select(x => x.Action)
             .FirstOrDefaultAsync();
-        return latest == failure;
     }
 
     // 当日分の Interest ログが存在するか(日次利息の冪等判定に使用)。

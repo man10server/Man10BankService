@@ -237,6 +237,50 @@ public class ServerLoanService
         return result;
     }
     
+    // 延滞分の回収: 直近の定期返済が失敗のままのローンについて、未回収分を銀行残高のある分だけ回収する。
+    // 失敗額を回収しきるか残債が 0 になったら、0 円の成功ログを残して延滞を解消する(借入枠は増えない)。
+    private async Task<ApiResult<ServerLoan?>> CollectOverdueAsync(string uuid)
+    {
+        var resolved = await _bank.ResolvePlayerNameAsync(uuid);
+        if (!resolved.IsSuccess)
+            return ApiResult<ServerLoan?>.Fail(resolved.Code);
+        var resolvedPlayer = resolved.Data!;
+
+        var repo = new ServerLoanRepository(_dbFactory, _profileService);
+
+        return await _bank.RunExclusiveAsync<ServerLoan?>(async db =>
+        {
+            var loan = await repo.GetOrCreateForUpdateAsync(db, uuid, resolvedPlayer);
+            if (loan.BorrowAmount <= 0m)
+                return ApiResult<ServerLoan?>.Fail(ErrorCode.NoRepaymentNeeded);
+
+            var uncollected = await ServerLoanRepository.GetUncollectedOverdueAmountAsync(db, uuid);
+            if (uncollected is null)
+                return ApiResult<ServerLoan?>.Fail(ErrorCode.NoRepaymentNeeded);
+
+            var bank = await DbLockHelper.GetUserBankForUpdateAsync(db, uuid);
+            var balance = bank?.Balance ?? 0m;
+            var target = Math.Min(uncollected.Value, loan.BorrowAmount);
+            var amount = Math.Min(target, balance);
+            if (target > 0m && amount <= 0m)
+                return ApiResult<ServerLoan?>.Fail(ErrorCode.InsufficientFunds);
+
+            if (amount > 0m)
+            {
+                await BankRepository.ChangeBalanceCoreAsync(
+                    db, uuid, resolvedPlayer, -amount,
+                    "server_loan", "loan_overdue_collect", "サーバーローン延滞分の回収", "system");
+
+                ServerLoanRepository.AdjustLoanCore(db, loan, loan.Player, -amount, ServerLoanRepository.ServerLoanLogAction.OverdueCollect);
+            }
+
+            if (amount >= target)
+                ServerLoanRepository.AdjustLoanCore(db, loan, loan.Player, 0m, ServerLoanRepository.ServerLoanLogAction.RepaySuccess);
+
+            return ApiResult<ServerLoan?>.Ok(loan);
+        });
+    }
+
     public async Task<ApiResult<decimal>> CalculateBorrowLimitAsync(string uuid)
     {
         try
@@ -466,6 +510,22 @@ public class ServerLoanService
         foreach (var loan in loans)
         {
             await RepayAsync(loan.Uuid, null, scheduled: true);
+        }
+    }
+
+    // 延滞中のローンから延滞分を回収する(スケジューラから毎日呼ばれる)。
+    // 回収は未回収分までしか行わないため、同日に複数回実行されても二重回収にならない。
+    public async Task RunOverdueCollectionForAllAsync()
+    {
+        var repo = new ServerLoanRepository(_dbFactory, _profileService);
+        var loans = await repo.GetAllAsync();
+        foreach (var loan in loans)
+        {
+            if (loan.BorrowAmount <= 0m)
+                continue;
+            if (!await repo.IsLatestScheduledRepayFailureAsync(loan.Uuid))
+                continue;
+            await CollectOverdueAsync(loan.Uuid);
         }
     }
 

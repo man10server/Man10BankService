@@ -62,6 +62,25 @@ public class ServerLoanCreditEvaluationTests
         await ctx.SaveChangesAsync();
     }
 
+    private static Task DepositAsync(BankService bank, decimal amount) =>
+        bank.DepositAsync(new DepositRequest
+        {
+            Uuid = Uuid,
+            Amount = amount,
+            PluginName = "test",
+            Note = "seed",
+            DisplayNote = "seed",
+            Server = "dev"
+        });
+
+    // 500 円借りて残高を空にし、週次返済を失敗させる(失敗額は 500 × 1% × 14 = 70)。
+    private static async Task MakeOverdueAsync(ServerLoanService loan, BankService bank)
+    {
+        (await loan.BorrowAsync(Uuid, 500m)).IsSuccess.Should().BeTrue();
+        await WithdrawAllAsync(bank, 500m);
+        await loan.RunWeeklyRepayForAllAsync();
+    }
+
     private static Task WithdrawAllAsync(BankService bank, decimal amount) =>
         bank.WithdrawAsync(new WithdrawRequest
         {
@@ -370,5 +389,73 @@ public class ServerLoanCreditEvaluationTests
         (await loan.RepayAsync(Uuid, 10m)).IsSuccess.Should().BeTrue();
 
         (await loan.GetByUuidAsync(Uuid)).Data!.BorrowAmount.Should().Be(MinAmount - 10m);
+    }
+
+    [Fact(DisplayName = "延滞回収: 入金があれば失敗額を回収して延滞を解消し、借入枠は増やさない")]
+    public async Task OverdueCollection_WithBalance_ShouldCollectAndResolve()
+    {
+        var (loan, bank, db) = Build();
+        using var _1 = db;
+        await MakeOverdueAsync(loan, bank);
+        await DepositAsync(bank, 1000m);
+
+        await loan.RunOverdueCollectionForAllAsync();
+
+        var logs = await GetLogsAsync(db);
+        logs.Should().ContainSingle(l => l.Action == "OverdueCollect" && l.Amount == -70m);
+        logs.Should().ContainSingle(l => l.Action == "RepaySuccess" && l.Amount == 0m);
+        (await loan.GetByUuidAsync(Uuid)).Data!.BorrowAmount.Should().Be(430m);
+        (await bank.GetBalanceAsync(Uuid)).Data.Should().Be(930m);
+        (await loan.CalculateBorrowLimitAsync(Uuid)).Data.Should().Be(MinAmount);
+        (await loan.BorrowAsync(Uuid, 100m)).IsSuccess.Should().BeTrue();
+    }
+
+    [Fact(DisplayName = "延滞回収: 残高が足りなければある分だけ回収し、回収しきるまで延滞のまま")]
+    public async Task OverdueCollection_PartialBalance_ShouldCollectAvailableAndStayOverdue()
+    {
+        var (loan, bank, db) = Build();
+        using var _1 = db;
+        await MakeOverdueAsync(loan, bank);
+
+        await DepositAsync(bank, 30m);
+        await loan.RunOverdueCollectionForAllAsync();
+
+        (await bank.GetBalanceAsync(Uuid)).Data.Should().Be(0m);
+        (await loan.BorrowAsync(Uuid, 100m)).Code.Should().Be(ErrorCode.RepaymentOverdue);
+
+        await DepositAsync(bank, 100m);
+        await loan.RunOverdueCollectionForAllAsync();
+        await loan.RunOverdueCollectionForAllAsync();
+
+        var logs = await GetLogsAsync(db);
+        logs.Where(l => l.Action == "OverdueCollect").Select(l => l.Amount).Should().BeEquivalentTo([-30m, -40m]);
+        (await bank.GetBalanceAsync(Uuid)).Data.Should().Be(60m);
+        (await loan.GetByUuidAsync(Uuid)).Data!.BorrowAmount.Should().Be(430m);
+        (await loan.BorrowAsync(Uuid, 100m)).IsSuccess.Should().BeTrue();
+    }
+
+    [Fact(DisplayName = "延滞回収: 残高がなければ何も記録しない")]
+    public async Task OverdueCollection_NoBalance_ShouldNotWriteLog()
+    {
+        var (loan, bank, db) = Build();
+        using var _1 = db;
+        await MakeOverdueAsync(loan, bank);
+
+        await loan.RunOverdueCollectionForAllAsync();
+
+        (await GetLogsAsync(db)).Should().NotContain(l => l.Action == "OverdueCollect" || l.Action == "RepaySuccess");
+    }
+
+    [Fact(DisplayName = "延滞回収: 延滞していないローンからは回収しない")]
+    public async Task OverdueCollection_NotOverdue_ShouldNotCollect()
+    {
+        var (loan, bank, db) = Build();
+        using var _1 = db;
+        (await loan.BorrowAsync(Uuid, 500m)).IsSuccess.Should().BeTrue();
+
+        await loan.RunOverdueCollectionForAllAsync();
+
+        (await GetLogsAsync(db)).Should().NotContain(l => l.Action == "OverdueCollect");
+        (await bank.GetBalanceAsync(Uuid)).Data.Should().Be(500m);
     }
 }
