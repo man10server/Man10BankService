@@ -21,8 +21,7 @@ public class ServerLoanCreditEvaluationTests
             {
                 ["ServerLoan:DailyInterestRate"] = "0.01",
                 ["ServerLoan:MinAmount"] = "1000",
-                ["ServerLoan:MaxAmount"] = "3000000",
-                ["ServerLoan:RepayWindow"] = "10"
+                ["ServerLoan:MaxAmount"] = "3000000"
             })
             .Build();
         var profile = new FakePlayerProfileService();
@@ -35,6 +34,25 @@ public class ServerLoanCreditEvaluationTests
     {
         await using var ctx = await db.Factory.CreateDbContextAsync();
         return await ctx.ServerLoanLogs.AsNoTracking().Where(x => x.Uuid == Uuid).ToListAsync();
+    }
+
+    private static async Task AddRepayLogsAsync(TestDbFactory db, params (string Action, decimal Amount)[] logs)
+    {
+        await using var ctx = await db.Factory.CreateDbContextAsync();
+        var date = DateTime.UtcNow.AddDays(-logs.Length);
+        foreach (var (action, amount) in logs)
+        {
+            ctx.ServerLoanLogs.Add(new ServerLoanLog
+            {
+                Uuid = Uuid,
+                Player = "test-player",
+                Action = action,
+                Amount = amount,
+                Date = date
+            });
+            date = date.AddDays(1);
+        }
+        await ctx.SaveChangesAsync();
     }
 
     private static Task WithdrawAllAsync(BankService bank, decimal amount) =>
@@ -92,18 +110,18 @@ public class ServerLoanCreditEvaluationTests
         (await loan.CalculateBorrowLimitAsync(Uuid)).Data.Should().Be(MinAmount);
     }
 
-    [Fact(DisplayName = "借入上限: 週次返済の成功額の平均×5まで上がる")]
-    public async Task BorrowLimit_WeeklyRepaySuccess_ShouldRaiseLimit()
+    [Fact(DisplayName = "借入上限: 週次返済が成功すると返済額と同額だけ上がる")]
+    public async Task BorrowLimit_WeeklyRepaySuccess_ShouldGrowByPaidAmount()
     {
         var (loan, _, db) = Build();
         using var _1 = db;
 
         (await loan.BorrowAsync(Uuid, MinAmount)).IsSuccess.Should().BeTrue();
-        (await loan.SetPaymentAmountAsync(Uuid, 500m)).IsSuccess.Should().BeTrue();
+        (await loan.SetPaymentAmountAsync(Uuid, 300m)).IsSuccess.Should().BeTrue();
 
         await loan.RunWeeklyRepayForAllAsync();
 
-        (await loan.CalculateBorrowLimitAsync(Uuid)).Data.Should().Be(2500m);
+        (await loan.CalculateBorrowLimitAsync(Uuid)).Data.Should().Be(1300m);
     }
 
     [Fact(DisplayName = "借入上限: 手動返済は上限に影響しない")]
@@ -133,20 +151,56 @@ public class ServerLoanCreditEvaluationTests
         (await loan.CalculateBorrowLimitAsync(Uuid)).Data.Should().Be(MinAmount);
     }
 
-    [Fact(DisplayName = "借入上限: 週次返済の失敗は成功実績で上がった上限を引き下げる")]
-    public async Task BorrowLimit_RepayFailureAfterSuccess_ShouldLowerLimit()
+    [Fact(DisplayName = "借入上限: 1回の増加は現在の枠の50%まで")]
+    public async Task BorrowLimit_LargeRepaySuccess_ShouldCapGrowth()
     {
-        var (loan, bank, db) = Build();
+        var (loan, _, db) = Build();
         using var _1 = db;
 
-        (await loan.BorrowAsync(Uuid, MinAmount)).IsSuccess.Should().BeTrue();
-        (await loan.SetPaymentAmountAsync(Uuid, 500m)).IsSuccess.Should().BeTrue();
-        await loan.RunWeeklyRepayForAllAsync();
-        (await loan.CalculateBorrowLimitAsync(Uuid)).Data.Should().Be(2500m);
+        await AddRepayLogsAsync(db, ("RepaySuccess", -5000m));
 
-        await WithdrawAllAsync(bank, 500m);
-        await loan.RunWeeklyRepayForAllAsync();
+        (await loan.CalculateBorrowLimitAsync(Uuid)).Data.Should().Be(1500m);
+    }
 
-        (await loan.CalculateBorrowLimitAsync(Uuid)).Data.Should().Be(MinAmount);
+    [Fact(DisplayName = "借入上限: 週次返済の失敗で枠が半減し端数は切り捨てる")]
+    public async Task BorrowLimit_RepayFailure_ShouldHalveAndFloor()
+    {
+        var (loan, _, db) = Build();
+        using var _1 = db;
+
+        // 1000 → 1500 → 2250 → 2251 → 1125.5
+        await AddRepayLogsAsync(db,
+            ("RepaySuccess", -500m),
+            ("RepaySuccess", -750m),
+            ("RepaySuccess", -1m),
+            ("RepayFailure", 100m));
+
+        (await loan.CalculateBorrowLimitAsync(Uuid)).Data.Should().Be(1125m);
+    }
+
+    [Fact(DisplayName = "借入上限: 失敗で下限額を下回らず、その後の成功でまた育つ")]
+    public async Task BorrowLimit_SuccessAfterFailure_ShouldGrowFromMinAmount()
+    {
+        var (loan, _, db) = Build();
+        using var _1 = db;
+
+        // 1000 → 1500 → 750(下限 1000) → 1200
+        await AddRepayLogsAsync(db,
+            ("RepaySuccess", -500m),
+            ("RepayFailure", 100m),
+            ("RepaySuccess", -200m));
+
+        (await loan.CalculateBorrowLimitAsync(Uuid)).Data.Should().Be(1200m);
+    }
+
+    [Fact(DisplayName = "借入上限: 成功を重ねても上限額を超えない")]
+    public async Task BorrowLimit_ManySuccesses_ShouldNotExceedMaxAmount()
+    {
+        var (loan, _, db) = Build();
+        using var _1 = db;
+
+        await AddRepayLogsAsync(db, Enumerable.Repeat(("RepaySuccess", -10000000m), 25).ToArray());
+
+        (await loan.CalculateBorrowLimitAsync(Uuid)).Data.Should().Be(3000000m);
     }
 }

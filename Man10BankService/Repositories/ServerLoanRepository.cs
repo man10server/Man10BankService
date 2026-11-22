@@ -150,6 +150,20 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
             .ToListAsync();
     }
 
+    // 定期返済(週次)の成功/失敗ログを古い順に取得する(借入枠の算定に使用)。
+    public async Task<List<ServerLoanLog>> GetScheduledRepayLogsAsync(string uuid)
+    {
+        var success = ServerLoanLogAction.RepaySuccess.ToString();
+        var failure = ServerLoanLogAction.RepayFailure.ToString();
+
+        await using var db = await factory.CreateDbContextAsync();
+        return await db.ServerLoanLogs
+            .AsNoTracking()
+            .Where(x => x.Uuid == uuid && (x.Action == success || x.Action == failure))
+            .OrderBy(x => x.Date).ThenBy(x => x.Id)
+            .ToListAsync();
+    }
+
     // 当日分の Interest ログが存在するか(日次利息の冪等判定に使用)。
     public async Task<bool> HasInterestLogOnDateAsync(string uuid, DateOnly date)
     {

@@ -12,7 +12,9 @@ public class ServerLoanService
     private static decimal DailyInterestRate { get; set; } = 0.001m;
     private static decimal MinAmount { get; set; } = 100000m;
     private static decimal MaxAmount { get; set; } = 3000000m;
-    private static int RepayWindow { get; set; } = 10;
+    private static decimal GrowthFactor { get; set; } = 1m;
+    private static decimal MaxGrowthRate { get; set; } = 0.5m;
+    private static decimal FailureCutRate { get; set; } = 0.5m;
     private static TimeSpan DailyInterestTime { get; set; } = new(2, 0, 0); // 02:00
     private static TimeSpan WeeklyRepayTime { get; set; } = new(3, 0, 0);   // 03:00
     private static DayOfWeek WeeklyRepayDay { get; set; } = DayOfWeek.Monday;
@@ -205,51 +207,52 @@ public class ServerLoanService
     
     public async Task<ApiResult<decimal>> CalculateBorrowLimitAsync(string uuid)
     {
-        var borrowable = 0m;
         try
         {
             var repo = new ServerLoanRepository(_dbFactory, _profileService);
-            var fetch = Math.Min(1000, RepayWindow * 20);
-            var logs = await repo.GetLogsAsync(uuid, fetch);
-
-            // 返済成功ログの金額は残債の増減(負数)で記録されるため絶対値で扱う。
-            var success = logs
-                .Where(l => l.Action == ServerLoanRepository.ServerLoanLogAction.RepaySuccess.ToString())
-                .Take(RepayWindow)
-                .Select(l => Math.Abs(l.Amount))
-                .ToList();
-
-            var failure = logs
-                .Where(l => l.Action == ServerLoanRepository.ServerLoanLogAction.RepayFailure.ToString())
-                .Take(RepayWindow)
-                .Select(l => l.Amount)
-                .ToList();
-
-            if (success.Count > 0)
-            {
-                var avg = success.Average();
-                borrowable = avg * 5m;
-            }
-
-            // 失敗は上限を下げる方向にだけ効かせる。
-            if (failure.Count > 0)
-            {
-                var minFail = failure.Min();
-                borrowable = Math.Min(borrowable, minFail);
-            }
-            
-            borrowable = Math.Max(MinAmount, borrowable);
-            borrowable = Math.Min(MaxAmount, borrowable);
-
-            if (borrowable < 0m) borrowable = 0m;
-            return ApiResult<decimal>.Ok(borrowable);
+            var logs = await repo.GetScheduledRepayLogsAsync(uuid);
+            return ApiResult<decimal>.Ok(CalculateBorrowLimit(logs));
         }
         catch (Exception)
         {
             return ApiResult<decimal>.Fail(ErrorCode.UnexpectedError);
         }
     }
-    
+
+    // 借入枠は MinAmount から始まり、定期返済の履歴を古い順にたどって決まる。
+    // 成功: 返済額 × GrowthFactor だけ増える(1回の増加は現在の枠 × MaxGrowthRate まで)。
+    // 失敗: 現在の枠 × FailureCutRate に下がる。
+    private static decimal CalculateBorrowLimit(IEnumerable<ServerLoanLog> scheduledRepayLogs)
+    {
+        var failure = ServerLoanRepository.ServerLoanLogAction.RepayFailure.ToString();
+        var limit = ClampBorrowLimit(MinAmount);
+
+        foreach (var log in scheduledRepayLogs)
+        {
+            if (log.Action == failure)
+            {
+                limit *= FailureCutRate;
+            }
+            else
+            {
+                // 返済成功ログの金額は残債の増減(負数)で記録されるため絶対値で扱う。
+                var paid = Math.Abs(log.Amount);
+                limit += Math.Min(paid * GrowthFactor, limit * MaxGrowthRate);
+            }
+
+            limit = ClampBorrowLimit(limit);
+        }
+
+        return limit;
+    }
+
+    private static decimal ClampBorrowLimit(decimal limit)
+    {
+        limit = Math.Max(MinAmount, limit);
+        limit = Math.Min(MaxAmount, limit);
+        return Math.Max(0m, Math.Floor(limit));
+    }
+
     public async Task<ApiResult<ServerLoan?>> SetPaymentAmountAsync(string uuid, decimal paymentAmount)
     {
         try
@@ -408,7 +411,9 @@ public class ServerLoanService
         DailyInterestRate = s.GetValue("DailyInterestRate", 0.001m);
         MinAmount = s.GetValue("MinAmount", 100000m);
         MaxAmount = s.GetValue("MaxAmount", 3000000m);
-        RepayWindow = s.GetValue("RepayWindow", 10);
+        GrowthFactor = s.GetValue("GrowthFactor", 1m);
+        MaxGrowthRate = s.GetValue("MaxGrowthRate", 0.5m);
+        FailureCutRate = s.GetValue("FailureCutRate", 0.5m);
 
         if (TimeSpan.TryParse(s["DailyInterestTime"], out var dit))
             DailyInterestTime = dit;

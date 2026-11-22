@@ -22,8 +22,7 @@ public class ServerLoanSchedulerIdempotencyTests
             {
                 ["ServerLoan:DailyInterestRate"] = "0.01",
                 ["ServerLoan:MinAmount"] = "1000",
-                ["ServerLoan:MaxAmount"] = "3000000",
-                ["ServerLoan:RepayWindow"] = "10"
+                ["ServerLoan:MaxAmount"] = "3000000"
             })
             .Build();
         var profile = new FakePlayerProfileService();
