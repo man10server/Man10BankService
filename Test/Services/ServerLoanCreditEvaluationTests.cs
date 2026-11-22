@@ -556,6 +556,48 @@ public class ServerLoanCreditEvaluationTests
         (await loan.GetByUuidAsync(Uuid)).Data!.BorrowAmount.Should().Be(MinAmount - 10m);
     }
 
+    [Fact(DisplayName = "利息: 残債が上限額を超える分は付けない")]
+    public async Task DailyInterest_ExceedingMaxDebtAmount_ShouldBeCapped()
+    {
+        var (loan, _, db) = Build(new Dictionary<string, string?> { ["ServerLoan:MaxDebtAmount"] = "1015" });
+        using var _1 = db;
+        (await loan.BorrowAsync(Uuid, MinAmount)).IsSuccess.Should().BeTrue();
+
+        // 1000 → 1010(利息 10) → 1015(利息 10 のうち上限までの 5) → 1015(利息なし)
+        await AccrueInterestAsync(loan, 3);
+
+        var logs = await GetLogsAsync(db);
+        logs.Where(l => l.Action == "Interest").Select(l => l.Amount).Should().BeEquivalentTo([10m, 5m]);
+        (await loan.GetByUuidAsync(Uuid)).Data!.BorrowAmount.Should().Be(1015m);
+        (await loan.GetPaymentInfoAsync(Uuid)).Data!.DailyInterestPerDay.Should().Be(0m);
+    }
+
+    [Fact(DisplayName = "利息: 残債がすでに上限額を超えている場合は付けず、残債も減らさない")]
+    public async Task DailyInterest_DebtAboveMaxDebtAmount_ShouldNotChangeDebt()
+    {
+        var (loan, _, db) = Build(new Dictionary<string, string?> { ["ServerLoan:MaxDebtAmount"] = "1015" });
+        using var _1 = db;
+        (await loan.SetBorrowAmountAsync(Uuid, 5000m)).IsSuccess.Should().BeTrue();
+
+        await AccrueInterestAsync(loan, 2);
+
+        (await GetLogsAsync(db)).Should().NotContain(l => l.Action == "Interest");
+        (await loan.GetByUuidAsync(Uuid)).Data!.BorrowAmount.Should().Be(5000m);
+    }
+
+    [Fact(DisplayName = "利息: 上限額が0以下なら上限なしで付ける")]
+    public async Task DailyInterest_MaxDebtAmountZero_ShouldNotBeCapped()
+    {
+        var (loan, _, db) = Build(new Dictionary<string, string?> { ["ServerLoan:MaxDebtAmount"] = "0" });
+        using var _1 = db;
+        (await loan.BorrowAsync(Uuid, MinAmount)).IsSuccess.Should().BeTrue();
+
+        await AccrueInterestAsync(loan, 2);
+
+        (await loan.GetByUuidAsync(Uuid)).Data!.BorrowAmount.Should().Be(1020m);
+        (await loan.GetPaymentInfoAsync(Uuid)).Data!.DailyInterestPerDay.Should().Be(10m);
+    }
+
     [Fact(DisplayName = "延滞回収: 入金があれば失敗額を回収して延滞を解消し、借入枠は増やさない")]
     public async Task OverdueCollection_WithBalance_ShouldCollectAndResolve()
     {

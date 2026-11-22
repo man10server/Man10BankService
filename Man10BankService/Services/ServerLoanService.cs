@@ -12,6 +12,7 @@ public class ServerLoanService
     private static decimal DailyInterestRate { get; set; } = 0.001m;
     private static decimal MinAmount { get; set; } = 100000m;
     private static decimal MaxAmount { get; set; } = 3000000m;
+    private static decimal MaxDebtAmount { get; set; } = 10000000m;
     private static decimal GrowthFactor { get; set; } = 0.5m;
     private static decimal MaxGrowthRate { get; set; } = 0.1m;
     private static decimal FailureCutRate { get; set; } = 0.5m;
@@ -442,11 +443,14 @@ public class ServerLoanService
     }
     
     // 金利の丸め規則をサービス内で一元化
+    // 利息で残債(元本+利息)が MaxDebtAmount を超えないよう、超える分の利息は付けない(0 以下なら上限なし)。
     public static decimal CalculateDailyInterestAmount(decimal borrowAmount)
     {
         if (borrowAmount <= 0m) return 0m;
         var interest = borrowAmount * DailyInterestRate;
         var rounded = Math.Round(interest, 0, MidpointRounding.AwayFromZero);
+        if (MaxDebtAmount > 0m)
+            rounded = Math.Min(rounded, MaxDebtAmount - borrowAmount);
         return rounded < 0m ? 0m : rounded;
     }
 
@@ -588,6 +592,7 @@ public class ServerLoanService
         DailyInterestRate = s.GetValue("DailyInterestRate", 0.001m);
         MinAmount = s.GetValue("MinAmount", 100000m);
         MaxAmount = s.GetValue("MaxAmount", 3000000m);
+        MaxDebtAmount = s.GetValue("MaxDebtAmount", 10000000m);
         GrowthFactor = s.GetValue("GrowthFactor", 0.5m);
         MaxGrowthRate = s.GetValue("MaxGrowthRate", 0.1m);
         FailureCutRate = s.GetValue("FailureCutRate", 0.5m);
