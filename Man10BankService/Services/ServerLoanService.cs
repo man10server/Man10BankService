@@ -15,6 +15,8 @@ public class ServerLoanService
     private static decimal GrowthFactor { get; set; } = 0.5m;
     private static decimal MaxGrowthRate { get; set; } = 0.5m;
     private static decimal FailureCutRate { get; set; } = 0.5m;
+    private static decimal MinPaymentRate { get; set; } = 0.02m;
+    private static decimal MinPaymentAmount { get; set; } = 10000m;
     private static TimeSpan DailyInterestTime { get; set; } = new(2, 0, 0); // 02:00
     private static TimeSpan WeeklyRepayTime { get; set; } = new(3, 0, 0);   // 03:00
     private static DayOfWeek WeeklyRepayDay { get; set; } = DayOfWeek.Monday;
@@ -28,9 +30,17 @@ public class ServerLoanService
     private readonly BankService _bank;
     private readonly IPlayerProfileService _profileService;
 
-    public ServerLoanService(IDbContextFactory<BankDbContext> dbFactory, BankService bank, IPlayerProfileService profileService, IConfiguration config)
+    public ServerLoanService(IDbContextFactory<BankDbContext> dbFactory, BankService bank, IPlayerProfileService profileService, IConfiguration config,
+        ILogger<ServerLoanService>? logger = null)
     {
         Configure(config);
+
+        if (MinPaymentRate <= DailyInterestRate * 7m)
+        {
+            logger?.LogWarning(
+                "ServerLoan:MinPaymentRate({MinPaymentRate}) が週あたりの金利({WeeklyInterestRate})以下のため、最低返済額では残債が減りません。",
+                MinPaymentRate, DailyInterestRate * 7m);
+        }
 
         _dbFactory = dbFactory;
         _bank = bank;
@@ -178,7 +188,10 @@ public class ServerLoanService
                 return ApiResult<ServerLoan?>.Fail(ErrorCode.NoRepaymentNeeded);
             }
 
-            var requested = payAmount is > 0m ? payAmount.Value : loan.PaymentAmount;
+            // 定期返済は設定額と最低返済額の大きいほうを引き落とす。
+            var requested = scheduled
+                ? CalculateScheduledPayment(remain, loan.PaymentAmount)
+                : payAmount is > 0m ? payAmount.Value : loan.PaymentAmount;
             if (requested <= 0m)
                 return ApiResult<ServerLoan?>.Fail(ErrorCode.PaymentAmountNotSet);
 
@@ -346,6 +359,25 @@ public class ServerLoanService
         return Math.Max(1m, paymentAmount);
     }
 
+    // 定期返済の最低返済額: 残債 × MinPaymentRate と MinPaymentAmount の大きいほう(残債を超えない)。
+    public static decimal CalculateMinimumPayment(decimal borrowAmount)
+    {
+        if (borrowAmount <= 0m)
+            return 0m;
+
+        var byRate = Math.Ceiling(borrowAmount * MinPaymentRate);
+        return Math.Min(borrowAmount, Math.Max(byRate, MinPaymentAmount));
+    }
+
+    private static decimal CalculateScheduledPayment(decimal borrowAmount, decimal paymentAmount)
+    {
+        if (borrowAmount <= 0m)
+            return 0m;
+
+        var requested = Math.Max(paymentAmount, CalculateMinimumPayment(borrowAmount));
+        return Math.Min(requested, borrowAmount);
+    }
+
     // 次回の週次返済日時を計算（UTC基準。スケジューラの発火判定と同じ時刻系で揃える）
     public static DateTime GetNextWeeklyRepayDateTime(DateTime? now = null)
     {
@@ -443,6 +475,8 @@ public class ServerLoanService
         GrowthFactor = s.GetValue("GrowthFactor", 0.5m);
         MaxGrowthRate = s.GetValue("MaxGrowthRate", 0.5m);
         FailureCutRate = s.GetValue("FailureCutRate", 0.5m);
+        MinPaymentRate = s.GetValue("MinPaymentRate", 0.02m);
+        MinPaymentAmount = s.GetValue("MinPaymentAmount", 10000m);
 
         if (TimeSpan.TryParse(s["DailyInterestTime"], out var dit))
             DailyInterestTime = dit;

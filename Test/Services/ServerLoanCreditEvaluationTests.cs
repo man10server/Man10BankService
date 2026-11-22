@@ -22,7 +22,9 @@ public class ServerLoanCreditEvaluationTests
         {
             ["ServerLoan:DailyInterestRate"] = "0.01",
             ["ServerLoan:MinAmount"] = "1000",
-            ["ServerLoan:MaxAmount"] = "3000000"
+            ["ServerLoan:MaxAmount"] = "3000000",
+            ["ServerLoan:MinPaymentRate"] = "0",
+            ["ServerLoan:MinPaymentAmount"] = "0"
         };
         foreach (var (key, value) in overrides ?? [])
             settings[key] = value;
@@ -305,5 +307,46 @@ public class ServerLoanCreditEvaluationTests
         await loan.RunWeeklyRepayForAllAsync();
 
         (await loan.BorrowAsync(Uuid, 100m)).IsSuccess.Should().BeTrue();
+    }
+
+    [Theory(DisplayName = "週次返済: 設定額と最低返済額(残債の割合・固定下限)の大きいほうを引き落とす")]
+    [InlineData("0.1", "0", 10, 100)]
+    [InlineData("0.1", "0", 500, 500)]
+    [InlineData("0.1", "300", 10, 300)]
+    [InlineData("0.1", "5000", 10, 1000)]
+    [InlineData("0.1", "0", 0, 100)]
+    public async Task WeeklyRepay_ShouldChargeAtLeastMinimumPayment(
+        string minPaymentRate, string minPaymentAmount, int paymentAmount, int expectedPaid)
+    {
+        var (loan, _, db) = Build(new Dictionary<string, string?>
+        {
+            ["ServerLoan:MinPaymentRate"] = minPaymentRate,
+            ["ServerLoan:MinPaymentAmount"] = minPaymentAmount
+        });
+        using var _1 = db;
+
+        (await loan.BorrowAsync(Uuid, MinAmount)).IsSuccess.Should().BeTrue();
+        (await loan.SetPaymentAmountAsync(Uuid, paymentAmount)).IsSuccess.Should().BeTrue();
+
+        await loan.RunWeeklyRepayForAllAsync();
+
+        (await GetLogsAsync(db)).Should().ContainSingle(l => l.Action == "RepaySuccess" && l.Amount == -expectedPaid);
+        (await loan.GetByUuidAsync(Uuid)).Data!.BorrowAmount.Should().Be(MinAmount - expectedPaid);
+    }
+
+    [Fact(DisplayName = "手動返済: 最低返済額より少ない額でも返済できる")]
+    public async Task ManualRepay_BelowMinimumPayment_ShouldSucceed()
+    {
+        var (loan, _, db) = Build(new Dictionary<string, string?>
+        {
+            ["ServerLoan:MinPaymentRate"] = "0.1",
+            ["ServerLoan:MinPaymentAmount"] = "300"
+        });
+        using var _1 = db;
+
+        (await loan.BorrowAsync(Uuid, MinAmount)).IsSuccess.Should().BeTrue();
+        (await loan.RepayAsync(Uuid, 10m)).IsSuccess.Should().BeTrue();
+
+        (await loan.GetByUuidAsync(Uuid)).Data!.BorrowAmount.Should().Be(MinAmount - 10m);
     }
 }
