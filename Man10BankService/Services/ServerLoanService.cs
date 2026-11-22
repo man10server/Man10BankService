@@ -295,6 +295,20 @@ public class ServerLoanService
         }
     }
 
+    // 残債があり延滞中(直近の定期返済が失敗のまま)かどうか。ローンが無いプレイヤーは false で、行は作らない。
+    public async Task<ApiResult<bool>> HasOverdueDebtAsync(string uuid)
+    {
+        try
+        {
+            await using var db = await _dbFactory.CreateDbContextAsync();
+            return ApiResult<bool>.Ok(await ServerLoanRepository.HasOverdueDebtAsync(db, uuid));
+        }
+        catch (Exception)
+        {
+            return ApiResult<bool>.Fail(ErrorCode.UnexpectedError);
+        }
+    }
+
     private async Task<ApiResult<bool>> IsRepaymentOverdueAsync(string uuid)
     {
         try

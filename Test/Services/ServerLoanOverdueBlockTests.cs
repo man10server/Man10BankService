@@ -90,6 +90,44 @@ public class ServerLoanOverdueBlockTests
             .IsSuccess.Should().BeTrue();
     }
 
+    [Fact(DisplayName = "延滞照会: ローンが無いプレイヤーは false でローンの行を作らない")]
+    public async Task HasOverdueDebt_NoLoan_ShouldBeFalseWithoutCreatingRow()
+    {
+        using var env = Build();
+
+        (await env.Loan.HasOverdueDebtAsync(Uuid)).Data.Should().BeFalse();
+
+        await using var ctx = await env.Db.Factory.CreateDbContextAsync();
+        ctx.ServerLoans.Should().BeEmpty();
+    }
+
+    [Fact(DisplayName = "延滞照会: 延滞中は true、延滞分を回収しきると false")]
+    public async Task HasOverdueDebt_ShouldFollowOverdueState()
+    {
+        using var env = Build();
+        (await env.Loan.BorrowAsync(Uuid, 500m)).IsSuccess.Should().BeTrue();
+        (await env.Loan.HasOverdueDebtAsync(Uuid)).Data.Should().BeFalse();
+
+        (await WithdrawAsync(env.Bank, 500m)).IsSuccess.Should().BeTrue();
+        await env.Loan.RunWeeklyRepayForAllAsync();
+        (await env.Loan.HasOverdueDebtAsync(Uuid)).Data.Should().BeTrue();
+
+        (await DepositAsync(env.Bank, Uuid, 1000m)).IsSuccess.Should().BeTrue();
+        await env.Loan.RunOverdueCollectionForAllAsync();
+        (await env.Loan.HasOverdueDebtAsync(Uuid)).Data.Should().BeFalse();
+    }
+
+    [Fact(DisplayName = "延滞照会: 手動で完済して残債がなければ false")]
+    public async Task HasOverdueDebt_AfterFullManualRepay_ShouldBeFalse()
+    {
+        using var env = Build();
+        await MakeOverdueWithBalanceAsync(env);
+
+        (await env.Loan.RepayAsync(Uuid, 500m)).IsSuccess.Should().BeTrue();
+
+        (await env.Loan.HasOverdueDebtAsync(Uuid)).Data.Should().BeFalse();
+    }
+
     [Fact(DisplayName = "延滞中: IgnoreOverdueBlock を指定した出金は通る")]
     public async Task Overdue_WithdrawWithIgnoreOverdueBlock_ShouldSucceed()
     {

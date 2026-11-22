@@ -384,6 +384,19 @@ public class ServerLoanControllerTests
         loanLogs.Any(l => l.Action == "EarlyRepay" && l.Amount == -remain).Should().BeTrue();
     }
 
+    [Fact(DisplayName = "overdue: 延滞していなければ overdue=false を返す")]
+    public async Task GetOverdue_NotOverdue_ShouldReturnFalse()
+    {
+        using var env = BuildController();
+        var ctrl = (ServerLoanController)env.Host.Controller;
+
+        var res = await ctrl.GetOverdue(TestConstants.Uuid);
+
+        res.Result
+            .Should().BeOfType<OkObjectResult>().Which.Value
+            .Should().BeOfType<OverdueResponse>().Which.Overdue.Should().BeFalse();
+    }
+
     private static async Task<List<MoneyLog>> GetMoneyLogsAsync(IDbContextFactory<BankDbContext> f, string uuid)
     {
         await using var db = await f.CreateDbContextAsync();
