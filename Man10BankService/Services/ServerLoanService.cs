@@ -212,10 +212,11 @@ public class ServerLoanService
             var fetch = Math.Min(1000, RepayWindow * 20);
             var logs = await repo.GetLogsAsync(uuid, fetch);
 
+            // 返済成功ログの金額は残債の増減(負数)で記録されるため絶対値で扱う。
             var success = logs
                 .Where(l => l.Action == ServerLoanRepository.ServerLoanLogAction.RepaySuccess.ToString())
                 .Take(RepayWindow)
-                .Select(l => l.Amount)
+                .Select(l => Math.Abs(l.Amount))
                 .ToList();
 
             var failure = logs
@@ -230,10 +231,11 @@ public class ServerLoanService
                 borrowable = avg * 5m;
             }
 
+            // 失敗は上限を下げる方向にだけ効かせる。
             if (failure.Count > 0)
             {
                 var minFail = failure.Min();
-                borrowable = minFail;
+                borrowable = Math.Min(borrowable, minFail);
             }
             
             borrowable = Math.Max(MinAmount, borrowable);
