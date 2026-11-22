@@ -152,18 +152,21 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
             .ToListAsync();
     }
 
-    // 定期返済(週次)の成功/失敗ログを古い順に取得する(借入枠の算定に使用)。
-    public async Task<List<ServerLoanLog>> GetScheduledRepayLogsAsync(string uuid)
+    // 借入枠の算定に使う、現在の残債と全ログ(古い順)を取得する。ローンが無いプレイヤーの残債は 0 で、行は作らない。
+    public async Task<(decimal Debt, List<ServerLoanLog> Logs)> GetBorrowLimitSourceAsync(string uuid)
     {
-        var success = ServerLoanLogAction.RepaySuccess.ToString();
-        var failure = ServerLoanLogAction.RepayFailure.ToString();
-
         await using var db = await factory.CreateDbContextAsync();
-        return await db.ServerLoanLogs
+        var debt = await db.ServerLoans
             .AsNoTracking()
-            .Where(x => x.Uuid == uuid && (x.Action == success || x.Action == failure))
+            .Where(x => x.Uuid == uuid)
+            .Select(x => (decimal?)x.BorrowAmount)
+            .FirstOrDefaultAsync() ?? 0m;
+        var logs = await db.ServerLoanLogs
+            .AsNoTracking()
+            .Where(x => x.Uuid == uuid)
             .OrderBy(x => x.Date).ThenBy(x => x.Id)
             .ToListAsync();
+        return (debt, logs);
     }
 
     // 直近の定期返済(週次)が失敗かどうか。早期返済は判定に含めない。

@@ -21,6 +21,9 @@ public class ServerLoanService
     private static TimeSpan WeeklyRepayTime { get; set; } = new(3, 0, 0);   // 03:00
     private static DayOfWeek WeeklyRepayDay { get; set; } = DayOfWeek.Monday;
 
+    // 増枠の算定で平均残債を求める日数(定期返済の間隔)
+    private const int AverageBalanceDays = 7;
+
     // スケジューラ(BackgroundService)が参照する実行時刻設定
     public static TimeSpan DailyInterestTimeOfDay => DailyInterestTime;
     public static TimeSpan WeeklyRepayTimeOfDay => WeeklyRepayTime;
@@ -286,8 +289,8 @@ public class ServerLoanService
         try
         {
             var repo = new ServerLoanRepository(_dbFactory, _profileService);
-            var logs = await repo.GetScheduledRepayLogsAsync(uuid);
-            return ApiResult<decimal>.Ok(CalculateBorrowLimit(logs));
+            var (debt, logs) = await repo.GetBorrowLimitSourceAsync(uuid);
+            return ApiResult<decimal>.Ok(CalculateBorrowLimit(logs, debt));
         }
         catch (Exception)
         {
@@ -323,24 +326,60 @@ public class ServerLoanService
     }
 
     // 借入枠は MinAmount から始まり、定期返済の履歴を古い順にたどって決まる。
-    // 成功: 返済額 × GrowthFactor だけ増える(1回の増加は現在の枠 × MaxGrowthRate まで)。
+    // 成功: 「返済額」と「その週の平均残債」の小さいほう × GrowthFactor だけ増える(1回の増加は現在の枠 × MaxGrowthRate まで)。
     // 失敗: 現在の枠 × FailureCutRate に下がる。
-    private static decimal CalculateBorrowLimit(IEnumerable<ServerLoanLog> scheduledRepayLogs)
+    // 平均残債は、前回の定期返済より後かつ直近 AverageBalanceDays 日以内に利息が付いた時点の残債を
+    // AverageBalanceDays で割ったもの。利息が付かなかった日は 0 として扱うため、返済の直前だけ借りても枠は増えない。
+    private static decimal CalculateBorrowLimit(IReadOnlyList<ServerLoanLog> logs, decimal currentDebt)
     {
+        var success = ServerLoanRepository.ServerLoanLogAction.RepaySuccess.ToString();
         var failure = ServerLoanRepository.ServerLoanLogAction.RepayFailure.ToString();
-        var limit = ClampBorrowLimit(MinAmount);
+        var interest = ServerLoanRepository.ServerLoanLogAction.Interest.ToString();
 
-        foreach (var log in scheduledRepayLogs)
+        // 各ログの直前の残債を、現在の残債からログの増減を逆算して求める。
+        var debtBefore = new decimal[logs.Count];
+        var debt = currentDebt;
+        for (var i = logs.Count - 1; i >= 0; i--)
         {
+            // 返済失敗ログの金額は引き落とそうとした額で、残債は変わらない。
+            if (logs[i].Action != failure)
+                debt -= logs[i].Amount;
+            debtBefore[i] = debt;
+        }
+
+        var limit = ClampBorrowLimit(MinAmount);
+        var interestDebts = new List<(DateTime Date, decimal Debt)>();
+
+        for (var i = 0; i < logs.Count; i++)
+        {
+            var log = logs[i];
+            if (log.Action == interest)
+            {
+                interestDebts.Add((log.Date, Math.Max(0m, debtBefore[i])));
+                continue;
+            }
+
             if (log.Action == failure)
             {
                 limit *= FailureCutRate;
+                interestDebts.Clear();
+            }
+            else if (log.Action == success)
+            {
+                // 返済成功ログの金額は残債の増減(負数)で記録されるため絶対値で扱う。
+                // 0 円の成功(延滞解消の記録)は枠を増やさず、その週の利息の記録も消費しない。
+                var paid = Math.Abs(log.Amount);
+                if (paid <= 0m)
+                    continue;
+
+                var from = log.Date.AddDays(-AverageBalanceDays);
+                var averageDebt = interestDebts.Where(x => x.Date > from).Sum(x => x.Debt) / AverageBalanceDays;
+                limit += Math.Min(Math.Min(paid, averageDebt) * GrowthFactor, limit * MaxGrowthRate);
+                interestDebts.Clear();
             }
             else
             {
-                // 返済成功ログの金額は残債の増減(負数)で記録されるため絶対値で扱う。
-                var paid = Math.Abs(log.Amount);
-                limit += Math.Min(paid * GrowthFactor, limit * MaxGrowthRate);
+                continue;
             }
 
             limit = ClampBorrowLimit(limit);

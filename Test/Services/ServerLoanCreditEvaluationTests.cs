@@ -43,11 +43,39 @@ public class ServerLoanCreditEvaluationTests
         return await ctx.ServerLoanLogs.AsNoTracking().Where(x => x.Uuid == Uuid).ToListAsync();
     }
 
+    // 定期返済の履歴を作る。成功は「返済額と同じ額を 1 週間借りてから全額返した」週として記録する。
     private static async Task AddRepayLogsAsync(TestDbFactory db, params (string Action, decimal Amount)[] logs)
     {
-        await using var ctx = await db.Factory.CreateDbContextAsync();
-        var date = DateTime.UtcNow.AddDays(-logs.Length);
+        var rows = new List<(string Action, decimal Amount, DateTime Date)>();
+        var date = DateTime.UtcNow.AddDays(-8 * logs.Length - 1);
         foreach (var (action, amount) in logs)
+        {
+            if (action == "RepaySuccess")
+            {
+                rows.Add(("Borrow", -amount, date));
+                for (var day = 1; day <= 7; day++)
+                    rows.Add(("Interest", 0m, date.AddDays(day)));
+                rows.Add((action, amount, date.AddDays(7).AddHours(1)));
+            }
+            else
+            {
+                rows.Add((action, amount, date));
+            }
+            date = date.AddDays(8);
+        }
+        await AddLogsAsync(db, rows.ToArray());
+    }
+
+    private static Task AddLogsAsync(TestDbFactory db, params (string Action, decimal Amount, double DaysAgo)[] logs)
+    {
+        var now = DateTime.UtcNow;
+        return AddLogsAsync(db, logs.Select(l => (l.Action, l.Amount, now.AddDays(-l.DaysAgo))).ToArray());
+    }
+
+    private static async Task AddLogsAsync(TestDbFactory db, (string Action, decimal Amount, DateTime Date)[] logs)
+    {
+        await using var ctx = await db.Factory.CreateDbContextAsync();
+        foreach (var (action, amount, date) in logs)
         {
             ctx.ServerLoanLogs.Add(new ServerLoanLog
             {
@@ -57,9 +85,16 @@ public class ServerLoanCreditEvaluationTests
                 Amount = amount,
                 Date = date
             });
-            date = date.AddDays(1);
         }
         await ctx.SaveChangesAsync();
+    }
+
+    // 日次利息を days 日分付ける(ログの日時は実行時刻になるため、すべて直近 1 週間以内の利息として扱われる)。
+    private static async Task AccrueInterestAsync(ServerLoanService loan, int days)
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        for (var day = days; day >= 1; day--)
+            await loan.RunDailyInterestForAllAsync(today.AddDays(-day));
     }
 
     private static Task DepositAsync(BankService bank, decimal amount) =>
@@ -136,8 +171,23 @@ public class ServerLoanCreditEvaluationTests
         (await loan.CalculateBorrowLimitAsync(Uuid)).Data.Should().Be(MinAmount);
     }
 
-    [Fact(DisplayName = "借入上限: 週次返済が成功すると返済額の50%だけ上がる")]
+    [Fact(DisplayName = "借入上限: 1週間借りてから週次返済が成功すると返済額の50%だけ上がる")]
     public async Task BorrowLimit_WeeklyRepaySuccess_ShouldGrowByHalfOfPaidAmount()
+    {
+        var (loan, _, db) = Build();
+        using var _1 = db;
+
+        (await loan.BorrowAsync(Uuid, MinAmount)).IsSuccess.Should().BeTrue();
+        (await loan.SetPaymentAmountAsync(Uuid, 300m)).IsSuccess.Should().BeTrue();
+        await AccrueInterestAsync(loan, 7);
+
+        await loan.RunWeeklyRepayForAllAsync();
+
+        (await loan.CalculateBorrowLimitAsync(Uuid)).Data.Should().Be(1150m);
+    }
+
+    [Fact(DisplayName = "借入上限: 利息が付く前に返済した分では上がらない")]
+    public async Task BorrowLimit_BorrowedJustBeforeRepay_ShouldNotGrow()
     {
         var (loan, _, db) = Build();
         using var _1 = db;
@@ -147,7 +197,122 @@ public class ServerLoanCreditEvaluationTests
 
         await loan.RunWeeklyRepayForAllAsync();
 
-        (await loan.CalculateBorrowLimitAsync(Uuid)).Data.Should().Be(1150m);
+        (await GetLogsAsync(db)).Should().ContainSingle(l => l.Action == "RepaySuccess" && l.Amount == -300m);
+        (await loan.CalculateBorrowLimitAsync(Uuid)).Data.Should().Be(MinAmount);
+    }
+
+    [Fact(DisplayName = "借入上限: 返済の前日に借りた分は7分の1だけ数える")]
+    public async Task BorrowLimit_BorrowedOneDayBeforeRepay_ShouldGrowByOneSeventh()
+    {
+        var (loan, _, db) = Build();
+        using var _1 = db;
+
+        (await loan.BorrowAsync(Uuid, 700m)).IsSuccess.Should().BeTrue();
+        (await loan.SetPaymentAmountAsync(Uuid, 300m)).IsSuccess.Should().BeTrue();
+        await AccrueInterestAsync(loan, 1);
+
+        await loan.RunWeeklyRepayForAllAsync();
+
+        // 平均残債 700 ÷ 7 = 100 が返済額 300 より小さいので、100 × 50% だけ増える。
+        (await loan.CalculateBorrowLimitAsync(Uuid)).Data.Should().Be(1050m);
+    }
+
+    [Fact(DisplayName = "借入上限: 少額を借りておき返済直前に借り増しても平均残債の分しか上がらない")]
+    public async Task BorrowLimit_ToppedUpJustBeforeRepay_ShouldGrowByAverageDebt()
+    {
+        var (loan, _, db) = Build();
+        using var _1 = db;
+
+        // 利息が付いた時点の残債は 100, 101, ..., 106(平均 103)。
+        await AddLogsAsync(db,
+            ("Borrow", 100m, 7.5),
+            ("Interest", 1m, 6.5), ("Interest", 1m, 5.5), ("Interest", 1m, 4.5), ("Interest", 1m, 3.5),
+            ("Interest", 1m, 2.5), ("Interest", 1m, 1.5), ("Interest", 1m, 0.5),
+            ("Borrow", 900m, 0.2),
+            ("RepaySuccess", -1007m, 0.1));
+
+        // 1000 + 103 × 50% = 1051.5
+        (await loan.CalculateBorrowLimitAsync(Uuid)).Data.Should().Be(1051m);
+    }
+
+    [Fact(DisplayName = "借入上限: 1週間より前に付いた利息は数えない")]
+    public async Task BorrowLimit_InterestOlderThanAWeek_ShouldNotCount()
+    {
+        var (loan, _, db) = Build();
+        using var _1 = db;
+
+        await AddLogsAsync(db,
+            ("Borrow", 1000m, 20),
+            ("Interest", 10m, 19), ("Interest", 10m, 18), ("Interest", 10m, 17), ("Interest", 10m, 16),
+            ("Interest", 10m, 15), ("Interest", 10m, 14), ("Interest", 10m, 13),
+            ("EarlyRepay", -1070m, 12),
+            ("Borrow", 500m, 0.2),
+            ("RepaySuccess", -500m, 0.1));
+
+        (await loan.CalculateBorrowLimitAsync(Uuid)).Data.Should().Be(MinAmount);
+    }
+
+    [Fact(DisplayName = "借入上限: 定期返済の失敗より前に付いた利息は次の成功で数えない")]
+    public async Task BorrowLimit_SuccessAfterFailureInSameWeek_ShouldNotGrow()
+    {
+        var (loan, _, db) = Build();
+        using var _1 = db;
+
+        await AddLogsAsync(db,
+            ("Borrow", 1000m, 7.5),
+            ("Interest", 10m, 6.5), ("Interest", 10m, 5.5), ("Interest", 10m, 4.5), ("Interest", 10m, 3.5),
+            ("Interest", 10m, 2.5), ("Interest", 10m, 1.5), ("Interest", 10m, 0.5),
+            ("RepayFailure", 300m, 0.3),
+            ("RepaySuccess", -1070m, 0.1));
+
+        (await loan.CalculateBorrowLimitAsync(Uuid)).Data.Should().Be(MinAmount);
+    }
+
+    [Fact(DisplayName = "借入上限: 0円の返済成功(延滞解消の記録)はその週の利息の記録を消費しない")]
+    public async Task BorrowLimit_ZeroAmountSuccessInWeek_ShouldKeepInterestHistory()
+    {
+        var (loan, _, db) = Build();
+        using var _1 = db;
+
+        await AddLogsAsync(db,
+            ("Borrow", 1000m, 7.5),
+            ("Interest", 10m, 6.5), ("Interest", 10m, 5.5), ("Interest", 10m, 4.5),
+            ("RepaySuccess", 0m, 4),
+            ("Interest", 10m, 3.5), ("Interest", 10m, 2.5), ("Interest", 10m, 1.5), ("Interest", 10m, 0.5),
+            ("RepaySuccess", -1070m, 0.1));
+
+        // 平均残債 1030 に対して増加は枠の 50% が上限。
+        (await loan.CalculateBorrowLimitAsync(Uuid)).Data.Should().Be(1500m);
+    }
+
+    [Fact(DisplayName = "借入上限: ログに残っていない残債も現在の残債から逆算して平均残債に含める")]
+    public async Task BorrowLimit_DebtWithoutBorrowLog_ShouldBeDerivedFromCurrentDebt()
+    {
+        var (loan, _, db) = Build();
+        using var _1 = db;
+
+        await using (var ctx = await db.Factory.CreateDbContextAsync())
+        {
+            ctx.ServerLoans.Add(new ServerLoan
+            {
+                Uuid = Uuid,
+                Player = "test-player",
+                BorrowAmount = 4700m,
+                PaymentAmount = 370m,
+                LastPayDate = DateTime.UtcNow,
+                FailedPayment = 0,
+                StopInterest = false
+            });
+            await ctx.SaveChangesAsync();
+        }
+
+        // 借入ログは無いが、現在の残債 4700 から逆算すると利息が付いた時点の残債は 5000 〜 5060 になる。
+        await AddLogsAsync(db,
+            ("Interest", 10m, 6.5), ("Interest", 10m, 5.5), ("Interest", 10m, 4.5), ("Interest", 10m, 3.5),
+            ("Interest", 10m, 2.5), ("Interest", 10m, 1.5), ("Interest", 10m, 0.5),
+            ("RepaySuccess", -370m, 0.1));
+
+        (await loan.CalculateBorrowLimitAsync(Uuid)).Data.Should().Be(1185m);
     }
 
     [Fact(DisplayName = "借入上限: 手動返済は上限に影響しない")]
