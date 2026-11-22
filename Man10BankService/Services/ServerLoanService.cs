@@ -106,7 +106,7 @@ public class ServerLoanService
             return ApiResult<ServerLoan?>.Fail(limitRes.Code);
         var limit = limitRes.Data;
 
-        // 定期返済に失敗したままの間は、次の返済(手動でも可)が成功するまで新規借入を止める。
+        // 定期返済に失敗したままの間は、次の定期返済が成功するまで新規借入を止める。
         var overdueRes = await IsRepaymentOverdueAsync(uuid);
         if (!overdueRes.IsSuccess)
             return ApiResult<ServerLoan?>.Fail(overdueRes.Code);
@@ -167,7 +167,16 @@ public class ServerLoanService
             var loan = await repo.GetOrCreateForUpdateAsync(db, uuid, resolvedPlayer);
             var remain = loan.BorrowAmount;
             if (remain <= 0m)
+            {
+                // 延滞後に完済済みのまま定期返済日を迎えた場合は、0 円の成功ログを残して延滞を解消する。
+                // ログを確定させるため Ok + NoRepaymentNeeded で返し、ラッパ側で失敗へ変換する。
+                if (scheduled && await ServerLoanRepository.IsLatestScheduledRepayFailureAsync(db, uuid))
+                {
+                    ServerLoanRepository.AdjustLoanCore(db, loan, loan.Player, 0m, ServerLoanRepository.ServerLoanLogAction.RepaySuccess);
+                    return ApiResult<ServerLoan?>.Ok(loan, ErrorCode.NoRepaymentNeeded);
+                }
                 return ApiResult<ServerLoan?>.Fail(ErrorCode.NoRepaymentNeeded);
+            }
 
             var requested = payAmount is > 0m ? payAmount.Value : loan.PaymentAmount;
             if (requested <= 0m)
@@ -206,9 +215,9 @@ public class ServerLoanService
             return ApiResult<ServerLoan?>.Ok(loan);
         });
 
-        // 残高不足でコミットした失敗ログは確定させつつ、呼び出し側へは 409 を返す。
-        if (result.IsSuccess && result.Code == ErrorCode.InsufficientFunds)
-            return ApiResult<ServerLoan?>.Fail(ErrorCode.InsufficientFunds);
+        // 残高不足の失敗ログ・延滞解消ログは確定させつつ、呼び出し側へは失敗として返す。
+        if (result.IsSuccess && result.Code is ErrorCode.InsufficientFunds or ErrorCode.NoRepaymentNeeded)
+            return ApiResult<ServerLoan?>.Fail(result.Code);
         return result;
     }
     
@@ -231,7 +240,7 @@ public class ServerLoanService
         try
         {
             var repo = new ServerLoanRepository(_dbFactory, _profileService);
-            return ApiResult<bool>.Ok(await repo.IsLatestRepayFailureAsync(uuid));
+            return ApiResult<bool>.Ok(await repo.IsLatestScheduledRepayFailureAsync(uuid));
         }
         catch (Exception)
         {

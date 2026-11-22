@@ -164,17 +164,21 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
             .ToListAsync();
     }
 
-    // 直近の返済系ログ(定期返済の成功/失敗・早期返済)が定期返済の失敗かどうか。
-    public async Task<bool> IsLatestRepayFailureAsync(string uuid)
+    // 直近の定期返済(週次)が失敗かどうか。早期返済は判定に含めない。
+    public async Task<bool> IsLatestScheduledRepayFailureAsync(string uuid)
+    {
+        await using var db = await factory.CreateDbContextAsync();
+        return await IsLatestScheduledRepayFailureAsync(db, uuid);
+    }
+
+    public static async Task<bool> IsLatestScheduledRepayFailureAsync(BankDbContext db, string uuid)
     {
         var success = ServerLoanLogAction.RepaySuccess.ToString();
         var failure = ServerLoanLogAction.RepayFailure.ToString();
-        var early = ServerLoanLogAction.EarlyRepay.ToString();
 
-        await using var db = await factory.CreateDbContextAsync();
         var latest = await db.ServerLoanLogs
             .AsNoTracking()
-            .Where(x => x.Uuid == uuid && (x.Action == success || x.Action == failure || x.Action == early))
+            .Where(x => x.Uuid == uuid && (x.Action == success || x.Action == failure))
             .OrderByDescending(x => x.Date).ThenByDescending(x => x.Id)
             .Select(x => x.Action)
             .FirstOrDefaultAsync();

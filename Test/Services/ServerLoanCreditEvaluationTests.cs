@@ -240,8 +240,8 @@ public class ServerLoanCreditEvaluationTests
         (await loan.GetByUuidAsync(Uuid)).Data!.BorrowAmount.Should().Be(500m);
     }
 
-    [Fact(DisplayName = "借入: 定期返済の失敗後に手動返済すると借入を再開できる")]
-    public async Task Borrow_AfterManualRepayFollowingFailure_ShouldSucceed()
+    [Fact(DisplayName = "借入: 定期返済の失敗後に手動返済しても借入は再開できない")]
+    public async Task Borrow_AfterManualRepayFollowingFailure_ShouldStillFail()
     {
         var (loan, bank, db) = Build();
         using var _1 = db;
@@ -253,7 +253,42 @@ public class ServerLoanCreditEvaluationTests
         await bank.DepositAsync(new DepositRequest { Uuid = Uuid, Amount = 1000m, PluginName = "test", Note = "seed", DisplayNote = "seed", Server = "dev" });
         (await loan.RepayAsync(Uuid, 100m)).IsSuccess.Should().BeTrue();
 
+        (await loan.BorrowAsync(Uuid, 100m)).Code.Should().Be(ErrorCode.RepaymentOverdue);
+    }
+
+    [Fact(DisplayName = "借入: 延滞後に手動で完済した場合は次の定期返済日に0円の成功として再開できる")]
+    public async Task Borrow_AfterFullManualRepayAndNextWeeklyRun_ShouldSucceed()
+    {
+        var (loan, bank, db) = Build();
+        using var _1 = db;
+
+        (await loan.BorrowAsync(Uuid, 500m)).IsSuccess.Should().BeTrue();
+        await WithdrawAllAsync(bank, 500m);
+        await loan.RunWeeklyRepayForAllAsync();
+
+        await bank.DepositAsync(new DepositRequest { Uuid = Uuid, Amount = 1000m, PluginName = "test", Note = "seed", DisplayNote = "seed", Server = "dev" });
+        (await loan.RepayAsync(Uuid, 500m)).IsSuccess.Should().BeTrue();
+        (await loan.BorrowAsync(Uuid, 100m)).Code.Should().Be(ErrorCode.RepaymentOverdue);
+
+        await loan.RunWeeklyRepayForAllAsync();
+
+        (await GetLogsAsync(db)).Should().ContainSingle(l => l.Action == "RepaySuccess" && l.Amount == 0m);
         (await loan.BorrowAsync(Uuid, 100m)).IsSuccess.Should().BeTrue();
+    }
+
+    [Fact(DisplayName = "週次返済: 延滞のない完済済みローンにはログを残さない")]
+    public async Task WeeklyRepay_NoDebtWithoutOverdue_ShouldNotWriteLog()
+    {
+        var (loan, _, db) = Build();
+        using var _1 = db;
+
+        (await loan.BorrowAsync(Uuid, 500m)).IsSuccess.Should().BeTrue();
+        (await loan.RepayAsync(Uuid, 500m)).IsSuccess.Should().BeTrue();
+
+        await loan.RunWeeklyRepayForAllAsync();
+        await loan.RunWeeklyRepayForAllAsync();
+
+        (await GetLogsAsync(db)).Should().NotContain(l => l.Action == "RepaySuccess" || l.Action == "RepayFailure");
     }
 
     [Fact(DisplayName = "借入: 定期返済の失敗後に次の定期返済が成功すると借入を再開できる")]
