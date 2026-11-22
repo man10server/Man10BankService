@@ -104,7 +104,7 @@ public class BankService
 
         return await RunMoneyOpAsync(IdempotencyRequest.From(req.RequestId, "withdraw", req.Uuid, req.Amount), async db =>
         {
-            if (await ServerLoanRepository.HasOverdueDebtAsync(db, req.Uuid))
+            if (!req.IgnoreOverdueBlock && await ServerLoanRepository.HasOverdueDebtAsync(db, req.Uuid))
                 return ApiResult<decimal>.Fail(ErrorCode.WithdrawBlockedByOverdue);
 
             // 行ロック下で残高不足を判定してから減算する。

@@ -90,6 +90,27 @@ public class ServerLoanOverdueBlockTests
             .IsSuccess.Should().BeTrue();
     }
 
+    [Fact(DisplayName = "延滞中: IgnoreOverdueBlock を指定した出金は通る")]
+    public async Task Overdue_WithdrawWithIgnoreOverdueBlock_ShouldSucceed()
+    {
+        using var env = Build();
+        await MakeOverdueWithBalanceAsync(env);
+
+        var res = await env.Bank.WithdrawAsync(new WithdrawRequest
+        {
+            Uuid = Uuid,
+            Amount = 100m,
+            PluginName = "test",
+            Note = "admin_take",
+            DisplayNote = "運営による調整",
+            Server = "dev",
+            IgnoreOverdueBlock = true
+        });
+
+        res.IsSuccess.Should().BeTrue();
+        res.Data.Should().Be(900m);
+    }
+
     [Fact(DisplayName = "延滞中: 延滞分を回収しきると出金できるようになる")]
     public async Task Overdue_AfterCollection_ShouldAllowWithdraw()
     {

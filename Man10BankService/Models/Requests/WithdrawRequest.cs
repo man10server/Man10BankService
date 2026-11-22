@@ -36,6 +36,9 @@ public class WithdrawRequest : IValidatableObject
     [RegularExpression(@"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$", ErrorMessage = "requestId の形式が不正です。")]
     public string? RequestId { get; set; }
 
+    // サーバーローン延滞中の出金制限を無視する(運営による残高調整用)。
+    public bool IgnoreOverdueBlock { get; set; } = false;
+
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
         if (Amount <= 0m)
