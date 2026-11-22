@@ -37,6 +37,7 @@ public static class ErrorCodeMapper
         ErrorCode.ChequeAlreadyUsed => 409,
         ErrorCode.BorrowLimitExceeded => 409,
         ErrorCode.RepaymentOverdue => 409,
+        ErrorCode.WithdrawBlockedByOverdue => 409,
         ErrorCode.LoanNotRepaid => 409,
         ErrorCode.CollateralNotFound => 409,
         ErrorCode.CollateralAlreadyReleased => 409,

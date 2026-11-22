@@ -179,6 +179,21 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
         return latest?.Action == ServerLoanLogAction.RepayFailure.ToString();
     }
 
+    // 残債があり、かつ延滞中(直近の定期返済が失敗のまま)かどうか。
+    // 延滞中は銀行からの出金・送金・小切手作成・貸付を拒否するために使う。
+    public static async Task<bool> HasOverdueDebtAsync(BankDbContext db, string uuid)
+    {
+        var debt = await db.ServerLoans
+            .AsNoTracking()
+            .Where(x => x.Uuid == uuid)
+            .Select(x => (decimal?)x.BorrowAmount)
+            .FirstOrDefaultAsync();
+        if (debt is null or <= 0m)
+            return false;
+
+        return await IsLatestScheduledRepayFailureAsync(db, uuid);
+    }
+
     // 延滞分(直近の定期返済の失敗額)のうち未回収の額。延滞中でなければ null。
     public static async Task<decimal?> GetUncollectedOverdueAmountAsync(BankDbContext db, string uuid)
     {

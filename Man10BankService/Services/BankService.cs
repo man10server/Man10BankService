@@ -104,6 +104,9 @@ public class BankService
 
         return await RunMoneyOpAsync(IdempotencyRequest.From(req.RequestId, "withdraw", req.Uuid, req.Amount), async db =>
         {
+            if (await ServerLoanRepository.HasOverdueDebtAsync(db, req.Uuid))
+                return ApiResult<decimal>.Fail(ErrorCode.WithdrawBlockedByOverdue);
+
             // 行ロック下で残高不足を判定してから減算する。
             var bank = await DbLockHelper.GetUserBankForUpdateAsync(db, req.Uuid);
             var current = bank?.Balance ?? 0m;
@@ -133,6 +136,9 @@ public class BankService
 
         return await RunMoneyOpAsync(IdempotencyRequest.From(req.RequestId, "transfer", req.FromUuid, req.Amount), async db =>
         {
+            if (await ServerLoanRepository.HasOverdueDebtAsync(db, req.FromUuid))
+                return ApiResult<decimal>.Fail(ErrorCode.WithdrawBlockedByOverdue);
+
             // デッドロック防止のため UUID 昇順で行ロックを取得する。
             var ordered = string.CompareOrdinal(req.FromUuid, req.ToUuid) <= 0
                 ? new[] { req.FromUuid, req.ToUuid }
