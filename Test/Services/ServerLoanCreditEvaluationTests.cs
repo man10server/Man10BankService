@@ -8,22 +8,25 @@ using Test.Infrastructure;
 
 namespace Test.Services;
 
+[Collection(ServerLoanConfigCollection.Name)]
 public class ServerLoanCreditEvaluationTests
 {
     private const string Uuid = TestConstants.Uuid;
     private const decimal MinAmount = 1000m;
 
-    private static (ServerLoanService Loan, BankService Bank, TestDbFactory Db) Build()
+    private static (ServerLoanService Loan, BankService Bank, TestDbFactory Db) Build(
+        Dictionary<string, string?>? overrides = null)
     {
         var db = TestDbFactory.Create();
-        var config = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["ServerLoan:DailyInterestRate"] = "0.01",
-                ["ServerLoan:MinAmount"] = "1000",
-                ["ServerLoan:MaxAmount"] = "3000000"
-            })
-            .Build();
+        var settings = new Dictionary<string, string?>
+        {
+            ["ServerLoan:DailyInterestRate"] = "0.01",
+            ["ServerLoan:MinAmount"] = "1000",
+            ["ServerLoan:MaxAmount"] = "3000000"
+        };
+        foreach (var (key, value) in overrides ?? [])
+            settings[key] = value;
+        var config = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
         var profile = new FakePlayerProfileService();
         var bank = new BankService(db.Factory, profile);
         var loan = new ServerLoanService(db.Factory, bank, profile, config);
@@ -110,8 +113,8 @@ public class ServerLoanCreditEvaluationTests
         (await loan.CalculateBorrowLimitAsync(Uuid)).Data.Should().Be(MinAmount);
     }
 
-    [Fact(DisplayName = "借入上限: 週次返済が成功すると返済額と同額だけ上がる")]
-    public async Task BorrowLimit_WeeklyRepaySuccess_ShouldGrowByPaidAmount()
+    [Fact(DisplayName = "借入上限: 週次返済が成功すると返済額の50%だけ上がる")]
+    public async Task BorrowLimit_WeeklyRepaySuccess_ShouldGrowByHalfOfPaidAmount()
     {
         var (loan, _, db) = Build();
         using var _1 = db;
@@ -121,7 +124,7 @@ public class ServerLoanCreditEvaluationTests
 
         await loan.RunWeeklyRepayForAllAsync();
 
-        (await loan.CalculateBorrowLimitAsync(Uuid)).Data.Should().Be(1300m);
+        (await loan.CalculateBorrowLimitAsync(Uuid)).Data.Should().Be(1150m);
     }
 
     [Fact(DisplayName = "借入上限: 手動返済は上限に影響しない")]
@@ -162,20 +165,36 @@ public class ServerLoanCreditEvaluationTests
         (await loan.CalculateBorrowLimitAsync(Uuid)).Data.Should().Be(1500m);
     }
 
+    [Fact(DisplayName = "借入上限: 増加係数と増加率の上限は設定で変えられる")]
+    public async Task BorrowLimit_CustomGrowthSettings_ShouldApply()
+    {
+        var (loan, _, db) = Build(new Dictionary<string, string?>
+        {
+            ["ServerLoan:GrowthFactor"] = "2",
+            ["ServerLoan:MaxGrowthRate"] = "1"
+        });
+        using var _1 = db;
+
+        // 1000 → 1600(300×2) → 3200(増加は枠の100%まで)
+        await AddRepayLogsAsync(db, ("RepaySuccess", -300m), ("RepaySuccess", -5000m));
+
+        (await loan.CalculateBorrowLimitAsync(Uuid)).Data.Should().Be(3200m);
+    }
+
     [Fact(DisplayName = "借入上限: 週次返済の失敗で枠が半減し端数は切り捨てる")]
     public async Task BorrowLimit_RepayFailure_ShouldHalveAndFloor()
     {
         var (loan, _, db) = Build();
         using var _1 = db;
 
-        // 1000 → 1500 → 2250 → 2251 → 1125.5
+        // 1000 → 1500 → 2250 → 3375 → 1687.5
         await AddRepayLogsAsync(db,
-            ("RepaySuccess", -500m),
-            ("RepaySuccess", -750m),
-            ("RepaySuccess", -1m),
+            ("RepaySuccess", -5000m),
+            ("RepaySuccess", -5000m),
+            ("RepaySuccess", -5000m),
             ("RepayFailure", 100m));
 
-        (await loan.CalculateBorrowLimitAsync(Uuid)).Data.Should().Be(1125m);
+        (await loan.CalculateBorrowLimitAsync(Uuid)).Data.Should().Be(1687m);
     }
 
     [Fact(DisplayName = "借入上限: 失敗で下限額を下回らず、その後の成功でまた育つ")]
@@ -184,13 +203,13 @@ public class ServerLoanCreditEvaluationTests
         var (loan, _, db) = Build();
         using var _1 = db;
 
-        // 1000 → 1500 → 750(下限 1000) → 1200
+        // 1000 → 1250 → 625(下限 1000) → 1100
         await AddRepayLogsAsync(db,
             ("RepaySuccess", -500m),
             ("RepayFailure", 100m),
             ("RepaySuccess", -200m));
 
-        (await loan.CalculateBorrowLimitAsync(Uuid)).Data.Should().Be(1200m);
+        (await loan.CalculateBorrowLimitAsync(Uuid)).Data.Should().Be(1100m);
     }
 
     [Fact(DisplayName = "借入上限: 成功を重ねても上限額を超えない")]

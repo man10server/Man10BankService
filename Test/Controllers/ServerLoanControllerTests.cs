@@ -16,6 +16,7 @@ using Test.Infrastructure;
 
 namespace Test.Controllers;
 
+[Collection(ServerLoanConfigCollection.Name)]
 public class ServerLoanControllerTests
 {
     private sealed record TestEnv(ControllerHost Host, BankService Bank, IDbContextFactory<BankDbContext> DbFactory) : IDisposable

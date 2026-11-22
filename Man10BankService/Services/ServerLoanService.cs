@@ -12,7 +12,7 @@ public class ServerLoanService
     private static decimal DailyInterestRate { get; set; } = 0.001m;
     private static decimal MinAmount { get; set; } = 100000m;
     private static decimal MaxAmount { get; set; } = 3000000m;
-    private static decimal GrowthFactor { get; set; } = 1m;
+    private static decimal GrowthFactor { get; set; } = 0.5m;
     private static decimal MaxGrowthRate { get; set; } = 0.5m;
     private static decimal FailureCutRate { get; set; } = 0.5m;
     private static TimeSpan DailyInterestTime { get; set; } = new(2, 0, 0); // 02:00
@@ -431,7 +431,7 @@ public class ServerLoanService
         DailyInterestRate = s.GetValue("DailyInterestRate", 0.001m);
         MinAmount = s.GetValue("MinAmount", 100000m);
         MaxAmount = s.GetValue("MaxAmount", 3000000m);
-        GrowthFactor = s.GetValue("GrowthFactor", 1m);
+        GrowthFactor = s.GetValue("GrowthFactor", 0.5m);
         MaxGrowthRate = s.GetValue("MaxGrowthRate", 0.5m);
         FailureCutRate = s.GetValue("FailureCutRate", 0.5m);
 
