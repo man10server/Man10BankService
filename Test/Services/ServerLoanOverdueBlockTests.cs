@@ -27,7 +27,8 @@ public class ServerLoanOverdueBlockTests
                 ["ServerLoan:MinAmount"] = "1000",
                 ["ServerLoan:MaxAmount"] = "3000000",
                 ["ServerLoan:MinPaymentRate"] = "0",
-                ["ServerLoan:MinPaymentAmount"] = "0"
+                ["ServerLoan:MinPaymentAmount"] = "0",
+                ["ServerLoan:MinPrincipalRate"] = "0"
             })
             .Build();
         var profile = new FakePlayerProfileService();

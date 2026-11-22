@@ -26,7 +26,8 @@ public class ServerLoanCreditEvaluationTests
             ["ServerLoan:GrowthFactor"] = "0.5",
             ["ServerLoan:MaxGrowthRate"] = "0.5",
             ["ServerLoan:MinPaymentRate"] = "0",
-            ["ServerLoan:MinPaymentAmount"] = "0"
+            ["ServerLoan:MinPaymentAmount"] = "0",
+            ["ServerLoan:MinPrincipalRate"] = "0"
         };
         foreach (var (key, value) in overrides ?? [])
             settings[key] = value;
@@ -531,6 +532,41 @@ public class ServerLoanCreditEvaluationTests
 
         (await loan.BorrowAsync(Uuid, MinAmount)).IsSuccess.Should().BeTrue();
         (await loan.SetPaymentAmountAsync(Uuid, paymentAmount)).IsSuccess.Should().BeTrue();
+
+        (await loan.GetPaymentInfoAsync(Uuid)).Data!.NextPaymentAmount.Should().Be(expectedPaid);
+
+        await loan.RunWeeklyRepayForAllAsync();
+
+        (await GetLogsAsync(db)).Should().ContainSingle(l => l.Action == "RepaySuccess" && l.Amount == -expectedPaid);
+        (await loan.GetByUuidAsync(Uuid)).Data!.BorrowAmount.Should().Be(MinAmount - expectedPaid);
+    }
+
+    // 残債 1000・日利 1% の 1 週間分の利息は 72(10, 10, 10, 10, 10, 11, 11)。
+    [Theory(DisplayName = "週次返済: 最低返済額は1週間分の利息と元本分の合計を下回らない")]
+    [InlineData("0.02", "0.01", "0", false, 82)]
+    [InlineData("0.1", "0.01", "0", false, 100)]
+    [InlineData("0.02", "0", "0", false, 20)]
+    [InlineData("0.02", "0.01", "0", true, 20)]
+    [InlineData("0.02", "0.01", "1000", false, 20)]
+    public async Task WeeklyRepay_MinimumPayment_ShouldCoverWeeklyInterestAndPrincipal(
+        string minPaymentRate, string minPrincipalRate, string maxDebtAmount, bool stopInterest, int expectedPaid)
+    {
+        var (loan, _, db) = Build(new Dictionary<string, string?>
+        {
+            ["ServerLoan:MinPaymentRate"] = minPaymentRate,
+            ["ServerLoan:MinPrincipalRate"] = minPrincipalRate,
+            ["ServerLoan:MaxDebtAmount"] = maxDebtAmount
+        });
+        using var _1 = db;
+
+        (await loan.BorrowAsync(Uuid, MinAmount)).IsSuccess.Should().BeTrue();
+        (await loan.SetPaymentAmountAsync(Uuid, 1m)).IsSuccess.Should().BeTrue();
+        if (stopInterest)
+        {
+            await using var ctx = await db.Factory.CreateDbContextAsync();
+            (await ctx.ServerLoans.SingleAsync(x => x.Uuid == Uuid)).StopInterest = true;
+            await ctx.SaveChangesAsync();
+        }
 
         (await loan.GetPaymentInfoAsync(Uuid)).Data!.NextPaymentAmount.Should().Be(expectedPaid);
 
