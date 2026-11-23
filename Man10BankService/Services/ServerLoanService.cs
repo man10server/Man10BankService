@@ -9,7 +9,7 @@ namespace Man10BankService.Services;
 
 public class ServerLoanService
 {
-    private static decimal DailyInterestRate { get; set; } = 0.001m;
+    private static decimal DailyInterestRate { get; set; } = 0.02m;
     private static decimal MinAmount { get; set; } = 100000m;
     private static decimal MaxAmount { get; set; } = 3000000m;
     private static decimal MaxDebtAmount { get; set; } = 10000000m;
@@ -608,7 +608,7 @@ public class ServerLoanService
     private static void Configure(IConfiguration configuration)
     {
         var s = configuration.GetSection("ServerLoan");
-        DailyInterestRate = s.GetValue("DailyInterestRate", 0.001m);
+        DailyInterestRate = s.GetValue("DailyInterestRate", 0.02m);
         MinAmount = s.GetValue("MinAmount", 100000m);
         MaxAmount = s.GetValue("MaxAmount", 3000000m);
         MaxDebtAmount = s.GetValue("MaxDebtAmount", 10000000m);
