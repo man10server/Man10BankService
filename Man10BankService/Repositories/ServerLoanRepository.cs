@@ -156,11 +156,7 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
     public async Task<(decimal Debt, List<ServerLoanLog> Logs)> GetBorrowLimitSourceAsync(string uuid)
     {
         await using var db = await factory.CreateDbContextAsync();
-        var debt = await db.ServerLoans
-            .AsNoTracking()
-            .Where(x => x.Uuid == uuid)
-            .Select(x => (decimal?)x.BorrowAmount)
-            .FirstOrDefaultAsync() ?? 0m;
+        var debt = await GetDebtAsync(db, uuid) ?? 0m;
         var logs = await db.ServerLoanLogs
             .AsNoTracking()
             .Where(x => x.Uuid == uuid)
@@ -186,15 +182,21 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
     // 延滞中は銀行からの出金・送金・小切手作成・貸付を拒否するために使う。
     public static async Task<bool> HasOverdueDebtAsync(BankDbContext db, string uuid)
     {
-        var debt = await db.ServerLoans
-            .AsNoTracking()
-            .Where(x => x.Uuid == uuid)
-            .Select(x => (decimal?)x.BorrowAmount)
-            .FirstOrDefaultAsync();
+        var debt = await GetDebtAsync(db, uuid);
         if (debt is null or <= 0m)
             return false;
 
         return await IsLatestScheduledRepayFailureAsync(db, uuid);
+    }
+
+    // 現在の残債。ローンが無いプレイヤーは null で、行は作らない。
+    private static async Task<decimal?> GetDebtAsync(BankDbContext db, string uuid)
+    {
+        return await db.ServerLoans
+            .AsNoTracking()
+            .Where(x => x.Uuid == uuid)
+            .Select(x => (decimal?)x.BorrowAmount)
+            .FirstOrDefaultAsync();
     }
 
     // 延滞分(直近の定期返済の失敗額)のうち未回収の額。延滞中でなければ null。

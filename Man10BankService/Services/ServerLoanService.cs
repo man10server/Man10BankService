@@ -9,22 +9,45 @@ namespace Man10BankService.Services;
 
 public class ServerLoanService
 {
+    // ===== 設定値(appsettings.json の ServerLoan セクション。Configure で読み込む) =====
+
+    // 日利(複利)。毎日「残債 × 日利」を残債に加える。
     private static decimal DailyInterestRate { get; set; } = 0.02m;
+    // 借入枠の下限(初期枠)
     private static decimal MinAmount { get; set; } = 100000m;
+    // 借入枠の上限
     private static decimal MaxAmount { get; set; } = 3000000m;
+    // 利息で増える残債(元本 + 利息)の上限。0 以下なら上限なし。
     private static decimal MaxDebtAmount { get; set; } = 10000000m;
+    // 定期返済の成功時に、「返済額」と「その週の平均残債」の小さいほうへ掛けて枠に加える係数
     private static decimal GrowthFactor { get; set; } = 0.5m;
+    // 1回の増枠の上限(その時点の枠に対する割合)
     private static decimal MaxGrowthRate { get; set; } = 0.1m;
+    // 定期返済の失敗時に枠へ掛ける率
     private static decimal FailureCutRate { get; set; } = 0.5m;
+    // 最低返済額の割合(残債に対して)
     private static decimal MinPaymentRate { get; set; } = 0.02m;
+    // 最低返済額の固定下限
     private static decimal MinPaymentAmount { get; set; } = 10000m;
+    // 最低返済額で、1週間分の利息に上乗せして返す元本の割合(残債に対して)。0 以下なら利息を見ない。
     private static decimal MinPrincipalRate { get; set; } = 0.01m;
+    // 日次処理(利息の加算・延滞分の回収)の時刻(UTC)
     private static TimeSpan DailyInterestTime { get; set; } = new(2, 0, 0); // 02:00
+    // 定期返済の時刻(UTC)と曜日
     private static TimeSpan WeeklyRepayTime { get; set; } = new(3, 0, 0);   // 03:00
     private static DayOfWeek WeeklyRepayDay { get; set; } = DayOfWeek.Monday;
 
+    // ===== 固定値 =====
+
     // 定期返済の間隔(日数)。増枠の平均残債と、最低返済額に含める利息の算定に使う。
     private const int RepayIntervalDays = 7;
+    // 支払額(設定)の初期値を、利息の何週間分にするか。
+    private const int InitialPaymentWeeks = 2;
+
+    // 借入枠の算定で参照するログの種類(server_loan_log.action の値)
+    private const string RepaySuccessAction = nameof(ServerLoanRepository.ServerLoanLogAction.RepaySuccess);
+    private const string RepayFailureAction = nameof(ServerLoanRepository.ServerLoanLogAction.RepayFailure);
+    private const string InterestAction = nameof(ServerLoanRepository.ServerLoanLogAction.Interest);
 
     // スケジューラ(BackgroundService)が参照する実行時刻設定
     public static TimeSpan DailyInterestTimeOfDay => DailyInterestTime;
@@ -40,11 +63,13 @@ public class ServerLoanService
     {
         Configure(config);
 
-        if (MinPrincipalRate <= 0m && MinPaymentRate <= DailyInterestRate * 7m)
+        // 最低返済額に利息を含めない設定(MinPrincipalRate が 0 以下)で、率が週あたりの金利以下だと残債が減らない。
+        var weeklyInterestRate = DailyInterestRate * RepayIntervalDays;
+        if (MinPrincipalRate <= 0m && MinPaymentRate <= weeklyInterestRate)
         {
             logger?.LogWarning(
                 "ServerLoan:MinPaymentRate({MinPaymentRate}) が週あたりの金利({WeeklyInterestRate})以下のため、最低返済額では残債が減りません。",
-                MinPaymentRate, DailyInterestRate * 7m);
+                MinPaymentRate, weeklyInterestRate);
         }
 
         _dbFactory = dbFactory;
@@ -155,7 +180,7 @@ public class ServerLoanService
             ServerLoanRepository.AdjustLoanCore(db, loan, resolvedPlayer, amount, ServerLoanRepository.ServerLoanLogAction.Borrow);
 
             if (needPayment)
-                loan.PaymentAmount = CalculateRepaymentAmount(amount);
+                loan.PaymentAmount = CalculateInitialPaymentAmount(amount);
 
             // 4) user_bank 残高加算 + MoneyLog(同一 tx)
             await BankRepository.ChangeBalanceCoreAsync(
@@ -327,69 +352,81 @@ public class ServerLoanService
         }
     }
 
-    // 借入枠は MinAmount から始まり、定期返済の履歴を古い順にたどって決まる。
-    // 成功: 「返済額」と「その週の平均残債」の小さいほう × GrowthFactor だけ増える(1回の増加は現在の枠 × MaxGrowthRate まで)。
-    // 失敗: 現在の枠 × FailureCutRate に下がる。
-    // 平均残債は、前回の定期返済より後かつ直近 RepayIntervalDays 日以内に利息が付いた時点の残債を
-    // RepayIntervalDays で割ったもの。利息が付かなかった日は 0 として扱うため、返済の直前だけ借りても枠は増えない。
+    // 借入枠を、プレイヤーの全ログ(古い順)をたどって求める。枠は DB に保存せず、毎回ここで計算する。
+    //  - MinAmount から始める。
+    //  - 定期返済の成功: CalculateGrowth の額だけ増やす。
+    //  - 定期返済の失敗: FailureCutRate を掛けて減らす。
+    //  - 手動返済・延滞分の回収・借入などは枠に影響しない。
     private static decimal CalculateBorrowLimit(IReadOnlyList<ServerLoanLog> logs, decimal currentDebt)
     {
-        var success = ServerLoanRepository.ServerLoanLogAction.RepaySuccess.ToString();
-        var failure = ServerLoanRepository.ServerLoanLogAction.RepayFailure.ToString();
-        var interest = ServerLoanRepository.ServerLoanLogAction.Interest.ToString();
-
-        // 各ログの直前の残債を、現在の残債からログの増減を逆算して求める。
-        var debtBefore = new decimal[logs.Count];
-        var debt = currentDebt;
-        for (var i = logs.Count - 1; i >= 0; i--)
-        {
-            // 返済失敗ログの金額は引き落とそうとした額で、残債は変わらない。
-            if (logs[i].Action != failure)
-                debt -= logs[i].Amount;
-            debtBefore[i] = debt;
-        }
+        var debtBeforeLog = CalculateDebtBeforeEachLog(logs, currentDebt);
 
         var limit = ClampBorrowLimit(MinAmount);
+        // 前回の定期返済より後に、利息が付いた時点の残債(平均残債の材料)
         var interestDebts = new List<(DateTime Date, decimal Debt)>();
 
         for (var i = 0; i < logs.Count; i++)
         {
             var log = logs[i];
-            if (log.Action == interest)
+            switch (log.Action)
             {
-                interestDebts.Add((log.Date, Math.Max(0m, debtBefore[i])));
-                continue;
-            }
+                case InterestAction:
+                    interestDebts.Add((log.Date, Math.Max(0m, debtBeforeLog[i])));
+                    break;
 
-            if (log.Action == failure)
-            {
-                limit *= FailureCutRate;
-                interestDebts.Clear();
-            }
-            else if (log.Action == success)
-            {
-                // 返済成功ログの金額は残債の増減(負数)で記録されるため絶対値で扱う。
-                // 0 円の成功(延滞解消の記録)は枠を増やさず、その週の利息の記録も消費しない。
-                var paid = Math.Abs(log.Amount);
-                if (paid <= 0m)
-                    continue;
+                case RepayFailureAction:
+                    limit = ClampBorrowLimit(limit * FailureCutRate);
+                    interestDebts.Clear();
+                    break;
 
-                var from = log.Date.AddDays(-RepayIntervalDays);
-                var averageDebt = interestDebts.Where(x => x.Date > from).Sum(x => x.Debt) / RepayIntervalDays;
-                limit += Math.Min(Math.Min(paid, averageDebt) * GrowthFactor, limit * MaxGrowthRate);
-                interestDebts.Clear();
+                // 0 円の成功は延滞解消の記録なので、枠を増やさず、その週の利息の記録も消費しない。
+                case RepaySuccessAction when log.Amount != 0m:
+                    // 返済ログの金額は残債の増減(負数)で記録されるため、絶対値が返済額になる。
+                    var paid = Math.Abs(log.Amount);
+                    var averageDebt = CalculateAverageDebt(interestDebts, log.Date);
+                    limit = ClampBorrowLimit(limit + CalculateGrowth(limit, paid, averageDebt));
+                    interestDebts.Clear();
+                    break;
             }
-            else
-            {
-                continue;
-            }
-
-            limit = ClampBorrowLimit(limit);
         }
 
         return limit;
     }
 
+    // 各ログが記録される直前の残債を、現在の残債からログの増減を新しい順に巻き戻して求める。
+    private static decimal[] CalculateDebtBeforeEachLog(IReadOnlyList<ServerLoanLog> logs, decimal currentDebt)
+    {
+        var debtBeforeLog = new decimal[logs.Count];
+        var debt = currentDebt;
+        for (var i = logs.Count - 1; i >= 0; i--)
+        {
+            // 返済失敗ログの金額は引き落とそうとした額で、残債は変わっていない。
+            if (logs[i].Action != RepayFailureAction)
+                debt -= logs[i].Amount;
+            debtBeforeLog[i] = debt;
+        }
+
+        return debtBeforeLog;
+    }
+
+    // その週の平均残債: 定期返済の直近 RepayIntervalDays 日以内に利息が付いた時点の残債の合計 ÷ RepayIntervalDays。
+    // 利息が付かなかった日は 0 として数えるため、返済の直前だけ借りても平均残債は増えない。
+    private static decimal CalculateAverageDebt(IEnumerable<(DateTime Date, decimal Debt)> interestDebts, DateTime repayDate)
+    {
+        var from = repayDate.AddDays(-RepayIntervalDays);
+        return interestDebts.Where(x => x.Date > from).Sum(x => x.Debt) / RepayIntervalDays;
+    }
+
+    // 定期返済の成功 1 回で増える枠: 「返済額」と「その週の平均残債」の小さいほう × GrowthFactor。
+    // ただし、その時点の枠 × MaxGrowthRate を上限とする。
+    private static decimal CalculateGrowth(decimal limit, decimal paid, decimal averageDebt)
+    {
+        var growth = Math.Min(paid, averageDebt) * GrowthFactor;
+        var maxGrowth = limit * MaxGrowthRate;
+        return Math.Min(growth, maxGrowth);
+    }
+
+    // 借入枠を MinAmount 〜 MaxAmount の範囲に収め、1 円未満を切り捨てる。
     private static decimal ClampBorrowLimit(decimal limit)
     {
         limit = Math.Max(MinAmount, limit);
@@ -422,7 +459,7 @@ public class ServerLoanService
         if (amount < 0m)
             return ApiResult<ServerLoan?>.Fail(ErrorCode.BorrowAmountMustBeZeroOrGreater);
 
-        var paymentAmount = CalculateRepaymentAmount(amount);
+        var paymentAmount = CalculateInitialPaymentAmount(amount);
         if (paymentAmount < 0m)
             return ApiResult<ServerLoan?>.Fail(ErrorCode.BorrowAmountMustBeZeroOrGreater);
 
@@ -443,24 +480,37 @@ public class ServerLoanService
         }
     }
     
-    // 金利の丸め規則をサービス内で一元化
-    // 利息で残債(元本+利息)が MaxDebtAmount を超えないよう、超える分の利息は付けない(0 以下なら上限なし)。
-    public static decimal CalculateDailyInterestAmount(decimal borrowAmount)
+    // 1日分の利息: 残債 × DailyInterestRate(1 円未満は四捨五入)。
+    // 利息で残債(元本 + 利息)が MaxDebtAmount を超えないよう、超える分の利息は付けない(MaxDebtAmount が 0 以下なら上限なし)。
+    public static decimal CalculateDailyInterestAmount(decimal debt)
     {
-        if (borrowAmount <= 0m) return 0m;
-        var interest = borrowAmount * DailyInterestRate;
-        var rounded = Math.Round(interest, 0, MidpointRounding.AwayFromZero);
-        if (MaxDebtAmount > 0m)
-            rounded = Math.Min(rounded, MaxDebtAmount - borrowAmount);
-        return rounded < 0m ? 0m : rounded;
-    }
-
-    private static decimal CalculateRepaymentAmount(decimal borrowAmount)
-    {
-        if (borrowAmount <= 0m)
+        if (debt <= 0m)
             return 0m;
 
-        var paymentAmount = Math.Round(borrowAmount * DailyInterestRate * 7m * 2m, 0, MidpointRounding.AwayFromZero);
+        var interest = Math.Round(debt * DailyInterestRate, 0, MidpointRounding.AwayFromZero);
+        if (MaxDebtAmount > 0m)
+            interest = Math.Min(interest, MaxDebtAmount - debt);
+        return Math.Max(0m, interest);
+    }
+
+    // 現在の残債に、定期返済の間隔(1週間)ぶんの利息を日次の計算どおりに付けた場合の利息合計。
+    private static decimal CalculateWeeklyInterestAmount(decimal debt)
+    {
+        var debtAfterWeek = debt;
+        for (var day = 0; day < RepayIntervalDays; day++)
+            debtAfterWeek += CalculateDailyInterestAmount(debtAfterWeek);
+        return debtAfterWeek - debt;
+    }
+
+    // 支払額(設定)の初期値: 単利で InitialPaymentWeeks 週間分の利息(最低 1 円)。
+    // 支払額が未設定の状態で借りたときと、運営が残債を調整したときに設定する。
+    private static decimal CalculateInitialPaymentAmount(decimal debt)
+    {
+        if (debt <= 0m)
+            return 0m;
+
+        var days = RepayIntervalDays * InitialPaymentWeeks;
+        var paymentAmount = Math.Round(debt * DailyInterestRate * days, 0, MidpointRounding.AwayFromZero);
         return Math.Max(1m, paymentAmount);
     }
 
@@ -468,37 +518,30 @@ public class ServerLoanService
     //  - 残債 × MinPaymentRate
     //  - MinPaymentAmount
     //  - 1週間分の利息 + 残債 × MinPrincipalRate(金利を上げても最低返済額で残債が減るようにする。MinPrincipalRate が 0 以下なら適用しない)
-    public static decimal CalculateMinimumPayment(decimal borrowAmount, bool stopInterest = false)
+    public static decimal CalculateMinimumPayment(decimal debt, bool stopInterest = false)
     {
-        if (borrowAmount <= 0m)
+        if (debt <= 0m)
             return 0m;
 
-        var minimum = Math.Max(Math.Ceiling(borrowAmount * MinPaymentRate), MinPaymentAmount);
+        var minimum = Math.Max(Math.Ceiling(debt * MinPaymentRate), MinPaymentAmount);
         if (MinPrincipalRate > 0m)
         {
-            var interest = stopInterest ? 0m : CalculateWeeklyInterestAmount(borrowAmount);
-            minimum = Math.Max(minimum, interest + Math.Ceiling(borrowAmount * MinPrincipalRate));
+            var weeklyInterest = stopInterest ? 0m : CalculateWeeklyInterestAmount(debt);
+            var principal = Math.Ceiling(debt * MinPrincipalRate);
+            minimum = Math.Max(minimum, weeklyInterest + principal);
         }
 
-        return Math.Min(borrowAmount, minimum);
+        return Math.Min(debt, minimum);
     }
 
-    // 現在の残債に、定期返済の間隔(1週間)ぶんの利息を日次の計算どおりに付けた場合の利息合計。
-    private static decimal CalculateWeeklyInterestAmount(decimal borrowAmount)
+    // 定期返済で引き落とす額: 支払額(設定)と最低返済額の大きいほう(残債を超えない)。
+    private static decimal CalculateScheduledPayment(decimal debt, decimal paymentAmount, bool stopInterest)
     {
-        var debt = borrowAmount;
-        for (var i = 0; i < RepayIntervalDays; i++)
-            debt += CalculateDailyInterestAmount(debt);
-        return debt - borrowAmount;
-    }
-
-    private static decimal CalculateScheduledPayment(decimal borrowAmount, decimal paymentAmount, bool stopInterest)
-    {
-        if (borrowAmount <= 0m)
+        if (debt <= 0m)
             return 0m;
 
-        var requested = Math.Max(paymentAmount, CalculateMinimumPayment(borrowAmount, stopInterest));
-        return Math.Min(requested, borrowAmount);
+        var requested = Math.Max(paymentAmount, CalculateMinimumPayment(debt, stopInterest));
+        return Math.Min(requested, debt);
     }
 
     // 次回の週次返済日時を計算（UTC基準。スケジューラの発火判定と同じ時刻系で揃える）
