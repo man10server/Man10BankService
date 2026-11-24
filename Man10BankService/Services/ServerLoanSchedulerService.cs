@@ -28,6 +28,7 @@ public sealed class ServerLoanSchedulerService(ServerLoanService loanService, IL
                 if (dailyDue && lastDailyRun != today)
                 {
                     await loanService.RunDailyInterestForAllAsync(today);
+                    await loanService.RunOverdueCollectionForAllAsync();
                     lastDailyRun = today;
                 }
 

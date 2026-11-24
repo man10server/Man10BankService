@@ -10,6 +10,7 @@ using Test.Infrastructure;
 namespace Test.Services;
 
 // スケジューラ冪等化(DESIGN 2.4)の検証: 日次利息の同日二重実行がスキップされること。
+[Collection(ServerLoanConfigCollection.Name)]
 public class ServerLoanSchedulerIdempotencyTests
 {
     private const string Uuid = "9c4161a9-0f5f-4317-835c-0bb196a7defa";
@@ -22,8 +23,7 @@ public class ServerLoanSchedulerIdempotencyTests
             {
                 ["ServerLoan:DailyInterestRate"] = "0.01",
                 ["ServerLoan:MinAmount"] = "1000",
-                ["ServerLoan:MaxAmount"] = "3000000",
-                ["ServerLoan:RepayWindow"] = "10"
+                ["ServerLoan:MaxAmount"] = "3000000"
             })
             .Build();
         var profile = new FakePlayerProfileService();

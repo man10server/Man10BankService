@@ -15,6 +15,8 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
         RepayFailure,
         Interest,
         SetBorrowAmount,
+        EarlyRepay,
+        OverdueCollect,
     }
 
     public async Task<ServerLoan> GetOrCreateByUuidAsync(string uuid)
@@ -107,6 +109,8 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
                 }
                 break;
             case ServerLoanLogAction.RepaySuccess:
+            case ServerLoanLogAction.EarlyRepay:
+            case ServerLoanLogAction.OverdueCollect:
                 loan.BorrowAmount += delta;
                 loan.LastPayDate = DateTime.UtcNow;
                 break;
@@ -146,6 +150,83 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
             .Skip(offset)
             .Take(limit)
             .ToListAsync();
+    }
+
+    // 借入枠の算定に使う、現在の残債と全ログ(古い順)を取得する。ローンが無いプレイヤーの残債は 0 で、行は作らない。
+    public async Task<(decimal Debt, List<ServerLoanLog> Logs)> GetBorrowLimitSourceAsync(string uuid)
+    {
+        await using var db = await factory.CreateDbContextAsync();
+        var debt = await GetDebtAsync(db, uuid) ?? 0m;
+        var logs = await db.ServerLoanLogs
+            .AsNoTracking()
+            .Where(x => x.Uuid == uuid)
+            .OrderBy(x => x.Date).ThenBy(x => x.Id)
+            .ToListAsync();
+        return (debt, logs);
+    }
+
+    // 直近の定期返済(週次)が失敗かどうか。早期返済は判定に含めない。
+    public async Task<bool> IsLatestScheduledRepayFailureAsync(string uuid)
+    {
+        await using var db = await factory.CreateDbContextAsync();
+        return await IsLatestScheduledRepayFailureAsync(db, uuid);
+    }
+
+    public static async Task<bool> IsLatestScheduledRepayFailureAsync(BankDbContext db, string uuid)
+    {
+        var latest = await GetLatestScheduledRepayLogAsync(db, uuid);
+        return latest?.Action == ServerLoanLogAction.RepayFailure.ToString();
+    }
+
+    // 残債があり、かつ延滞中(直近の定期返済が失敗のまま)かどうか。
+    // 延滞中は銀行からの出金・送金・小切手作成・貸付を拒否するために使う。
+    public static async Task<bool> HasOverdueDebtAsync(BankDbContext db, string uuid)
+    {
+        var debt = await GetDebtAsync(db, uuid);
+        if (debt is null or <= 0m)
+            return false;
+
+        return await IsLatestScheduledRepayFailureAsync(db, uuid);
+    }
+
+    // 現在の残債。ローンが無いプレイヤーは null で、行は作らない。
+    private static async Task<decimal?> GetDebtAsync(BankDbContext db, string uuid)
+    {
+        return await db.ServerLoans
+            .AsNoTracking()
+            .Where(x => x.Uuid == uuid)
+            .Select(x => (decimal?)x.BorrowAmount)
+            .FirstOrDefaultAsync();
+    }
+
+    // 延滞分(直近の定期返済の失敗額)のうち未回収の額。延滞中でなければ null。
+    public static async Task<decimal?> GetUncollectedOverdueAmountAsync(BankDbContext db, string uuid)
+    {
+        var latest = await GetLatestScheduledRepayLogAsync(db, uuid);
+        if (latest?.Action != ServerLoanLogAction.RepayFailure.ToString())
+            return null;
+
+        var collect = ServerLoanLogAction.OverdueCollect.ToString();
+        var collected = await db.ServerLoanLogs
+            .AsNoTracking()
+            .Where(x => x.Uuid == uuid && x.Action == collect && x.Id > latest.Id)
+            .Select(x => x.Amount)
+            .ToListAsync();
+
+        // 回収ログの金額は残債の増減(負数)で記録される。
+        return Math.Max(0m, latest.Amount + collected.Sum());
+    }
+
+    private static async Task<ServerLoanLog?> GetLatestScheduledRepayLogAsync(BankDbContext db, string uuid)
+    {
+        var success = ServerLoanLogAction.RepaySuccess.ToString();
+        var failure = ServerLoanLogAction.RepayFailure.ToString();
+
+        return await db.ServerLoanLogs
+            .AsNoTracking()
+            .Where(x => x.Uuid == uuid && (x.Action == success || x.Action == failure))
+            .OrderByDescending(x => x.Date).ThenByDescending(x => x.Id)
+            .FirstOrDefaultAsync();
     }
 
     // 当日分の Interest ログが存在するか(日次利息の冪等判定に使用)。

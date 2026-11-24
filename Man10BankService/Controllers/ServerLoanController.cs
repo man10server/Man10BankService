@@ -95,6 +95,16 @@ public class ServerLoanController(ServerLoanService service) : ControllerBase
         return this.ToActionResult(res, limit => new BorrowLimitResponse(limit));
     }
 
+    [HttpGet("overdue")]
+    [Produces("application/json")]
+    [ProducesResponseType(typeof(OverdueResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<OverdueResponse>> GetOverdue([FromRoute] string uuid)
+    {
+        var res = await service.HasOverdueDebtAsync(uuid);
+        return this.ToActionResult(res, overdue => new OverdueResponse(overdue));
+    }
+
     [HttpGet("logs")]
     [Produces("application/json")]
     [ProducesResponseType(typeof(List<ServerLoanLogResponse>), StatusCodes.Status200OK)]

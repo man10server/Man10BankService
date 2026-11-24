@@ -73,6 +73,9 @@ public class LoanService(IDbContextFactory<BankDbContext> dbFactory, BankService
 
         return await bank.RunExclusiveAsync<Loan?>(async db =>
         {
+            if (await ServerLoanRepository.HasOverdueDebtAsync(db, request.LendUuid))
+                return ApiResult<Loan?>.Fail(ErrorCode.WithdrawBlockedByOverdue);
+
             // user_bank 行を uuid 昇順でロック(デッドロック防止)
             await LockUserBanksInOrderAsync(db, request.LendUuid, request.BorrowUuid);
 

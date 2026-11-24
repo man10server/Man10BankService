@@ -34,6 +34,9 @@ public class ChequeService
             // op が false の場合のみ残高を引き落とす(行ロック下で残高不足を判定)。
             if (!req.Op)
             {
+                if (await ServerLoanRepository.HasOverdueDebtAsync(db, req.Uuid))
+                    return ApiResult<Cheque>.Fail(ErrorCode.WithdrawBlockedByOverdue);
+
                 var bank = await DbLockHelper.GetUserBankForUpdateAsync(db, req.Uuid);
                 var balance = bank?.Balance ?? 0m;
                 if (balance < req.Amount)
