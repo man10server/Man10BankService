@@ -158,9 +158,7 @@ public class ServerLoanCreditEvaluationTests
 
         var logs = await GetLogsAsync(db);
         logs.Should().ContainSingle(l => l.Action == "RepayFailure");
-        var after = (await loan.GetByUuidAsync(Uuid)).Data!;
-        after.FailedPayment.Should().Be(1);
-        after.BorrowAmount.Should().Be(MinAmount);
+        (await loan.GetByUuidAsync(Uuid)).Data!.BorrowAmount.Should().Be(MinAmount);
     }
 
     [Fact(DisplayName = "借入上限: 返済履歴がなければ下限額になる")]
@@ -301,7 +299,6 @@ public class ServerLoanCreditEvaluationTests
                 BorrowAmount = 4700m,
                 PaymentAmount = 370m,
                 LastPayDate = DateTime.UtcNow,
-                FailedPayment = 0,
                 StopInterest = false
             });
             await ctx.SaveChangesAsync();

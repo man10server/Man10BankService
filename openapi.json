@@ -2813,7 +2813,6 @@
                     "lastPayDate",
                     "borrowAmount",
                     "paymentAmount",
-                    "failedPayment",
                     "stopInterest"
                 ],
                 "type": "object",
@@ -2843,10 +2842,6 @@
                     "paymentAmount": {
                         "type": "number",
                         "format": "double"
-                    },
-                    "failedPayment": {
-                        "type": "integer",
-                        "format": "int32"
                     },
                     "stopInterest": {
                         "type": "boolean"

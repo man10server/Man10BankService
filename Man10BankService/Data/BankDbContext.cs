@@ -176,14 +176,12 @@ public class BankDbContext : DbContext
             e.Property(x => x.PaymentAmount).HasColumnName("payment_amount").HasPrecision(20, 0);
             e.Property(x => x.BorrowDate).HasColumnName("borrow_date");
             e.Property(x => x.LastPayDate).HasColumnName("last_pay_date");
-            e.Property(x => x.FailedPayment).HasColumnName("failed_payment");
             e.Property(x => x.StopInterest).HasColumnName("stop_interest");
             e.Property(x => x.Uuid).HasColumnName("uuid");
             e.Property(x => x.Player).HasDefaultValue("");
             e.Property(x => x.Uuid).HasDefaultValue("");
             e.Property(x => x.BorrowDate).HasDefaultValueSql("CURRENT_TIMESTAMP").ValueGeneratedOnAdd();
             e.Property(x => x.LastPayDate).HasDefaultValueSql("CURRENT_TIMESTAMP");
-            e.Property(x => x.FailedPayment).HasDefaultValue(0);
             e.Property(x => x.StopInterest).HasDefaultValue(false);
         });
 

@@ -34,7 +34,6 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
             BorrowAmount = 0m,
             PaymentAmount = 0m,
             LastPayDate = DateTime.UtcNow,
-            FailedPayment = 0,
             StopInterest = false,
         };
         await db.ServerLoans.AddAsync(loan);
@@ -76,7 +75,6 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
             BorrowAmount = 0m,
             PaymentAmount = 0m,
             LastPayDate = DateTime.UtcNow,
-            FailedPayment = 0,
             StopInterest = false,
         };
         await db.ServerLoans.AddAsync(loan);
@@ -128,7 +126,7 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
                 loan.LastPayDate = DateTime.UtcNow;
                 break;
             case ServerLoanLogAction.RepayFailure:
-                loan.FailedPayment += 1;
+                // 残債は変えず、失敗のログだけを残す。
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(action), action, null);
@@ -286,7 +284,6 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
                 BorrowAmount = 0m,
                 PaymentAmount = 0m,
                 LastPayDate = DateTime.UtcNow,
-                FailedPayment = 0,
                 StopInterest = false,
             };
             await db.ServerLoans.AddAsync(loan);

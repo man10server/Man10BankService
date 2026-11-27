@@ -203,7 +203,6 @@ create table server_loan_tbl
     uuid           varchar(36) default ''                not null,
     borrow_date    datetime    default CURRENT_TIMESTAMP not null,
     last_pay_date  datetime    default CURRENT_TIMESTAMP not null,
-    failed_payment int         default 0                 not null,
     stop_interest  tinyint     default 0                 not null,
     borrow_amount  decimal(20)                           not null,
     payment_amount decimal(20)                           not null
