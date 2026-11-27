@@ -17,6 +17,7 @@ public class BankDbContext : DbContext
     public DbSet<ServerEstateHistory> ServerEstateHistories => Set<ServerEstateHistory>();
     public DbSet<ServerLoan> ServerLoans => Set<ServerLoan>();
     public DbSet<ServerLoanLog> ServerLoanLogs => Set<ServerLoanLog>();
+    public DbSet<ServerLoanMember> ServerLoanMembers => Set<ServerLoanMember>();
     public DbSet<UserBank> UserBanks => Set<UserBank>();
     
     public BankDbContext(DbContextOptions<BankDbContext> options) : base(options) {}
@@ -197,6 +198,17 @@ public class BankDbContext : DbContext
             e.Property(x => x.Player).HasDefaultValue("");
             e.Property(x => x.Uuid).HasDefaultValue("");
             e.Property(x => x.Date).HasDefaultValueSql("CURRENT_TIMESTAMP").ValueGeneratedOnAdd();
+        });
+
+        modelBuilder.Entity<ServerLoanMember>(e =>
+        {
+            e.ToTable("server_loan_member");
+            e.HasKey(x => x.Uuid);
+            e.HasIndex(x => x.OwnerUuid);
+            e.Property(x => x.OwnerUuid).HasColumnName("owner_uuid");
+            e.Property(x => x.LinkedBy).HasColumnName("linked_by");
+            e.Property(x => x.RequestedAt).HasColumnName("requested_at").HasDefaultValueSql("CURRENT_TIMESTAMP").ValueGeneratedOnAdd();
+            e.Property(x => x.ApprovedAt).HasColumnName("approved_at");
         });
 
         modelBuilder.Entity<UserBank>(e =>

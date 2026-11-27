@@ -38,3 +38,25 @@ SET @sql := IF(@col_exists > 0,
                'SELECT 1',
                'ALTER TABLE server_loan_log ADD COLUMN debt_after DECIMAL(20,0) NULL COMMENT ''操作後の残債(監査用)''');
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- -----------------------------------------------------------
+-- server_loan_member: 他のプレイヤーの契約に参加しているアカウント
+--   行が無いプレイヤーは自分自身の契約を使う。1 アカウントが参加できる契約は 1 つだけ。
+-- -----------------------------------------------------------
+CREATE TABLE IF NOT EXISTS server_loan_member
+(
+    uuid         VARCHAR(36)                        NOT NULL PRIMARY KEY COMMENT '参加するアカウント',
+    owner_uuid   VARCHAR(36)                        NOT NULL COMMENT '参加先の契約の本垢(server_loan_tbl.uuid)',
+    linked_by    VARCHAR(16)                        NOT NULL COMMENT '紐付けた人(申請した本人、または運営)',
+    requested_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    approved_at  DATETIME                           NULL COMMENT '承認日時。NULL の間は承認待ち'
+);
+
+SET @exists := (SELECT COUNT(1) FROM INFORMATION_SCHEMA.STATISTICS
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME = 'server_loan_member'
+                  AND INDEX_NAME = 'server_loan_member_owner_uuid_index');
+SET @sql := IF(@exists > 0,
+               'SELECT 1',
+               'ALTER TABLE server_loan_member ADD INDEX server_loan_member_owner_uuid_index (owner_uuid)');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;

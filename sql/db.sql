@@ -182,6 +182,19 @@ create table server_loan_log
 create index server_loan_log_uuid_date_index
     on server_loan_log (uuid, date);
 
+create table server_loan_member
+(
+    uuid         varchar(36)                        not null comment '参加するアカウント'
+        primary key,
+    owner_uuid   varchar(36)                        not null comment '参加先の契約の本垢(server_loan_tbl.uuid)',
+    linked_by    varchar(16)                        not null comment '紐付けた人(申請した本人、または運営)',
+    requested_at datetime default CURRENT_TIMESTAMP not null,
+    approved_at  datetime                           null comment '承認日時。NULL の間は承認待ち'
+);
+
+create index server_loan_member_owner_uuid_index
+    on server_loan_member (owner_uuid);
+
 create table server_loan_tbl
 (
     id             int auto_increment

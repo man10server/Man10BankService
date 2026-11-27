@@ -1,11 +1,13 @@
 using FluentAssertions;
+using Man10BankService.Models.Database;
 using Man10BankService.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Test.Infrastructure;
 
 namespace Test.Services;
 
-// サーバーローンの契約(server_loan_tbl)とログ(server_loan_log)が本番スキーマ(db.sql)で期待どおり保存されることの検証。
+// サーバーローンの契約(server_loan_tbl)・ログ(server_loan_log)・メンバー(server_loan_member)が
+// 本番スキーマ(db.sql)で期待どおり保存されることの検証。
 // 同時作成の競合は一意制約で弾くため、本番と同じ MySQL(Testcontainers)上で確認する。
 [Collection(MySqlCollection.Name)]
 public class ServerLoanContractMySqlTests
@@ -40,5 +42,30 @@ public class ServerLoanContractMySqlTests
         logs.Select(l => (l.Action, l.ActorUuid, l.DebtAfter)).Should().Equal(
             ("SetBorrowAmount", null, 5000m),
             ("Interest", null, 5050m));
+    }
+
+    [Fact(DisplayName = "メンバー(MySQL): 承認待ちで保存でき、1アカウントは1つの契約にしか参加できない")]
+    public async Task Member_ShouldBePendingByDefaultAndUniquePerAccount()
+    {
+        const string member = "11111111-1111-1111-1111-111111111111";
+        const string otherOwner = "22222222-2222-2222-2222-222222222222";
+        using var db = MySqlTestDbFactory.Create();
+
+        await using (var ctx = await db.Factory.CreateDbContextAsync())
+        {
+            ctx.ServerLoanMembers.Add(new ServerLoanMember { Uuid = member, OwnerUuid = Uuid, LinkedBy = "test-player" });
+            await ctx.SaveChangesAsync();
+        }
+
+        await using (var ctx = await db.Factory.CreateDbContextAsync())
+        {
+            var saved = await ctx.ServerLoanMembers.AsNoTracking().SingleAsync(x => x.OwnerUuid == Uuid);
+            saved.Uuid.Should().Be(member);
+            saved.ApprovedAt.Should().BeNull();
+            saved.RequestedAt.Should().BeCloseTo(DateTime.UtcNow, TimeSpan.FromMinutes(1));
+
+            ctx.ServerLoanMembers.Add(new ServerLoanMember { Uuid = member, OwnerUuid = otherOwner, LinkedBy = "test-player" });
+            await FluentActions.Awaiting(() => ctx.SaveChangesAsync()).Should().ThrowAsync<DbUpdateException>();
+        }
     }
 }
