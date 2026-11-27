@@ -13,6 +13,8 @@ namespace Man10BankService.Controllers;
 [Route("api/[controller]/{uuid:uuid}")]
 public class ServerLoanController(ServerLoanService service) : ControllerBase
 {
+    private const string UuidPattern = @"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$";
+    private const string UuidErrorMessage = "UUID の形式が不正です。";
 
     [HttpGet("")]
     [Produces("application/json")]
@@ -124,6 +126,131 @@ public class ServerLoanController(ServerLoanService service) : ControllerBase
     public async Task<ActionResult<PaymentInfoResponse>> GetPaymentInfo([FromRoute] string uuid)
     {
         var res = await service.GetPaymentInfoAsync(uuid);
+        return this.ToActionResult(res);
+    }
+
+    // ===== 契約の共有(リンク) =====
+
+    // uuid が使っている契約と、共有の状態(参加者・承認待ちの申請)を返す。
+    [HttpGet("contract")]
+    [Produces("application/json")]
+    [ProducesResponseType(typeof(ServerLoanContractResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<ServerLoanContractResponse>> GetContract([FromRoute] string uuid)
+    {
+        var res = await service.GetContractAsync(uuid);
+        return this.ToActionResult(res);
+    }
+
+    // uuid が target の契約への参加を申請する。
+    [HttpPost("link/request")]
+    [Authorize(Policy = "RequireWriteScope")]
+    [Produces("application/json")]
+    [ProducesResponseType(typeof(ServerLoanContractResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<ServerLoanContractResponse>> RequestLink(
+        [FromRoute] string uuid,
+        [FromQuery, BindRequired, RegularExpression(UuidPattern, ErrorMessage = UuidErrorMessage)] string target)
+    {
+        var res = await service.RequestLinkAsync(uuid, target);
+        return this.ToActionResult(res);
+    }
+
+    // 本垢 uuid が、member からの参加申請を承認する。
+    [HttpPost("link/approve")]
+    [Authorize(Policy = "RequireWriteScope")]
+    [Produces("application/json")]
+    [ProducesResponseType(typeof(ServerLoanContractResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<ServerLoanContractResponse>> ApproveLink(
+        [FromRoute] string uuid,
+        [FromQuery, BindRequired, RegularExpression(UuidPattern, ErrorMessage = UuidErrorMessage)] string member)
+    {
+        var res = await service.ApproveLinkAsync(uuid, member);
+        return this.ToActionResult(res);
+    }
+
+    // 本垢 uuid が、member からの参加申請を拒否する。
+    [HttpPost("link/reject")]
+    [Authorize(Policy = "RequireWriteScope")]
+    [Produces("application/json")]
+    [ProducesResponseType(typeof(ServerLoanContractResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<ServerLoanContractResponse>> RejectLink(
+        [FromRoute] string uuid,
+        [FromQuery, BindRequired, RegularExpression(UuidPattern, ErrorMessage = UuidErrorMessage)] string member)
+    {
+        var res = await service.RejectLinkAsync(uuid, member);
+        return this.ToActionResult(res);
+    }
+
+    // uuid が、自分の出した参加申請を取り消す。
+    [HttpPost("link/cancel")]
+    [Authorize(Policy = "RequireWriteScope")]
+    [Produces("application/json")]
+    [ProducesResponseType(typeof(ServerLoanContractResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<ServerLoanContractResponse>> CancelLinkRequest([FromRoute] string uuid)
+    {
+        var res = await service.CancelLinkRequestAsync(uuid);
+        return this.ToActionResult(res);
+    }
+
+    // uuid が、参加している契約から脱退する(契約に残債がある間は不可)。
+    [HttpPost("link/leave")]
+    [Authorize(Policy = "RequireWriteScope")]
+    [Produces("application/json")]
+    [ProducesResponseType(typeof(ServerLoanContractResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<ServerLoanContractResponse>> LeaveLink([FromRoute] string uuid)
+    {
+        var res = await service.LeaveLinkAsync(uuid);
+        return this.ToActionResult(res);
+    }
+
+    // 運営用: uuid を owner の契約に、申請・承認なしで参加させる。
+    [HttpPost("link/force")]
+    [Authorize(Policy = "RequireWriteScope")]
+    [Produces("application/json")]
+    [ProducesResponseType(typeof(ServerLoanContractResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<ServerLoanContractResponse>> ForceLink(
+        [FromRoute] string uuid,
+        [FromQuery, BindRequired, RegularExpression(UuidPattern, ErrorMessage = UuidErrorMessage)] string owner,
+        [FromQuery(Name = "operator"), BindRequired, StringLength(16, MinimumLength = 1, ErrorMessage = "operator は 1〜16 文字で指定してください。")] string operatorName)
+    {
+        var res = await service.ForceLinkAsync(uuid, owner, operatorName);
+        return this.ToActionResult(res);
+    }
+
+    // 運営用: uuid の参加(または承認待ちの申請)を取り消す。契約に残債があっても行える。
+    [HttpPost("link/remove")]
+    [Authorize(Policy = "RequireWriteScope")]
+    [Produces("application/json")]
+    [ProducesResponseType(typeof(ServerLoanContractResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<ServerLoanContractResponse>> ForceUnlink(
+        [FromRoute] string uuid,
+        [FromQuery(Name = "operator"), BindRequired, StringLength(16, MinimumLength = 1, ErrorMessage = "operator は 1〜16 文字で指定してください。")] string operatorName)
+    {
+        var res = await service.ForceUnlinkAsync(uuid, operatorName);
         return this.ToActionResult(res);
     }
 }

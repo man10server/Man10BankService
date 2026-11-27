@@ -7,7 +7,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Man10BankService.Services;
 
-public class ServerLoanService
+public partial class ServerLoanService
 {
     // ===== 設定値(appsettings.json の ServerLoan セクション。Configure で読み込む) =====
 
@@ -57,6 +57,7 @@ public class ServerLoanService
     private readonly IDbContextFactory<BankDbContext> _dbFactory;
     private readonly BankService _bank;
     private readonly IPlayerProfileService _profileService;
+    private readonly ILogger<ServerLoanService>? _logger;
 
     public ServerLoanService(IDbContextFactory<BankDbContext> dbFactory, BankService bank, IPlayerProfileService profileService, IConfiguration config,
         ILogger<ServerLoanService>? logger = null)
@@ -75,6 +76,7 @@ public class ServerLoanService
         _dbFactory = dbFactory;
         _bank = bank;
         _profileService = profileService;
+        _logger = logger;
     }
 
     // uuid が使う契約(server_loan_tbl の行)を返す。他のプレイヤーの契約に参加しているアカウントには、参加先の契約を返す。

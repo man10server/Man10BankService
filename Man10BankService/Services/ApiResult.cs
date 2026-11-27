@@ -41,7 +41,14 @@ public enum ErrorCode
     RepayAmountMustBePositive,
     RepayAmountMustExceedBorrowAmount,
     BorrowerMismatch,
-    IdempotencyKeyMismatch
+    IdempotencyKeyMismatch,
+    LinkInvalidTarget,
+    LinkAlreadyLinked,
+    LinkHasMembers,
+    LinkRequestNotFound,
+    LinkNotMember,
+    LinkDebtRemaining,
+    LinkBlockedByOverdue
 }
 
 public static class ErrorCodeExtensions
@@ -78,6 +85,13 @@ public static class ErrorCodeExtensions
             ErrorCode.InterestStopped => "利息加算は停止中です。",
             ErrorCode.InterestZero => "利息は 0 です。",
             ErrorCode.BeforePaybackDate => "返済期日より前のため回収できません。",
+            ErrorCode.LinkInvalidTarget => "自分自身や、自分の契約に参加しているプレイヤーとは共有できません。",
+            ErrorCode.LinkAlreadyLinked => "すでに他のプレイヤーの契約に参加しているか、申請中です。",
+            ErrorCode.LinkHasMembers => "自分の契約に参加者がいるプレイヤーは、他のプレイヤーの契約に参加できません。",
+            ErrorCode.LinkRequestNotFound => "共有の申請が見つかりません。",
+            ErrorCode.LinkNotMember => "他のプレイヤーの契約には参加していません。",
+            ErrorCode.LinkDebtRemaining => "契約に残債があるため、共有を解除できません。",
+            ErrorCode.LinkBlockedByOverdue => "定期返済が未払いの契約があるため、共有の申請・承認はできません。",
             ErrorCode.LenderUuidRequired => "貸手UUIDを指定してください。",
             ErrorCode.BorrowerUuidRequired => "借手UUIDを指定してください。",
             ErrorCode.CollectorUuidRequired => "回収者UUIDを指定してください。",

@@ -17,6 +17,9 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
         SetBorrowAmount,
         EarlyRepay,
         OverdueCollect,
+        // 他のプレイヤーの契約への参加(参加先の契約に記録。金額は移ってきた残債)と脱退
+        MemberJoin,
+        MemberLeave,
     }
 
     // uuid が使う契約の本垢を返す。承認済みで他のプレイヤーの契約に参加していればその本垢、していなければ自分自身。
@@ -156,6 +159,12 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
                 break;
             case ServerLoanLogAction.RepayFailure:
                 // 残債は変えず、失敗のログだけを残す。
+                break;
+            case ServerLoanLogAction.SetBorrowAmount:
+            case ServerLoanLogAction.MemberJoin:
+                loan.BorrowAmount += delta;
+                break;
+            case ServerLoanLogAction.MemberLeave:
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(action), action, null);
