@@ -11,10 +11,9 @@ public sealed record ServerLoanResponse(
     DateTime LastPayDate,
     decimal BorrowAmount,
     decimal PaymentAmount,
-    int FailedPayment,
     bool StopInterest)
 {
     public static ServerLoanResponse From(ServerLoan e) =>
         new(e.Id, e.Player, e.Uuid, e.BorrowDate, e.LastPayDate, e.BorrowAmount, e.PaymentAmount,
-            e.FailedPayment, e.StopInterest);
+            e.StopInterest);
 }

@@ -177,7 +177,7 @@ public class ServerLoanService
             var needPayment = loan.PaymentAmount <= 0m;
 
             // 3) 債務加算 + ServerLoanLog
-            ServerLoanRepository.AdjustLoanCore(db, loan, resolvedPlayer, amount, ServerLoanRepository.ServerLoanLogAction.Borrow);
+            ServerLoanRepository.AdjustLoanCore(db, loan, resolvedPlayer, amount, ServerLoanRepository.ServerLoanLogAction.Borrow, actorUuid: uuid);
 
             if (needPayment)
                 loan.PaymentAmount = CalculateInitialPaymentAmount(amount);
@@ -256,7 +256,7 @@ public class ServerLoanService
             var action = scheduled
                 ? ServerLoanRepository.ServerLoanLogAction.RepaySuccess
                 : ServerLoanRepository.ServerLoanLogAction.EarlyRepay;
-            ServerLoanRepository.AdjustLoanCore(db, loan, loan.Player, -amount, action);
+            ServerLoanRepository.AdjustLoanCore(db, loan, loan.Player, -amount, action, actorUuid: scheduled ? null : uuid);
 
             return ApiResult<ServerLoan?>.Ok(loan);
         });

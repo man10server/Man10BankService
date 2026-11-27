@@ -174,11 +174,26 @@ create table server_loan_log
     uuid   varchar(36)                        not null,
     action varchar(16)                        not null comment 'borrow/repay/interest',
     amount decimal(20)                        not null,
-    date   datetime default CURRENT_TIMESTAMP not null
+    date   datetime default CURRENT_TIMESTAMP not null,
+    actor_uuid varchar(36)                    null comment '操作したプレイヤー。自動処理・運営の調整は NULL',
+    debt_after decimal(20)                    null comment '操作後の残債(監査用)'
 );
 
 create index server_loan_log_uuid_date_index
     on server_loan_log (uuid, date);
+
+create table server_loan_member
+(
+    uuid         varchar(36)                        not null comment '参加するアカウント'
+        primary key,
+    owner_uuid   varchar(36)                        not null comment '参加先の契約の本垢(server_loan_tbl.uuid)',
+    linked_by    varchar(16)                        not null comment '紐付けた人(申請した本人、または運営)',
+    requested_at datetime default CURRENT_TIMESTAMP not null,
+    approved_at  datetime                           null comment '承認日時。NULL の間は承認待ち'
+);
+
+create index server_loan_member_owner_uuid_index
+    on server_loan_member (owner_uuid);
 
 create table server_loan_tbl
 (
@@ -188,7 +203,6 @@ create table server_loan_tbl
     uuid           varchar(36) default ''                not null,
     borrow_date    datetime    default CURRENT_TIMESTAMP not null,
     last_pay_date  datetime    default CURRENT_TIMESTAMP not null,
-    failed_payment int         default 0                 not null,
     stop_interest  tinyint     default 0                 not null,
     borrow_amount  decimal(20)                           not null,
     payment_amount decimal(20)                           not null
@@ -196,6 +210,9 @@ create table server_loan_tbl
 
 create index server_loan_tbl_player_uuid_index
     on server_loan_tbl (player, uuid);
+
+create unique index server_loan_tbl_uuid_unique
+    on server_loan_tbl (uuid);
 
 create table user_bank
 (

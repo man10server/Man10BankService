@@ -13,6 +13,5 @@ public class ServerLoan
     public DateTime LastPayDate { get; set; }
     public decimal BorrowAmount { get; set; }
     public decimal PaymentAmount { get; set; }
-    public int FailedPayment { get; set; }
     public bool StopInterest { get; set; }
 }

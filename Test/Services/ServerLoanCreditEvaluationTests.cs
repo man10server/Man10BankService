@@ -158,9 +158,7 @@ public class ServerLoanCreditEvaluationTests
 
         var logs = await GetLogsAsync(db);
         logs.Should().ContainSingle(l => l.Action == "RepayFailure");
-        var after = (await loan.GetByUuidAsync(Uuid)).Data!;
-        after.FailedPayment.Should().Be(1);
-        after.BorrowAmount.Should().Be(MinAmount);
+        (await loan.GetByUuidAsync(Uuid)).Data!.BorrowAmount.Should().Be(MinAmount);
     }
 
     [Fact(DisplayName = "借入上限: 返済履歴がなければ下限額になる")]
@@ -301,7 +299,6 @@ public class ServerLoanCreditEvaluationTests
                 BorrowAmount = 4700m,
                 PaymentAmount = 370m,
                 LastPayDate = DateTime.UtcNow,
-                FailedPayment = 0,
                 StopInterest = false
             });
             await ctx.SaveChangesAsync();
@@ -574,6 +571,28 @@ public class ServerLoanCreditEvaluationTests
 
         (await GetLogsAsync(db)).Should().ContainSingle(l => l.Action == "RepaySuccess" && l.Amount == -expectedPaid);
         (await loan.GetByUuidAsync(Uuid)).Data!.BorrowAmount.Should().Be(MinAmount - expectedPaid);
+    }
+
+    [Fact(DisplayName = "ログ: プレイヤーの操作には操作者を、すべての操作に操作後の残債を記録する")]
+    public async Task Logs_ShouldRecordActorAndDebtAfter()
+    {
+        var (loan, _, db) = Build();
+        using var _1 = db;
+
+        (await loan.BorrowAsync(Uuid, MinAmount)).IsSuccess.Should().BeTrue();
+        await AccrueInterestAsync(loan, 1);
+        (await loan.RepayAsync(Uuid, 10m)).IsSuccess.Should().BeTrue();
+        (await loan.SetPaymentAmountAsync(Uuid, 100m)).IsSuccess.Should().BeTrue();
+        await loan.RunWeeklyRepayForAllAsync();
+        (await loan.SetBorrowAmountAsync(Uuid, 500m)).IsSuccess.Should().BeTrue();
+
+        var logs = (await GetLogsAsync(db)).OrderBy(l => l.Id).ToList();
+        logs.Select(l => (l.Action, l.ActorUuid, l.DebtAfter)).Should().Equal(
+            ("Borrow", Uuid, 1000m),
+            ("Interest", null, 1010m),
+            ("EarlyRepay", Uuid, 1000m),
+            ("RepaySuccess", null, 900m),
+            ("SetBorrowAmount", null, 500m));
     }
 
     [Fact(DisplayName = "手動返済: 最低返済額より少ない額でも返済できる")]

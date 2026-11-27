@@ -9,8 +9,10 @@ public sealed record ServerLoanLogResponse(
     string Uuid,
     string Action,
     decimal Amount,
-    DateTime Date)
+    DateTime Date,
+    string? ActorUuid,
+    decimal? DebtAfter)
 {
     public static ServerLoanLogResponse From(ServerLoanLog e) =>
-        new(e.Id, e.Player, e.Uuid, e.Action, e.Amount, e.Date);
+        new(e.Id, e.Player, e.Uuid, e.Action, e.Amount, e.Date, e.ActorUuid, e.DebtAfter);
 }

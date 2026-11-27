@@ -299,11 +299,6 @@ public class ServerLoanControllerTests
             .Should().BeOfType<OkObjectResult>().Which.Value
             .Should().BeOfType<List<ServerLoanLogResponse>>().Which;
         loanLogs.Any(l => l.Action == "RepayFailure").Should().BeFalse();
-
-        var loanRes = await ctrl.GetByUuid(uuid);
-        loanRes.Result
-            .Should().BeOfType<OkObjectResult>().Which.Value
-            .Should().BeOfType<ServerLoanResponse>().Which.FailedPayment.Should().Be(0);
     }
 
     [Fact(DisplayName = "repay: 出金・残債減少・ログ追記を検証する")]
