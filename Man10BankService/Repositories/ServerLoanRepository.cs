@@ -36,6 +36,18 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
         return ownerUuid ?? uuid;
     }
 
+    // 契約の定期返済・延滞回収で引き落とすアカウント。本垢を先頭に、承認済みのメンバーを承認が古い順に並べる。
+    public static async Task<List<string>> GetContractAccountUuidsAsync(BankDbContext db, string ownerUuid)
+    {
+        var members = await db.ServerLoanMembers
+            .AsNoTracking()
+            .Where(x => x.OwnerUuid == ownerUuid && x.ApprovedAt != null)
+            .OrderBy(x => x.ApprovedAt).ThenBy(x => x.Uuid)
+            .Select(x => x.Uuid)
+            .ToListAsync();
+        return [ownerUuid, .. members];
+    }
+
     public async Task<ServerLoan> GetOrCreateByUuidAsync(string uuid)
     {
         await using var db = await factory.CreateDbContextAsync();

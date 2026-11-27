@@ -249,9 +249,12 @@ public class ServerLoanService
                 return ApiResult<ServerLoan?>.Fail(ErrorCode.PaymentAmountZero);
 
             // 2) user_bank 行ロック下で残高不足を判定
-            var bank = await DbLockHelper.GetUserBankForUpdateAsync(db, uuid);
-            var balance = bank?.Balance ?? 0m;
-            if (balance < amount)
+            //    定期返済は契約の全アカウント(本垢→参加が古い順)の口座の合計で、手動返済は操作したアカウントの口座で判定する。
+            var accountUuids = scheduled
+                ? await ServerLoanRepository.GetContractAccountUuidsAsync(db, contractUuid)
+                : [uuid];
+            var accounts = await LockBankAccountsAsync(db, accountUuids);
+            if (TotalBalance(accounts) < amount)
             {
                 if (!scheduled)
                     return ApiResult<ServerLoan?>.Fail(ErrorCode.InsufficientFunds);
@@ -264,9 +267,7 @@ public class ServerLoanService
             }
 
             // 3) 残高減算 + MoneyLog
-            await BankRepository.ChangeBalanceCoreAsync(
-                db, uuid, resolvedPlayer, -amount,
-                "server_loan", "loan_repay", "サーバーローン返済", "system");
+            await WithdrawFromAccountsAsync(db, accounts, amount, "loan_repay", "サーバーローン返済", uuid, resolvedPlayer);
 
             // 4) 債務減算 + 返済ログ
             var action = scheduled
@@ -283,7 +284,8 @@ public class ServerLoanService
         return result;
     }
     
-    // 延滞分の回収: 直近の定期返済が失敗のままのローンについて、未回収分を銀行残高のある分だけ回収する。
+    // 延滞分の回収: 直近の定期返済が失敗のままの契約について、未回収分を銀行残高のある分だけ回収する。
+    // 契約の全アカウント(本垢→参加が古い順)の口座から回収する。
     // 失敗額を回収しきるか残債が 0 になったら、0 円の成功ログを残して延滞を解消する(借入枠は増えない)。
     private async Task<ApiResult<ServerLoan?>> CollectOverdueAsync(string uuid)
     {
@@ -304,18 +306,15 @@ public class ServerLoanService
             if (uncollected is null)
                 return ApiResult<ServerLoan?>.Fail(ErrorCode.NoRepaymentNeeded);
 
-            var bank = await DbLockHelper.GetUserBankForUpdateAsync(db, uuid);
-            var balance = bank?.Balance ?? 0m;
+            var accounts = await LockBankAccountsAsync(db, await ServerLoanRepository.GetContractAccountUuidsAsync(db, uuid));
             var target = Math.Min(uncollected.Value, loan.BorrowAmount);
-            var amount = Math.Min(target, balance);
+            var amount = Math.Min(target, TotalBalance(accounts));
             if (target > 0m && amount <= 0m)
                 return ApiResult<ServerLoan?>.Fail(ErrorCode.InsufficientFunds);
 
             if (amount > 0m)
             {
-                await BankRepository.ChangeBalanceCoreAsync(
-                    db, uuid, resolvedPlayer, -amount,
-                    "server_loan", "loan_overdue_collect", "サーバーローン延滞分の回収", "system");
+                await WithdrawFromAccountsAsync(db, accounts, amount, "loan_overdue_collect", "サーバーローン延滞分の回収", uuid, resolvedPlayer);
 
                 ServerLoanRepository.AdjustLoanCore(db, loan, loan.Player, -amount, ServerLoanRepository.ServerLoanLogAction.OverdueCollect);
             }
@@ -325,6 +324,50 @@ public class ServerLoanService
 
             return ApiResult<ServerLoan?>.Ok(loan);
         });
+    }
+
+    // 口座を順に行ロックして読む(MySQL 時 FOR UPDATE)。口座が無いアカウントは含めない。
+    private static async Task<List<UserBank>> LockBankAccountsAsync(BankDbContext db, IEnumerable<string> uuids)
+    {
+        var accounts = new List<UserBank>();
+        foreach (var uuid in uuids)
+        {
+            var account = await DbLockHelper.GetUserBankForUpdateAsync(db, uuid);
+            if (account != null)
+                accounts.Add(account);
+        }
+
+        return accounts;
+    }
+
+    private static decimal TotalBalance(IEnumerable<UserBank> accounts)
+    {
+        return accounts.Sum(x => Math.Max(0m, x.Balance));
+    }
+
+    // 先頭の口座から順に、合計が amount になるまで引き落とす(残高 + MoneyLog。SaveChanges は呼び出し側)。
+    // 呼び出し前に、口座の合計残高が amount 以上であることを確かめておくこと。
+    // actorUuid の口座には、解決済みの最新の名前 actorPlayer を使う。
+    private static async Task WithdrawFromAccountsAsync(
+        BankDbContext db, IEnumerable<UserBank> accounts, decimal amount, string note, string displayNote,
+        string actorUuid, string actorPlayer)
+    {
+        var remaining = amount;
+        foreach (var account in accounts)
+        {
+            if (remaining <= 0m)
+                break;
+
+            var withdraw = Math.Min(account.Balance, remaining);
+            if (withdraw <= 0m)
+                continue;
+
+            var player = account.Uuid == actorUuid ? actorPlayer : account.Player;
+            await BankRepository.ChangeBalanceCoreAsync(
+                db, account.Uuid, player, -withdraw,
+                "server_loan", note, displayNote, "system");
+            remaining -= withdraw;
+        }
     }
 
     // uuid が使う契約の借入枠。

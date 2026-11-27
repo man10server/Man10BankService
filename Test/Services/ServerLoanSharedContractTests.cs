@@ -176,6 +176,92 @@ public class ServerLoanSharedContractTests
         (await BalanceAsync(env, Member)).Should().Be(1000m);
     }
 
+    private static async Task<List<(string Uuid, decimal Amount, string Note)>> MoneyLogsAsync(Env env, string note)
+    {
+        await using var ctx = await env.Db.Factory.CreateDbContextAsync();
+        var logs = await ctx.MoneyLogs.AsNoTracking().Where(x => x.Note == note).OrderBy(x => x.Id).ToListAsync();
+        return logs.Select(x => (x.Uuid, x.Amount, x.Note)).ToList();
+    }
+
+    // 本垢が 1000 借りて支払額を 100 にし、本垢の口座を ownerBalance、メンバーの口座を memberBalance にする。
+    private static async Task PrepareRepayAsync(Env env, decimal ownerBalance, decimal memberBalance)
+    {
+        await AddMemberRowAsync(env);
+        (await env.Loan.BorrowAsync(Owner, MinAmount)).IsSuccess.Should().BeTrue();
+        (await env.Loan.SetPaymentAmountAsync(Owner, 100m)).IsSuccess.Should().BeTrue();
+        (await WithdrawAsync(env, Owner, MinAmount - ownerBalance)).IsSuccess.Should().BeTrue();
+        if (memberBalance > 0m)
+            (await DepositAsync(env, Member, memberBalance)).IsSuccess.Should().BeTrue();
+    }
+
+    [Fact(DisplayName = "共有: 定期返済は本垢の口座から先に引き落とし、足りない分をメンバーの口座から引き落とす")]
+    public async Task WeeklyRepay_ShouldWithdrawFromOwnerThenMember()
+    {
+        using var env = Build();
+        await PrepareRepayAsync(env, ownerBalance: 30m, memberBalance: 100m);
+
+        await env.Loan.RunWeeklyRepayForAllAsync();
+
+        (await BalanceAsync(env, Owner)).Should().Be(0m);
+        (await BalanceAsync(env, Member)).Should().Be(30m);
+        (await MoneyLogsAsync(env, "loan_repay")).Should().Equal((Owner, -30m, "loan_repay"), (Member, -70m, "loan_repay"));
+        (await LogsAsync(env, Owner)).Last().Should().Match<ServerLoanLog>(l =>
+            l.Action == "RepaySuccess" && l.Amount == -100m && l.ActorUuid == null && l.DebtAfter == 900m);
+        (await env.Loan.HasOverdueDebtAsync(Member)).Data.Should().BeFalse();
+    }
+
+    [Fact(DisplayName = "共有: 定期返済は本垢の口座で足りればメンバーの口座に触れない")]
+    public async Task WeeklyRepay_OwnerHasEnough_ShouldNotTouchMember()
+    {
+        using var env = Build();
+        await PrepareRepayAsync(env, ownerBalance: 100m, memberBalance: 100m);
+
+        await env.Loan.RunWeeklyRepayForAllAsync();
+
+        (await BalanceAsync(env, Owner)).Should().Be(0m);
+        (await BalanceAsync(env, Member)).Should().Be(100m);
+    }
+
+    [Fact(DisplayName = "共有: 定期返済は全アカウントの合計で足りなければ失敗し、どの口座からも引き落とさない")]
+    public async Task WeeklyRepay_TotalInsufficient_ShouldFailWithoutWithdraw()
+    {
+        using var env = Build();
+        await PrepareRepayAsync(env, ownerBalance: 30m, memberBalance: 60m);
+
+        await env.Loan.RunWeeklyRepayForAllAsync();
+
+        (await BalanceAsync(env, Owner)).Should().Be(30m);
+        (await BalanceAsync(env, Member)).Should().Be(60m);
+        (await LogsAsync(env, Owner)).Last().Should().Match<ServerLoanLog>(l => l.Action == "RepayFailure" && l.Amount == 100m);
+        (await env.Loan.HasOverdueDebtAsync(Member)).Data.Should().BeTrue();
+    }
+
+    [Fact(DisplayName = "共有: 延滞分は全アカウントの口座から回収し、回収しきると延滞が解消する")]
+    public async Task OverdueCollection_ShouldCollectFromAllAccounts()
+    {
+        using var env = Build();
+        await PrepareRepayAsync(env, ownerBalance: 30m, memberBalance: 50m);
+        await env.Loan.RunWeeklyRepayForAllAsync();
+
+        // 未回収 100 のうち、本垢 30 + メンバー 50 を回収する。
+        await env.Loan.RunOverdueCollectionForAllAsync();
+
+        (await BalanceAsync(env, Owner)).Should().Be(0m);
+        (await BalanceAsync(env, Member)).Should().Be(0m);
+        (await MoneyLogsAsync(env, "loan_overdue_collect")).Should().Equal(
+            (Owner, -30m, "loan_overdue_collect"), (Member, -50m, "loan_overdue_collect"));
+        (await env.Loan.GetByUuidAsync(Owner)).Data!.BorrowAmount.Should().Be(920m);
+        (await env.Loan.HasOverdueDebtAsync(Owner)).Data.Should().BeTrue();
+
+        // 残り 20 をメンバーの口座から回収すると解消する。
+        (await DepositAsync(env, Member, 100m)).IsSuccess.Should().BeTrue();
+        await env.Loan.RunOverdueCollectionForAllAsync();
+
+        (await BalanceAsync(env, Member)).Should().Be(80m);
+        (await env.Loan.GetByUuidAsync(Owner)).Data!.BorrowAmount.Should().Be(900m);
+        (await env.Loan.HasOverdueDebtAsync(Member)).Data.Should().BeFalse();
+    }
+
     [Fact(DisplayName = "共有: メンバーが支払額を変えると本垢の契約の支払額が変わる")]
     public async Task Member_SetPaymentAmount_ShouldUpdateOwnersContract()
     {
