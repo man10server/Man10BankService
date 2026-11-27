@@ -19,6 +19,23 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
         OverdueCollect,
     }
 
+    // uuid が使う契約の本垢を返す。承認済みで他のプレイヤーの契約に参加していればその本垢、していなければ自分自身。
+    public async Task<string> ResolveContractUuidAsync(string uuid)
+    {
+        await using var db = await factory.CreateDbContextAsync();
+        return await ResolveContractUuidAsync(db, uuid);
+    }
+
+    public static async Task<string> ResolveContractUuidAsync(BankDbContext db, string uuid)
+    {
+        var ownerUuid = await db.ServerLoanMembers
+            .AsNoTracking()
+            .Where(x => x.Uuid == uuid && x.ApprovedAt != null)
+            .Select(x => x.OwnerUuid)
+            .FirstOrDefaultAsync();
+        return ownerUuid ?? uuid;
+    }
+
     public async Task<ServerLoan> GetOrCreateByUuidAsync(string uuid)
     {
         await using var db = await factory.CreateDbContextAsync();
@@ -189,15 +206,17 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
         return latest?.Action == ServerLoanLogAction.RepayFailure.ToString();
     }
 
-    // 残債があり、かつ延滞中(直近の定期返済が失敗のまま)かどうか。
+    // uuid が使う契約に残債があり、かつ延滞中(直近の定期返済が失敗のまま)かどうか。
     // 延滞中は銀行からの出金・送金・小切手作成・貸付を拒否するために使う。
+    // 他のプレイヤーの契約に参加しているアカウントは、参加先の契約で判定する。
     public static async Task<bool> HasOverdueDebtAsync(BankDbContext db, string uuid)
     {
-        var debt = await GetDebtAsync(db, uuid);
+        var contractUuid = await ResolveContractUuidAsync(db, uuid);
+        var debt = await GetDebtAsync(db, contractUuid);
         if (debt is null or <= 0m)
             return false;
 
-        return await IsLatestScheduledRepayFailureAsync(db, uuid);
+        return await IsLatestScheduledRepayFailureAsync(db, contractUuid);
     }
 
     // 現在の残債。ローンが無いプレイヤーは null で、行は作らない。
