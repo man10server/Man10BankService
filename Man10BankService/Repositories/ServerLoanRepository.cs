@@ -51,6 +51,31 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
         return [ownerUuid, .. members];
     }
 
+    // 契約に承認済みの参加者がいるかどうか。
+    public async Task<bool> HasMembersAsync(string ownerUuid)
+    {
+        await using var db = await factory.CreateDbContextAsync();
+        return await HasMembersAsync(db, ownerUuid);
+    }
+
+    public static Task<bool> HasMembersAsync(BankDbContext db, string ownerUuid)
+    {
+        return db.ServerLoanMembers.AnyAsync(x => x.OwnerUuid == ownerUuid && x.ApprovedAt != null);
+    }
+
+    // 承認済みの参加者がいる契約の本垢の一覧。
+    public async Task<HashSet<string>> GetLinkedOwnerUuidsAsync()
+    {
+        await using var db = await factory.CreateDbContextAsync();
+        var owners = await db.ServerLoanMembers
+            .AsNoTracking()
+            .Where(x => x.ApprovedAt != null)
+            .Select(x => x.OwnerUuid)
+            .Distinct()
+            .ToListAsync();
+        return owners.ToHashSet();
+    }
+
     public async Task<ServerLoan> GetOrCreateByUuidAsync(string uuid)
     {
         await using var db = await factory.CreateDbContextAsync();

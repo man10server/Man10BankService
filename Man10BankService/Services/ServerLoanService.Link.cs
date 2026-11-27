@@ -232,7 +232,7 @@ public partial class ServerLoanService
         var needPayment = owner.PaymentAmount <= 0m && moved > 0m;
         ServerLoanRepository.AdjustLoanCore(db, owner, string.Empty, moved, ServerLoanRepository.ServerLoanLogAction.MemberJoin, actorUuid: memberUuid);
         if (needPayment)
-            owner.PaymentAmount = CalculateInitialPaymentAmount(owner.BorrowAmount);
+            owner.PaymentAmount = CalculateInitialPaymentAmount(owner.BorrowAmount, linked: true);
 
         return moved;
     }
@@ -257,12 +257,6 @@ public partial class ServerLoanService
             db.ServerLoanMembers.Remove(row);
             return ApiResult<bool>.Ok(true);
         });
-    }
-
-    // uuid の契約に、承認済みの参加者がいるかどうか。
-    private static Task<bool> HasMembersAsync(BankDbContext db, string uuid)
-    {
-        return db.ServerLoanMembers.AnyAsync(x => x.OwnerUuid == uuid && x.ApprovedAt != null);
     }
 
     private static async Task<bool> IsEitherOverdueAsync(BankDbContext db, string uuid, string otherUuid)

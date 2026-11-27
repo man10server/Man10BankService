@@ -262,6 +262,26 @@ public class ServerLoanSharedContractTests
         (await env.Loan.HasOverdueDebtAsync(Member)).Data.Should().BeFalse();
     }
 
+    [Theory(DisplayName = "連携契約の日利: 参加者がいる契約にだけ LinkedDailyInterestRate を使い、未設定なら通常の日利のまま")]
+    [InlineData("0.005", true, 5)]
+    [InlineData("0.005", false, 10)]
+    [InlineData(null, true, 10)]
+    [InlineData("", true, 10)]
+    public async Task LinkedDailyInterestRate_ShouldApplyOnlyToContractsWithMembers(string? linkedRate, bool linked, int expectedInterest)
+    {
+        using var env = Build(new Dictionary<string, string?> { ["ServerLoan:LinkedDailyInterestRate"] = linkedRate });
+        if (linked)
+            await AddMemberRowAsync(env);
+        (await env.Loan.BorrowAsync(Owner, MinAmount)).IsSuccess.Should().BeTrue();
+
+        (await env.Loan.GetPaymentInfoAsync(Owner)).Data!.DailyInterestPerDay.Should().Be(expectedInterest);
+        await env.Loan.RunDailyInterestForAllAsync();
+
+        (await env.Loan.GetByUuidAsync(Owner)).Data!.BorrowAmount.Should().Be(MinAmount + expectedInterest);
+        // 支払額の初期値も契約の日利で決まる(1000 × 日利 × 14 日)。
+        (await env.Loan.GetByUuidAsync(Owner)).Data!.PaymentAmount.Should().Be(expectedInterest * 14);
+    }
+
     [Fact(DisplayName = "共有: メンバーが支払額を変えると本垢の契約の支払額が変わる")]
     public async Task Member_SetPaymentAmount_ShouldUpdateOwnersContract()
     {
