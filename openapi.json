@@ -2766,7 +2766,9 @@
                     "uuid",
                     "action",
                     "amount",
-                    "date"
+                    "date",
+                    "actorUuid",
+                    "debtAfter"
                 ],
                 "type": "object",
                 "properties": {
@@ -2790,6 +2792,15 @@
                     "date": {
                         "type": "string",
                         "format": "date-time"
+                    },
+                    "actorUuid": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "debtAfter": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
                     }
                 }
             },

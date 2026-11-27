@@ -98,8 +98,10 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
     // トランザクション合成用のコアメソッド。
     // 既にロック取得済みの loan エンティティ(同一 context にアタッチ済み)に対して
     // 残債(BorrowAmount)を更新し、ログを同一 context に追加する。SaveChanges / Commit は呼び出し側。
+    // actorUuid には操作したプレイヤーを渡す(自動処理は null)。
     public static void AdjustLoanCore(
-        BankDbContext db, ServerLoan loan, string player, decimal delta, ServerLoanLogAction action)
+        BankDbContext db, ServerLoan loan, string player, decimal delta, ServerLoanLogAction action,
+        string? actorUuid = null)
     {
         if (!string.IsNullOrWhiteSpace(player))
             loan.Player = player;
@@ -132,7 +134,7 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
                 throw new ArgumentOutOfRangeException(nameof(action), action, null);
         }
 
-        AddLog(db, loan.Uuid, loan.Player, action, delta);
+        AddLog(db, loan, action, delta, actorUuid);
     }
 
     // 単一 DbContext・単一トランザクションで残債を更新する独立メソッド。
@@ -293,20 +295,23 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
 
         loan.BorrowAmount = borrowAmount;
         loan.PaymentAmount = paymentAmount;
-        AddLog(db, loan.Uuid, loan.Player, ServerLoanLogAction.SetBorrowAmount, delta);
+        AddLog(db, loan, ServerLoanLogAction.SetBorrowAmount, delta, actorUuid: null);
         await db.SaveChangesAsync();
         await tx.CommitAsync();
         return loan;
     }
 
-    private static void AddLog(BankDbContext db, string uuid, string player, ServerLoanLogAction action, decimal amount)
+    // 残債を更新した後の loan を渡す(操作後の残債を記録する)。
+    private static void AddLog(BankDbContext db, ServerLoan loan, ServerLoanLogAction action, decimal amount, string? actorUuid)
     {
         var log = new ServerLoanLog
         {
-            Uuid = uuid,
-            Player = player,
+            Uuid = loan.Uuid,
+            Player = loan.Player,
             Action = action.ToString(),
             Amount = amount,
+            ActorUuid = actorUuid,
+            DebtAfter = loan.BorrowAmount,
             // Date は DB 既定値
         };
         db.ServerLoanLogs.Add(log);

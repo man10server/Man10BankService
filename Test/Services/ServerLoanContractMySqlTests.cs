@@ -5,7 +5,7 @@ using Test.Infrastructure;
 
 namespace Test.Services;
 
-// サーバーローンの契約(server_loan_tbl)が 1 プレイヤーにつき 1 行であることの検証。
+// サーバーローンの契約(server_loan_tbl)とログ(server_loan_log)が本番スキーマ(db.sql)で期待どおり保存されることの検証。
 // 同時作成の競合は一意制約で弾くため、本番と同じ MySQL(Testcontainers)上で確認する。
 [Collection(MySqlCollection.Name)]
 public class ServerLoanContractMySqlTests
@@ -24,5 +24,21 @@ public class ServerLoanContractMySqlTests
 
         await using var ctx = await db.Factory.CreateDbContextAsync();
         (await ctx.ServerLoans.CountAsync(x => x.Uuid == Uuid)).Should().Be(1);
+    }
+
+    [Fact(DisplayName = "ログ(MySQL): 操作後の残債を記録し、操作者は自動処理では空のままにする")]
+    public async Task Log_ShouldStoreDebtAfterAndNullActor()
+    {
+        using var db = MySqlTestDbFactory.Create();
+        var repo = new ServerLoanRepository(db.Factory, new FakePlayerProfileService());
+
+        await repo.SetBorrowAmountAsync(Uuid, "test-player", 5000m, 100m);
+        await repo.AdjustLoanAsync(Uuid, "test-player", 50m, ServerLoanRepository.ServerLoanLogAction.Interest);
+
+        await using var ctx = await db.Factory.CreateDbContextAsync();
+        var logs = await ctx.ServerLoanLogs.AsNoTracking().Where(x => x.Uuid == Uuid).OrderBy(x => x.Id).ToListAsync();
+        logs.Select(l => (l.Action, l.ActorUuid, l.DebtAfter)).Should().Equal(
+            ("SetBorrowAmount", null, 5000m),
+            ("Interest", null, 5050m));
     }
 }

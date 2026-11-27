@@ -576,6 +576,28 @@ public class ServerLoanCreditEvaluationTests
         (await loan.GetByUuidAsync(Uuid)).Data!.BorrowAmount.Should().Be(MinAmount - expectedPaid);
     }
 
+    [Fact(DisplayName = "ログ: プレイヤーの操作には操作者を、すべての操作に操作後の残債を記録する")]
+    public async Task Logs_ShouldRecordActorAndDebtAfter()
+    {
+        var (loan, _, db) = Build();
+        using var _1 = db;
+
+        (await loan.BorrowAsync(Uuid, MinAmount)).IsSuccess.Should().BeTrue();
+        await AccrueInterestAsync(loan, 1);
+        (await loan.RepayAsync(Uuid, 10m)).IsSuccess.Should().BeTrue();
+        (await loan.SetPaymentAmountAsync(Uuid, 100m)).IsSuccess.Should().BeTrue();
+        await loan.RunWeeklyRepayForAllAsync();
+        (await loan.SetBorrowAmountAsync(Uuid, 500m)).IsSuccess.Should().BeTrue();
+
+        var logs = (await GetLogsAsync(db)).OrderBy(l => l.Id).ToList();
+        logs.Select(l => (l.Action, l.ActorUuid, l.DebtAfter)).Should().Equal(
+            ("Borrow", Uuid, 1000m),
+            ("Interest", null, 1010m),
+            ("EarlyRepay", Uuid, 1000m),
+            ("RepaySuccess", null, 900m),
+            ("SetBorrowAmount", null, 500m));
+    }
+
     [Fact(DisplayName = "手動返済: 最低返済額より少ない額でも返済できる")]
     public async Task ManualRepay_BelowMinimumPayment_ShouldSucceed()
     {

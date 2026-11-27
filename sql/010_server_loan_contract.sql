@@ -15,3 +15,26 @@ SET @sql := IF(@exists > 0,
                'SELECT 1',
                'ALTER TABLE server_loan_tbl ADD UNIQUE INDEX server_loan_tbl_uuid_unique (uuid)');
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- -----------------------------------------------------------
+-- server_loan_log: 操作したプレイヤーと操作後の残債を記録する列を追加
+--   uuid / player は従来どおり契約の本垢を表す。
+--   既存の行は NULL のまま(埋め直さない)。
+-- -----------------------------------------------------------
+SET @col_exists := (SELECT COUNT(1) FROM INFORMATION_SCHEMA.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'server_loan_log'
+                      AND COLUMN_NAME = 'actor_uuid');
+SET @sql := IF(@col_exists > 0,
+               'SELECT 1',
+               'ALTER TABLE server_loan_log ADD COLUMN actor_uuid VARCHAR(36) NULL COMMENT ''操作したプレイヤー。自動処理・運営の調整は NULL''');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @col_exists := (SELECT COUNT(1) FROM INFORMATION_SCHEMA.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'server_loan_log'
+                      AND COLUMN_NAME = 'debt_after');
+SET @sql := IF(@col_exists > 0,
+               'SELECT 1',
+               'ALTER TABLE server_loan_log ADD COLUMN debt_after DECIMAL(20,0) NULL COMMENT ''操作後の残債(監査用)''');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
