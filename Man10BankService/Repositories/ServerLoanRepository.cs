@@ -38,7 +38,18 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
             StopInterest = false,
         };
         await db.ServerLoans.AddAsync(loan);
-        await db.SaveChangesAsync();
+        try
+        {
+            await db.SaveChangesAsync();
+        }
+        catch (DbUpdateException)
+        {
+            // 同時に作成された場合は一意制約で弾かれるので、先に作られた行を返す。
+            await using var retry = await factory.CreateDbContextAsync();
+            var existing = await retry.ServerLoans.AsNoTracking().FirstOrDefaultAsync(x => x.Uuid == uuid);
+            if (existing == null) throw;
+            return existing;
+        }
 
         return loan;
     }

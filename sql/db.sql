@@ -197,6 +197,9 @@ create table server_loan_tbl
 create index server_loan_tbl_player_uuid_index
     on server_loan_tbl (player, uuid);
 
+create unique index server_loan_tbl_uuid_unique
+    on server_loan_tbl (uuid);
+
 create table user_bank
 (
     id      int auto_increment

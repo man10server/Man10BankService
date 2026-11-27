@@ -169,6 +169,7 @@ public class BankDbContext : DbContext
         {
             e.ToTable("server_loan_tbl");
             e.HasKey(x => x.Id);
+            e.HasIndex(x => x.Uuid).IsUnique();
             e.HasIndex(x => new { x.Uuid, x.BorrowAmount });
             e.Property(x => x.BorrowAmount).HasColumnName("borrow_amount").HasPrecision(20, 0);
             e.Property(x => x.PaymentAmount).HasColumnName("payment_amount").HasPrecision(20, 0);
