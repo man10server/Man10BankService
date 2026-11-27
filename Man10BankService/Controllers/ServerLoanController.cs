@@ -221,6 +221,7 @@ public class ServerLoanController(ServerLoanService service) : ControllerBase
     }
 
     // 運営用: uuid を owner の契約に、申請・承認なしで参加させる。
+    // resetLimit=true を指定すると、罰則として参加先の契約の借入枠を初期枠に戻す。
     [HttpPost("link/force")]
     [Authorize(Policy = "RequireWriteScope")]
     [Produces("application/json")]
@@ -232,9 +233,10 @@ public class ServerLoanController(ServerLoanService service) : ControllerBase
     public async Task<ActionResult<ServerLoanContractResponse>> ForceLink(
         [FromRoute] string uuid,
         [FromQuery, BindRequired, RegularExpression(UuidPattern, ErrorMessage = UuidErrorMessage)] string owner,
-        [FromQuery(Name = "operator"), BindRequired, StringLength(16, MinimumLength = 1, ErrorMessage = "operator は 1〜16 文字で指定してください。")] string operatorName)
+        [FromQuery(Name = "operator"), BindRequired, StringLength(16, MinimumLength = 1, ErrorMessage = "operator は 1〜16 文字で指定してください。")] string operatorName,
+        [FromQuery] bool resetLimit = false)
     {
-        var res = await service.ForceLinkAsync(uuid, owner, operatorName);
+        var res = await service.ForceLinkAsync(uuid, owner, operatorName, resetLimit);
         return this.ToActionResult(res);
     }
 

@@ -20,6 +20,8 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
         // 他のプレイヤーの契約への参加(参加先の契約に記録。金額は移ってきた残債)と脱退
         MemberJoin,
         MemberLeave,
+        // 借入枠を初期枠(MinAmount)に戻す(運営による強制リンク時の罰則)
+        LimitReset,
     }
 
     // uuid が使う契約の本垢を返す。承認済みで他のプレイヤーの契約に参加していればその本垢、していなければ自分自身。
@@ -190,6 +192,7 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
                 loan.BorrowAmount += delta;
                 break;
             case ServerLoanLogAction.MemberLeave:
+            case ServerLoanLogAction.LimitReset:
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(action), action, null);

@@ -54,6 +54,7 @@ public partial class ServerLoanService
     private const string InterestAction = nameof(ServerLoanRepository.ServerLoanLogAction.Interest);
     private const string MemberJoinAction = nameof(ServerLoanRepository.ServerLoanLogAction.MemberJoin);
     private const string MemberLeaveAction = nameof(ServerLoanRepository.ServerLoanLogAction.MemberLeave);
+    private const string LimitResetAction = nameof(ServerLoanRepository.ServerLoanLogAction.LimitReset);
 
     // スケジューラ(BackgroundService)が参照する実行時刻設定
     public static TimeSpan DailyInterestTimeOfDay => DailyInterestTime;
@@ -477,6 +478,7 @@ public partial class ServerLoanService
     //  - 定期返済の成功: CalculateGrowth の額だけ増やす。
     //  - 定期返済の失敗: FailureCutRate を掛けて減らす。
     //  - 参加・脱退: 参加者がいる間だけ枠の上限が LinkedMaxAmount に切り替わる。
+    //  - 枠の初期化(運営による強制リンク時の罰則): MinAmount に戻す。以後の成功でまた増える。
     //  - 手動返済・延滞分の回収・借入などは枠に影響しない。
     private static decimal CalculateBorrowLimit(IReadOnlyList<ServerLoanLog> logs, decimal currentDebt)
     {
@@ -511,6 +513,10 @@ public partial class ServerLoanService
                 case MemberLeaveAction:
                     members = Math.Max(0, members - 1);
                     limit = ClampBorrowLimit(limit, members > 0);
+                    break;
+
+                case LimitResetAction:
+                    limit = ClampBorrowLimit(MinAmount, members > 0);
                     break;
 
                 // 0 円の成功は延滞解消の記録なので、枠を増やさず、その週の利息の記録も消費しない。

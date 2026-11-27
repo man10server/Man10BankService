@@ -153,7 +153,9 @@ public partial class ServerLoanService
 
     // 運営による強制リンク: memberUuid を targetUuid の契約に、申請・承認なしで参加させる。延滞中でも行える。
     // 承認待ちの申請がある場合は置き換える。すでに他の契約に参加している場合は、先に解除する必要がある。
-    public async Task<ApiResult<ServerLoanContractResponse>> ForceLinkAsync(string memberUuid, string targetUuid, string operatorName)
+    // resetLimit を指定すると、罰則として参加先の契約の借入枠を初期枠(MinAmount)に戻す。
+    public async Task<ApiResult<ServerLoanContractResponse>> ForceLinkAsync(
+        string memberUuid, string targetUuid, string operatorName, bool resetLimit = false)
     {
         if (await _profileService.GetNameByUuidAsync(memberUuid) == null || await _profileService.GetNameByUuidAsync(targetUuid) == null)
             return ApiResult<ServerLoanContractResponse>.Fail(ErrorCode.PlayerNotFound);
@@ -183,12 +185,12 @@ public partial class ServerLoanService
             row.RequestedAt = now;
             row.ApprovedAt = now;
 
-            moved = await JoinContractCoreAsync(db, memberUuid, ownerUuid);
+            moved = await JoinContractCoreAsync(db, memberUuid, ownerUuid, resetLimit);
             return ApiResult<bool>.Ok(true);
         });
 
         if (result.IsSuccess)
-            _logger?.LogInformation("サーバーローンの共有: {Member} を {Owner} の契約に参加させました(運営 {Operator} の操作、移した残債 {Moved})。", memberUuid, ownerUuid, operatorName, moved);
+            _logger?.LogInformation("サーバーローンの共有: {Member} を {Owner} の契約に参加させました(運営 {Operator} の操作、移した残債 {Moved}、枠の初期化 {ResetLimit})。", memberUuid, ownerUuid, operatorName, moved, resetLimit);
         return await ToContractResultAsync(result, memberUuid);
     }
 
@@ -218,7 +220,8 @@ public partial class ServerLoanService
 
     // 参加の確定: memberUuid 自身の契約の残債を ownerUuid の契約へ移し、参加のログを残す。移した残債を返す。
     // server_loan_member の行は呼び出し側が承認済みにしておくこと。
-    private async Task<decimal> JoinContractCoreAsync(BankDbContext db, string memberUuid, string ownerUuid)
+    // resetLimit を指定すると、参加先の契約の借入枠を初期枠に戻すログも残す。
+    private async Task<decimal> JoinContractCoreAsync(BankDbContext db, string memberUuid, string ownerUuid, bool resetLimit = false)
     {
         var repo = new ServerLoanRepository(_dbFactory, _profileService);
         var owner = await repo.GetOrCreateForUpdateAsync(db, ownerUuid, string.Empty);
@@ -233,6 +236,8 @@ public partial class ServerLoanService
         ServerLoanRepository.AdjustLoanCore(db, owner, string.Empty, moved, ServerLoanRepository.ServerLoanLogAction.MemberJoin, actorUuid: memberUuid);
         if (needPayment)
             owner.PaymentAmount = CalculateInitialPaymentAmount(owner.BorrowAmount, linked: true);
+        if (resetLimit)
+            ServerLoanRepository.AdjustLoanCore(db, owner, string.Empty, 0m, ServerLoanRepository.ServerLoanLogAction.LimitReset);
 
         return moved;
     }

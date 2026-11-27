@@ -228,6 +228,30 @@ public class ServerLoanLinkTests
         (await env.Loan.ForceLinkAsync(Owner, Other, "admin")).Code.Should().Be(ErrorCode.LinkHasMembers);
     }
 
+    [Theory(DisplayName = "強制リンク: resetLimit を指定したときだけ、参加先の契約の借入枠を初期枠に戻す")]
+    [InlineData(false, 1100)]
+    [InlineData(true, 1000)]
+    public async Task ForceLink_ResetLimit_ShouldResetOwnersLimit(bool resetLimit, int expectedLimit)
+    {
+        using var env = Build();
+        // 本垢が 1000 を 1 週間借りて全額返した履歴を作り、枠を 1000 → 1100 に育てておく(増加は枠の 10% まで)。
+        await using (var ctx = await env.Db.Factory.CreateDbContextAsync())
+        {
+            var now = DateTime.UtcNow;
+            ctx.ServerLoanLogs.Add(new ServerLoanLog { Uuid = Owner, Player = "owner", Action = "Borrow", Amount = 1000m, Date = now.AddDays(-8) });
+            for (var day = 7; day >= 1; day--)
+                ctx.ServerLoanLogs.Add(new ServerLoanLog { Uuid = Owner, Player = "owner", Action = "Interest", Amount = 0m, Date = now.AddDays(-day) });
+            ctx.ServerLoanLogs.Add(new ServerLoanLog { Uuid = Owner, Player = "owner", Action = "RepaySuccess", Amount = -1000m, Date = now.AddDays(-0.5) });
+            await ctx.SaveChangesAsync();
+        }
+        (await env.Loan.CalculateBorrowLimitAsync(Owner)).Data.Should().Be(1100m);
+
+        (await env.Loan.ForceLinkAsync(Member, Owner, "admin", resetLimit)).IsSuccess.Should().BeTrue();
+
+        (await env.Loan.CalculateBorrowLimitAsync(Member)).Data.Should().Be(expectedLimit);
+        (await LogsAsync(env, Owner)).Any(l => l.Action == "LimitReset").Should().Be(resetLimit);
+    }
+
     [Fact(DisplayName = "強制解除: 残債があっても外せて、移した残債は本垢の契約に残る")]
     public async Task ForceUnlink_ShouldKeepDebtOnOwnersContract()
     {
