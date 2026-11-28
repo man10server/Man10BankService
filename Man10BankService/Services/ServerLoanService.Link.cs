@@ -219,7 +219,7 @@ public partial class ServerLoanService
     }
 
     // 参加の確定: memberUuid 自身の契約の残債を ownerUuid の契約へ移し、参加のログを残す。移した残債を返す。
-    // server_loan_member の行は呼び出し側が承認済みにしておくこと。
+    // server_loan_contract_member の行は呼び出し側が承認済みにしておくこと。
     // resetLimit を指定すると、参加先の契約の借入枠を初期枠に戻すログも残す。
     private async Task<decimal> JoinContractCoreAsync(BankDbContext db, string memberUuid, string ownerUuid, bool resetLimit = false)
     {
@@ -228,12 +228,14 @@ public partial class ServerLoanService
         var own = await DbLockHelper.GetServerLoanForUpdateAsync(db, memberUuid);
 
         var moved = Math.Max(0m, own?.BorrowAmount ?? 0m);
+        // 移す残債のうちの元本。元本と利息の内訳は、そのまま参加先の契約に引き継ぐ。
+        var movedPrincipal = Math.Clamp(own?.Principal ?? 0m, 0m, moved);
         if (own != null && moved > 0m)
             ServerLoanRepository.AdjustLoanCore(db, own, -moved, ServerLoanRepository.ServerLoanLogAction.SetBorrowAmount, actorUuid: memberUuid);
 
         // 支払額が未設定の契約に残債が移ってきた場合は、借入時と同じく初期値を設定する。
         var needPayment = owner.PaymentAmount <= 0m && moved > 0m;
-        ServerLoanRepository.AdjustLoanCore(db, owner, moved, ServerLoanRepository.ServerLoanLogAction.MemberJoin, actorUuid: memberUuid);
+        ServerLoanRepository.AdjustLoanCore(db, owner, moved, ServerLoanRepository.ServerLoanLogAction.MemberJoin, actorUuid: memberUuid, movedPrincipal: movedPrincipal);
         if (needPayment)
             owner.PaymentAmount = CalculateInitialPaymentAmount(owner.BorrowAmount, linked: true);
         if (resetLimit)
@@ -242,7 +244,7 @@ public partial class ServerLoanService
         return moved;
     }
 
-    // 脱退の確定: server_loan_member の行を消し、参加していた契約に脱退のログを残す。残債は本垢の契約に残す。
+    // 脱退の確定: server_loan_contract_member の行を消し、参加していた契約に脱退のログを残す。残債は本垢の契約に残す。
     private async Task LeaveContractCoreAsync(BankDbContext db, ServerLoanMember row)
     {
         var repo = new ServerLoanRepository(_dbFactory, _profileService);

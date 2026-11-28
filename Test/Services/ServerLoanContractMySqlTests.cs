@@ -8,7 +8,7 @@ using Test.Infrastructure;
 
 namespace Test.Services;
 
-// サーバーローンの契約(server_loan_tbl)・ログ(server_loan_log)・メンバー(server_loan_member)が
+// サーバーローンの契約(server_loan_contract)・ログ(server_loan_contract_log)・メンバー(server_loan_contract_member)が
 // 本番スキーマ(db.sql)で期待どおり保存されることの検証。
 // 同時作成の競合は一意制約で弾くため、本番と同じ MySQL(Testcontainers)上で確認する。
 [Collection(MySqlCollection.Name)]

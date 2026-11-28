@@ -54,6 +54,7 @@ public partial class ServerLoanService
     // 日次利息(契約 1 件分): 残債に 1 日分の利息を加え、Interest として記録する。
     //  - date の分の Interest ログがすでにある契約には付けない(同じ日に 2 回実行されても二重に付かない)。
     //  - 残債が 0 の契約と、利息停止(stop_interest)の契約には付けない。
+    //  - 残債の上限(MaxDebtAmount)や利息の上限(MaxInterestMultiplier)に達している契約にも付かない。
     // 戻り値は、利息を付けたかどうか。
     private async Task<ApiResult<bool>> AddDailyInterestAsync(string ownerUuid, DateOnly date)
     {
@@ -65,7 +66,7 @@ public partial class ServerLoanService
             if (await ServerLoanRepository.HasInterestLogOnDateAsync(db, ownerUuid, date))
                 return ApiResult<bool>.Ok(false);
 
-            var interest = CalculateDailyInterestAmount(loan.BorrowAmount, await ServerLoanRepository.HasMembersAsync(db, ownerUuid));
+            var interest = CalculateDailyInterestAmount(loan.BorrowAmount, loan.Principal, await ServerLoanRepository.HasMembersAsync(db, ownerUuid));
             if (interest <= 0m)
                 return ApiResult<bool>.Ok(false);
 
@@ -83,7 +84,7 @@ public partial class ServerLoanService
     {
         return await _bank.RunExclusiveAsync<bool>(async db =>
         {
-            // 1) server_loan 行ロック
+            // 1) 契約の行ロック
             var loan = await DbLockHelper.GetServerLoanForUpdateAsync(db, ownerUuid);
             if (loan == null)
                 return ApiResult<bool>.Ok(false);
@@ -99,7 +100,7 @@ public partial class ServerLoanService
                 return ApiResult<bool>.Ok(true);
             }
 
-            var amount = CalculateScheduledPayment(debt, loan.PaymentAmount, loan.StopInterest, await ServerLoanRepository.HasMembersAsync(db, ownerUuid));
+            var amount = CalculateScheduledPayment(loan, await ServerLoanRepository.HasMembersAsync(db, ownerUuid));
             // 最低返済額の設定をすべて 0 にしていて支払額も未設定のときだけ 0 になる。引き落とすものが無いので何もしない。
             if (amount <= 0m)
                 return ApiResult<bool>.Ok(false);

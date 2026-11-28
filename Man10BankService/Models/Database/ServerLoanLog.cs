@@ -2,7 +2,7 @@ using System.ComponentModel.DataAnnotations;
 
 namespace Man10BankService.Models.Database;
 
-// サーバーローンの操作の記録(server_loan_log)。借入枠と延滞の状態は、このログから求める。
+// サーバーローンの操作の記録(server_loan_contract_log)。借入枠と延滞の状態は、このログから求める。
 public class ServerLoanLog
 {
     public int Id { get; set; }
@@ -20,6 +20,8 @@ public class ServerLoanLog
     // 操作したプレイヤーの UUID。自動処理(利息・定期返済・延滞回収)や運営の調整は null。
     [StringLength(36)]
     public string? ActorUuid { get; set; }
-    // 操作後の残債。監査用で、借入枠などの計算には使わない。この列が無かった頃の行は null。
-    public decimal? DebtAfter { get; set; }
+    // 操作後の残債。監査用で、借入枠などの計算には使わない。
+    public decimal DebtAfter { get; set; }
+    // 操作後の元本。こちらも監査用。
+    public decimal PrincipalAfter { get; set; }
 }
