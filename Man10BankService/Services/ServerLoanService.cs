@@ -217,11 +217,10 @@ public partial class ServerLoanService
         });
     }
 
-    // 返済: 単一トランザクションで「server_loan 行ロック→残高減算+MoneyLog→債務減算+ログ→Commit」。
-    // 出金成功後の債務減算が同一 tx 内のため、片方だけ成立する不整合が発生しない(補償 Saga 廃止)。
-    // 与信評価(CalculateBorrowLimitAsync)の対象は週次の定期返済(scheduled)のみ。
-    // プレイヤーによる手動返済は EarlyRepay として記録し、残高不足でも失敗に数えない。
-    public async Task<ApiResult<ServerLoan?>> RepayAsync(string uuid, decimal? payAmount, bool scheduled = false)
+    // 手動返済: プレイヤーが自分の口座から返す。uuid が使う契約(参加先があればその本垢の契約)の残債を減らす。
+    // 借入枠の評価対象は定期返済だけなので、EarlyRepay として記録する。残高不足でも延滞にはならない。
+    // ロック順序規約: 自リソース行(server_loan)→user_bank 行。
+    public async Task<ApiResult<ServerLoan?>> RepayAsync(string uuid, decimal? payAmount)
     {
         var resolved = await _bank.ResolvePlayerNameAsync(uuid);
         if (!resolved.IsSuccess)
@@ -230,73 +229,89 @@ public partial class ServerLoanService
 
         var repo = new ServerLoanRepository(_dbFactory, _profileService);
 
-        var result = await _bank.RunExclusiveAsync<ServerLoan?>(async db =>
+        return await _bank.RunExclusiveAsync<ServerLoan?>(async db =>
         {
-            // 定期返済は契約(本垢)ごとに呼ばれる。手動返済は、操作したアカウントが使う契約の残債を減らす。
-            var contractUuid = scheduled ? uuid : await ServerLoanRepository.ResolveContractUuidAsync(db, uuid);
+            var contractUuid = await ServerLoanRepository.ResolveContractUuidAsync(db, uuid);
 
             // 1) server_loan 行ロック
             var loan = await repo.GetOrCreateForUpdateAsync(db, contractUuid, ContractPlayerName(contractUuid, uuid, resolvedPlayer));
-            var remain = loan.BorrowAmount;
-            if (remain <= 0m)
-            {
-                // 延滞後に完済済みのまま定期返済日を迎えた場合は、0 円の成功ログを残して延滞を解消する。
-                // ログを確定させるため Ok + NoRepaymentNeeded で返し、ラッパ側で失敗へ変換する。
-                if (scheduled && await ServerLoanRepository.IsLatestScheduledRepayFailureAsync(db, contractUuid))
-                {
-                    ServerLoanRepository.AdjustLoanCore(db, loan, loan.Player, 0m, ServerLoanRepository.ServerLoanLogAction.RepaySuccess);
-                    return ApiResult<ServerLoan?>.Ok(loan, ErrorCode.NoRepaymentNeeded);
-                }
+            if (loan.BorrowAmount <= 0m)
                 return ApiResult<ServerLoan?>.Fail(ErrorCode.NoRepaymentNeeded);
-            }
 
-            // 定期返済は設定額と最低返済額の大きいほうを引き落とす。
-            var requested = scheduled
-                ? CalculateScheduledPayment(remain, loan.PaymentAmount, loan.StopInterest, await HasMembersAsync(db, contractUuid))
-                : payAmount is > 0m ? payAmount.Value : loan.PaymentAmount;
+            var requested = payAmount is > 0m ? payAmount.Value : loan.PaymentAmount;
             if (requested <= 0m)
                 return ApiResult<ServerLoan?>.Fail(ErrorCode.PaymentAmountNotSet);
 
-            var amount = Math.Min(requested, remain);
+            var amount = Math.Min(requested, loan.BorrowAmount);
             if (amount <= 0m)
                 return ApiResult<ServerLoan?>.Fail(ErrorCode.PaymentAmountZero);
 
-            // 2) user_bank 行ロック下で残高不足を判定
-            //    定期返済は契約の全アカウント(本垢→参加が古い順)の口座の合計で、手動返済は操作したアカウントの口座で判定する。
-            var accountUuids = scheduled
-                ? await ServerLoanRepository.GetContractAccountUuidsAsync(db, contractUuid)
-                : [uuid];
-            var accounts = await LockBankAccountsAsync(db, accountUuids);
+            // 2) 操作したアカウントの口座を行ロックし、残高不足を判定
+            var accounts = await LockBankAccountsAsync(db, [uuid]);
             if (TotalBalance(accounts) < amount)
-            {
-                if (!scheduled)
-                    return ApiResult<ServerLoan?>.Fail(ErrorCode.InsufficientFunds);
-
-                // 定期返済の残高不足は返済失敗としてカウントし、失敗ログを残す。
-                // この失敗カウントは確定させたいので、Ok + InsufficientFunds コードで返して
-                // 同一 tx をコミットさせる(ラッパ側で 409 失敗へ変換する)。
-                ServerLoanRepository.AdjustLoanCore(db, loan, loan.Player, amount, ServerLoanRepository.ServerLoanLogAction.RepayFailure);
-                return ApiResult<ServerLoan?>.Ok(loan, ErrorCode.InsufficientFunds);
-            }
+                return ApiResult<ServerLoan?>.Fail(ErrorCode.InsufficientFunds);
 
             // 3) 残高減算 + MoneyLog
             await WithdrawFromAccountsAsync(db, accounts, amount, "loan_repay", "サーバーローン返済", uuid, resolvedPlayer);
 
             // 4) 債務減算 + 返済ログ
-            var action = scheduled
-                ? ServerLoanRepository.ServerLoanLogAction.RepaySuccess
-                : ServerLoanRepository.ServerLoanLogAction.EarlyRepay;
-            ServerLoanRepository.AdjustLoanCore(db, loan, loan.Player, -amount, action, actorUuid: scheduled ? null : uuid);
+            ServerLoanRepository.AdjustLoanCore(db, loan, loan.Player, -amount, ServerLoanRepository.ServerLoanLogAction.EarlyRepay, actorUuid: uuid);
 
             return ApiResult<ServerLoan?>.Ok(loan);
         });
-
-        // 残高不足の失敗ログ・延滞解消ログは確定させつつ、呼び出し側へは失敗として返す。
-        if (result.IsSuccess && result.Code is ErrorCode.InsufficientFunds or ErrorCode.NoRepaymentNeeded)
-            return ApiResult<ServerLoan?>.Fail(result.Code);
-        return result;
     }
-    
+
+    // 定期返済(契約 1 件分): 支払額(設定)と最低返済額の大きいほうを、契約の全アカウントの口座から引き落とす。
+    //  - 口座は本垢→参加が古い順に使う。全員の残高の合計で足りなければ、どの口座からも引き落とさず失敗とする。
+    //  - 成功は RepaySuccess、失敗は RepayFailure として記録する。この 2 つが借入枠の増減と延滞の判定に使われる。
+    //  - 延滞後に手動返済で完済したまま返済日を迎えた契約は、0 円の成功を記録して延滞を解消する。
+    // 戻り値は、ログを記録したかどうか。
+    private async Task<ApiResult<bool>> RepayScheduledAsync(string ownerUuid)
+    {
+        var resolved = await _bank.ResolvePlayerNameAsync(ownerUuid);
+        if (!resolved.IsSuccess)
+            return ApiResult<bool>.Fail(resolved.Code);
+        var resolvedPlayer = resolved.Data!;
+
+        var repo = new ServerLoanRepository(_dbFactory, _profileService);
+
+        return await _bank.RunExclusiveAsync<bool>(async db =>
+        {
+            // 1) server_loan 行ロック
+            var loan = await repo.GetOrCreateForUpdateAsync(db, ownerUuid, resolvedPlayer);
+            var debt = loan.BorrowAmount;
+            if (debt <= 0m)
+            {
+                if (!await ServerLoanRepository.IsLatestScheduledRepayFailureAsync(db, ownerUuid))
+                    return ApiResult<bool>.Ok(false);
+
+                ServerLoanRepository.AdjustLoanCore(db, loan, loan.Player, 0m, ServerLoanRepository.ServerLoanLogAction.RepaySuccess);
+                return ApiResult<bool>.Ok(true);
+            }
+
+            var amount = CalculateScheduledPayment(debt, loan.PaymentAmount, loan.StopInterest, await HasMembersAsync(db, ownerUuid));
+            // 最低返済額の設定をすべて 0 にしていて支払額も未設定のときだけ 0 になる。引き落とすものが無いので何もしない。
+            if (amount <= 0m)
+                return ApiResult<bool>.Ok(false);
+
+            // 2) 契約の全アカウントの口座を行ロックし、合計残高で残高不足を判定
+            var accounts = await LockBankAccountsAsync(db, await ServerLoanRepository.GetContractAccountUuidsAsync(db, ownerUuid));
+            if (TotalBalance(accounts) < amount)
+            {
+                // 残債は変えず、引き落とそうとした額を失敗として記録する(これで延滞になる)。
+                ServerLoanRepository.AdjustLoanCore(db, loan, loan.Player, amount, ServerLoanRepository.ServerLoanLogAction.RepayFailure);
+                return ApiResult<bool>.Ok(true);
+            }
+
+            // 3) 残高減算 + MoneyLog
+            await WithdrawFromAccountsAsync(db, accounts, amount, "loan_repay", "サーバーローン返済", ownerUuid, resolvedPlayer);
+
+            // 4) 債務減算 + 返済ログ
+            ServerLoanRepository.AdjustLoanCore(db, loan, loan.Player, -amount, ServerLoanRepository.ServerLoanLogAction.RepaySuccess);
+            return ApiResult<bool>.Ok(true);
+        });
+    }
+
     // 延滞分の回収: 直近の定期返済が失敗のままの契約について、未回収分を銀行残高のある分だけ回収する。
     // 契約の全アカウント(本垢→参加が古い順)の口座から回収する。
     // 失敗額を回収しきるか残債が 0 になったら、0 円の成功ログを残して延滞を解消する(借入枠は増えない)。
@@ -777,7 +792,7 @@ public partial class ServerLoanService
         var loans = await repo.GetAllAsync();
         foreach (var loan in loans)
         {
-            await RepayAsync(loan.Uuid, null, scheduled: true);
+            await RepayScheduledAsync(loan.Uuid);
         }
     }
 
