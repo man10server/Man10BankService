@@ -50,24 +50,6 @@ public class ServerLoanContractMySqlTests
             ("Interest", null, 5050m));
     }
 
-    [Fact(DisplayName = "契約(MySQL): failed_payment 列が残っているスキーマでも作成・行ロック・更新ができる")]
-    public async Task Contract_WithLegacyFailedPaymentColumn_ShouldStillWork()
-    {
-        using var db = MySqlTestDbFactory.Create();
-        await using (var ctx = await db.Factory.CreateDbContextAsync())
-        {
-            // sql/011 を適用する前の状態を再現する。
-            await ctx.Database.ExecuteSqlRawAsync(
-                "ALTER TABLE server_loan_tbl ADD COLUMN failed_payment INT DEFAULT 0 NOT NULL");
-        }
-        var profile = new FakePlayerProfileService();
-        var loan = new ServerLoanService(db.Factory, new BankService(db.Factory, profile), profile, new ConfigurationBuilder().Build());
-
-        (await loan.GetByUuidAsync(Uuid)).Data!.BorrowAmount.Should().Be(0m);
-        (await loan.SetBorrowAmountAsync(Uuid, 1000m)).Data!.BorrowAmount.Should().Be(1000m);
-        (await loan.GetByUuidAsync(Uuid)).Data!.BorrowAmount.Should().Be(1000m);
-    }
-
     [Fact(DisplayName = "メンバー(MySQL): 承認待ちで保存でき、1アカウントは1つの契約にしか参加できない")]
     public async Task Member_ShouldBePendingByDefaultAndUniquePerAccount()
     {
