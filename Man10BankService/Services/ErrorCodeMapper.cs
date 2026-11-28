@@ -23,6 +23,7 @@ public static class ErrorCodeMapper
         ErrorCode.NoRepaymentNeeded => 400,
         ErrorCode.PaymentAmountNotSet => 400,
         ErrorCode.PaymentAmountZero => 400,
+        ErrorCode.LinkInvalidTarget => 400,
 
         // 見つからない(404)
         ErrorCode.NotFound => 404,
@@ -30,6 +31,8 @@ public static class ErrorCodeMapper
         ErrorCode.ChequeNotFound => 404,
         ErrorCode.EstateNotFound => 404,
         ErrorCode.LoanNotFound => 404,
+        ErrorCode.LinkRequestNotFound => 404,
+        ErrorCode.LinkNotMember => 404,
 
         // 業務的失敗・競合(409)
         ErrorCode.Conflict => 409,
@@ -43,6 +46,10 @@ public static class ErrorCodeMapper
         ErrorCode.CollateralAlreadyReleased => 409,
         ErrorCode.BeforePaybackDate => 409,
         ErrorCode.IdempotencyKeyMismatch => 409,
+        ErrorCode.LinkAlreadyLinked => 409,
+        ErrorCode.LinkHasMembers => 409,
+        ErrorCode.LinkDebtRemaining => 409,
+        ErrorCode.LinkBlockedByOverdue => 409,
 
         // 予期せぬエラー・補償失敗(500)
         ErrorCode.UnexpectedError => 500,

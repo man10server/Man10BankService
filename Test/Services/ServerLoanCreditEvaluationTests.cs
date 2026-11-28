@@ -313,6 +313,36 @@ public class ServerLoanCreditEvaluationTests
         (await loan.CalculateBorrowLimitAsync(Uuid)).Data.Should().Be(1185m);
     }
 
+    // 1 回の成功で枠は 500 増える(返済額 1000 × 0.5。上限は枠 × 0.5)。
+    [Theory(DisplayName = "借入上限: 参加者がいる間だけ LinkedMaxAmount を上限にし、未設定なら MaxAmount のまま。枠の初期化で下限に戻る")]
+    [InlineData("2000", "S", 1200)]
+    [InlineData("2000", "S,J,S", 1700)]
+    [InlineData("2000", "S,J,S,S", 2000)]
+    [InlineData("2000", "S,J,S,S,L", 1200)]
+    [InlineData("2000", "S,J,J,S,L,S", 2000)]
+    [InlineData(null, "S,J,S,S", 1200)]
+    [InlineData("2000", "S,J,S,R", 1000)]
+    [InlineData("2000", "S,J,S,R,S", 1500)]
+    public async Task BorrowLimit_LinkedMaxAmount_ShouldApplyWhileContractHasMembers(string? linkedMaxAmount, string history, int expected)
+    {
+        var (loan, _, db) = Build(new Dictionary<string, string?>
+        {
+            ["ServerLoan:MaxAmount"] = "1200",
+            ["ServerLoan:LinkedMaxAmount"] = linkedMaxAmount
+        });
+        using var _1 = db;
+
+        await AddRepayLogsAsync(db, history.Split(',').Select(x => x switch
+        {
+            "S" => ("RepaySuccess", -1000m),
+            "J" => ("MemberJoin", 0m),
+            "R" => ("LimitReset", 0m),
+            _ => ("MemberLeave", 0m)
+        }).ToArray());
+
+        (await loan.CalculateBorrowLimitAsync(Uuid)).Data.Should().Be(expected);
+    }
+
     [Fact(DisplayName = "借入上限: 手動返済は上限に影響しない")]
     public async Task BorrowLimit_ManualRepay_ShouldNotRaiseLimit()
     {

@@ -7,7 +7,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Man10BankService.Services;
 
-public class ServerLoanService
+public partial class ServerLoanService
 {
     // ===== 設定値(appsettings.json の ServerLoan セクション。Configure で読み込む) =====
 
@@ -31,6 +31,10 @@ public class ServerLoanService
     private static decimal MinPaymentAmount { get; set; } = 10000m;
     // 最低返済額で、1週間分の利息に上乗せして返す元本の割合(残債に対して)。0 以下なら利息を見ない。
     private static decimal MinPrincipalRate { get; set; } = 0.01m;
+    // 参加者がいる契約(連携契約)の借入枠の上限。未設定なら MaxAmount と同じ。
+    private static decimal? LinkedMaxAmount { get; set; }
+    // 参加者がいる契約(連携契約)の日利。未設定なら DailyInterestRate と同じ。
+    private static decimal? LinkedDailyInterestRate { get; set; }
     // 日次処理(利息の加算・延滞分の回収)の時刻(UTC)
     private static TimeSpan DailyInterestTime { get; set; } = new(2, 0, 0); // 02:00
     // 定期返済の時刻(UTC)と曜日
@@ -48,6 +52,9 @@ public class ServerLoanService
     private const string RepaySuccessAction = nameof(ServerLoanRepository.ServerLoanLogAction.RepaySuccess);
     private const string RepayFailureAction = nameof(ServerLoanRepository.ServerLoanLogAction.RepayFailure);
     private const string InterestAction = nameof(ServerLoanRepository.ServerLoanLogAction.Interest);
+    private const string MemberJoinAction = nameof(ServerLoanRepository.ServerLoanLogAction.MemberJoin);
+    private const string MemberLeaveAction = nameof(ServerLoanRepository.ServerLoanLogAction.MemberLeave);
+    private const string LimitResetAction = nameof(ServerLoanRepository.ServerLoanLogAction.LimitReset);
 
     // スケジューラ(BackgroundService)が参照する実行時刻設定
     public static TimeSpan DailyInterestTimeOfDay => DailyInterestTime;
@@ -57,6 +64,7 @@ public class ServerLoanService
     private readonly IDbContextFactory<BankDbContext> _dbFactory;
     private readonly BankService _bank;
     private readonly IPlayerProfileService _profileService;
+    private readonly ILogger<ServerLoanService>? _logger;
 
     public ServerLoanService(IDbContextFactory<BankDbContext> dbFactory, BankService bank, IPlayerProfileService profileService, IConfiguration config,
         ILogger<ServerLoanService>? logger = null)
@@ -75,8 +83,10 @@ public class ServerLoanService
         _dbFactory = dbFactory;
         _bank = bank;
         _profileService = profileService;
+        _logger = logger;
     }
 
+    // uuid が使う契約(server_loan_tbl の行)を返す。他のプレイヤーの契約に参加しているアカウントには、参加先の契約を返す。
     public async Task<ApiResult<ServerLoan>> GetByUuidAsync(string uuid)
     {
         try
@@ -85,7 +95,8 @@ public class ServerLoanService
             var player = await _profileService.GetNameByUuidAsync(uuid);
             if (player == null)
                 return ApiResult<ServerLoan>.Fail(ErrorCode.PlayerNotFound);
-            var loan = await repo.GetOrCreateByUuidAsync(uuid);
+            var contractUuid = await repo.ResolveContractUuidAsync(uuid);
+            var loan = await repo.GetOrCreateByUuidAsync(contractUuid);
             return ApiResult<ServerLoan>.Ok(loan);
         }
         catch (Exception)
@@ -102,17 +113,21 @@ public class ServerLoanService
             return ApiResult<PaymentInfoResponse>.Fail(loanRes.Code);
 
         var loan = loanRes.Data;
+        var linkedRes = await HasMembersAsync(loan.Uuid);
+        if (!linkedRes.IsSuccess)
+            return ApiResult<PaymentInfoResponse>.Fail(linkedRes.Code);
+        var linked = linkedRes.Data;
 
         // 日あたりの金利増加額(StopInterest や残債 0 は 0 とする)
         var perDay = loan.StopInterest || loan.BorrowAmount <= 0m
             ? 0m
-            : CalculateDailyInterestAmount(loan.BorrowAmount);
+            : CalculateDailyInterestAmount(loan.BorrowAmount, linked);
 
         // 次回支払日(設定に基づく週次支払日時の次回)
         var nextRepay = GetNextWeeklyRepayDateTime();
 
         // 次回の定期返済で引き落とす額(現時点の残債で計算。最低返済額を反映する)
-        var nextPayment = CalculateScheduledPayment(loan.BorrowAmount, loan.PaymentAmount, loan.StopInterest);
+        var nextPayment = CalculateScheduledPayment(loan.BorrowAmount, loan.PaymentAmount, loan.StopInterest, linked);
 
         return ApiResult<PaymentInfoResponse>.Ok(new PaymentInfoResponse(nextRepay, perDay, nextPayment));
     }
@@ -126,7 +141,8 @@ public class ServerLoanService
         try
         {
             var repo = new ServerLoanRepository(_dbFactory, _profileService);
-            var logs = await repo.GetLogsAsync(uuid, limit, offset);
+            var contractUuid = await repo.ResolveContractUuidAsync(uuid);
+            var logs = await repo.GetLogsAsync(contractUuid, limit, offset);
             return ApiResult<List<ServerLoanLog>>.Ok(logs);
         }
         catch (Exception)
@@ -143,14 +159,20 @@ public class ServerLoanService
         if (amount <= 0m)
             return ApiResult<ServerLoan?>.Fail(ErrorCode.ValidationError);
 
+        // 借入枠・延滞・残債は、uuid が使う契約(参加先があればその本垢の契約)で判定する。
+        var contractRes = await ResolveContractUuidAsync(uuid);
+        if (!contractRes.IsSuccess)
+            return ApiResult<ServerLoan?>.Fail(contractRes.Code);
+        var contractUuid = contractRes.Data!;
+
         // 上限額の算定はログ集計のみで残高/債務を変更しないため、トランザクション前に読む。
-        var limitRes = await CalculateBorrowLimitAsync(uuid);
+        var limitRes = await CalculateContractBorrowLimitAsync(contractUuid);
         if (!limitRes.IsSuccess)
             return ApiResult<ServerLoan?>.Fail(limitRes.Code);
         var limit = limitRes.Data;
 
         // 定期返済に失敗したままの間は、次の定期返済が成功するまで新規借入を止める。
-        var overdueRes = await IsRepaymentOverdueAsync(uuid);
+        var overdueRes = await IsRepaymentOverdueAsync(contractUuid);
         if (!overdueRes.IsSuccess)
             return ApiResult<ServerLoan?>.Fail(overdueRes.Code);
         if (overdueRes.Data)
@@ -166,8 +188,12 @@ public class ServerLoanService
 
         return await _bank.RunExclusiveAsync<ServerLoan?>(async db =>
         {
+            // 枠を算定してからここまでの間に参加先が変わっていたら、やり直してもらう。
+            if (await ServerLoanRepository.ResolveContractUuidAsync(db, uuid) != contractUuid)
+                return ApiResult<ServerLoan?>.Fail(ErrorCode.Conflict);
+
             // 1) server_loan 行ロック(MySQL 時 FOR UPDATE)
-            var loan = await repo.GetOrCreateForUpdateAsync(db, uuid, resolvedPlayer);
+            var loan = await repo.GetOrCreateForUpdateAsync(db, contractUuid, ContractPlayerName(contractUuid, uuid, resolvedPlayer));
 
             // 2) ロック下の確定値で上限チェック
             if (loan.BorrowAmount + amount > limit)
@@ -177,12 +203,12 @@ public class ServerLoanService
             var needPayment = loan.PaymentAmount <= 0m;
 
             // 3) 債務加算 + ServerLoanLog
-            ServerLoanRepository.AdjustLoanCore(db, loan, resolvedPlayer, amount, ServerLoanRepository.ServerLoanLogAction.Borrow, actorUuid: uuid);
+            ServerLoanRepository.AdjustLoanCore(db, loan, ContractPlayerName(contractUuid, uuid, resolvedPlayer), amount, ServerLoanRepository.ServerLoanLogAction.Borrow, actorUuid: uuid);
 
             if (needPayment)
-                loan.PaymentAmount = CalculateInitialPaymentAmount(amount);
+                loan.PaymentAmount = CalculateInitialPaymentAmount(amount, await HasMembersAsync(db, contractUuid));
 
-            // 4) user_bank 残高加算 + MoneyLog(同一 tx)
+            // 4) 借りたお金は、操作したアカウントの口座に入れる。user_bank 残高加算 + MoneyLog(同一 tx)
             await BankRepository.ChangeBalanceCoreAsync(
                 db, uuid, resolvedPlayer, amount,
                 "server_loan", "loan_borrow", "サーバーローン借入", "system");
@@ -206,14 +232,17 @@ public class ServerLoanService
 
         var result = await _bank.RunExclusiveAsync<ServerLoan?>(async db =>
         {
+            // 定期返済は契約(本垢)ごとに呼ばれる。手動返済は、操作したアカウントが使う契約の残債を減らす。
+            var contractUuid = scheduled ? uuid : await ServerLoanRepository.ResolveContractUuidAsync(db, uuid);
+
             // 1) server_loan 行ロック
-            var loan = await repo.GetOrCreateForUpdateAsync(db, uuid, resolvedPlayer);
+            var loan = await repo.GetOrCreateForUpdateAsync(db, contractUuid, ContractPlayerName(contractUuid, uuid, resolvedPlayer));
             var remain = loan.BorrowAmount;
             if (remain <= 0m)
             {
                 // 延滞後に完済済みのまま定期返済日を迎えた場合は、0 円の成功ログを残して延滞を解消する。
                 // ログを確定させるため Ok + NoRepaymentNeeded で返し、ラッパ側で失敗へ変換する。
-                if (scheduled && await ServerLoanRepository.IsLatestScheduledRepayFailureAsync(db, uuid))
+                if (scheduled && await ServerLoanRepository.IsLatestScheduledRepayFailureAsync(db, contractUuid))
                 {
                     ServerLoanRepository.AdjustLoanCore(db, loan, loan.Player, 0m, ServerLoanRepository.ServerLoanLogAction.RepaySuccess);
                     return ApiResult<ServerLoan?>.Ok(loan, ErrorCode.NoRepaymentNeeded);
@@ -223,7 +252,7 @@ public class ServerLoanService
 
             // 定期返済は設定額と最低返済額の大きいほうを引き落とす。
             var requested = scheduled
-                ? CalculateScheduledPayment(remain, loan.PaymentAmount, loan.StopInterest)
+                ? CalculateScheduledPayment(remain, loan.PaymentAmount, loan.StopInterest, await HasMembersAsync(db, contractUuid))
                 : payAmount is > 0m ? payAmount.Value : loan.PaymentAmount;
             if (requested <= 0m)
                 return ApiResult<ServerLoan?>.Fail(ErrorCode.PaymentAmountNotSet);
@@ -233,9 +262,12 @@ public class ServerLoanService
                 return ApiResult<ServerLoan?>.Fail(ErrorCode.PaymentAmountZero);
 
             // 2) user_bank 行ロック下で残高不足を判定
-            var bank = await DbLockHelper.GetUserBankForUpdateAsync(db, uuid);
-            var balance = bank?.Balance ?? 0m;
-            if (balance < amount)
+            //    定期返済は契約の全アカウント(本垢→参加が古い順)の口座の合計で、手動返済は操作したアカウントの口座で判定する。
+            var accountUuids = scheduled
+                ? await ServerLoanRepository.GetContractAccountUuidsAsync(db, contractUuid)
+                : [uuid];
+            var accounts = await LockBankAccountsAsync(db, accountUuids);
+            if (TotalBalance(accounts) < amount)
             {
                 if (!scheduled)
                     return ApiResult<ServerLoan?>.Fail(ErrorCode.InsufficientFunds);
@@ -248,9 +280,7 @@ public class ServerLoanService
             }
 
             // 3) 残高減算 + MoneyLog
-            await BankRepository.ChangeBalanceCoreAsync(
-                db, uuid, resolvedPlayer, -amount,
-                "server_loan", "loan_repay", "サーバーローン返済", "system");
+            await WithdrawFromAccountsAsync(db, accounts, amount, "loan_repay", "サーバーローン返済", uuid, resolvedPlayer);
 
             // 4) 債務減算 + 返済ログ
             var action = scheduled
@@ -267,7 +297,8 @@ public class ServerLoanService
         return result;
     }
     
-    // 延滞分の回収: 直近の定期返済が失敗のままのローンについて、未回収分を銀行残高のある分だけ回収する。
+    // 延滞分の回収: 直近の定期返済が失敗のままの契約について、未回収分を銀行残高のある分だけ回収する。
+    // 契約の全アカウント(本垢→参加が古い順)の口座から回収する。
     // 失敗額を回収しきるか残債が 0 になったら、0 円の成功ログを残して延滞を解消する(借入枠は増えない)。
     private async Task<ApiResult<ServerLoan?>> CollectOverdueAsync(string uuid)
     {
@@ -288,18 +319,15 @@ public class ServerLoanService
             if (uncollected is null)
                 return ApiResult<ServerLoan?>.Fail(ErrorCode.NoRepaymentNeeded);
 
-            var bank = await DbLockHelper.GetUserBankForUpdateAsync(db, uuid);
-            var balance = bank?.Balance ?? 0m;
+            var accounts = await LockBankAccountsAsync(db, await ServerLoanRepository.GetContractAccountUuidsAsync(db, uuid));
             var target = Math.Min(uncollected.Value, loan.BorrowAmount);
-            var amount = Math.Min(target, balance);
+            var amount = Math.Min(target, TotalBalance(accounts));
             if (target > 0m && amount <= 0m)
                 return ApiResult<ServerLoan?>.Fail(ErrorCode.InsufficientFunds);
 
             if (amount > 0m)
             {
-                await BankRepository.ChangeBalanceCoreAsync(
-                    db, uuid, resolvedPlayer, -amount,
-                    "server_loan", "loan_overdue_collect", "サーバーローン延滞分の回収", "system");
+                await WithdrawFromAccountsAsync(db, accounts, amount, "loan_overdue_collect", "サーバーローン延滞分の回収", uuid, resolvedPlayer);
 
                 ServerLoanRepository.AdjustLoanCore(db, loan, loan.Player, -amount, ServerLoanRepository.ServerLoanLogAction.OverdueCollect);
             }
@@ -311,12 +339,65 @@ public class ServerLoanService
         });
     }
 
+    // 口座を順に行ロックして読む(MySQL 時 FOR UPDATE)。口座が無いアカウントは含めない。
+    private static async Task<List<UserBank>> LockBankAccountsAsync(BankDbContext db, IEnumerable<string> uuids)
+    {
+        var accounts = new List<UserBank>();
+        foreach (var uuid in uuids)
+        {
+            var account = await DbLockHelper.GetUserBankForUpdateAsync(db, uuid);
+            if (account != null)
+                accounts.Add(account);
+        }
+
+        return accounts;
+    }
+
+    private static decimal TotalBalance(IEnumerable<UserBank> accounts)
+    {
+        return accounts.Sum(x => Math.Max(0m, x.Balance));
+    }
+
+    // 先頭の口座から順に、合計が amount になるまで引き落とす(残高 + MoneyLog。SaveChanges は呼び出し側)。
+    // 呼び出し前に、口座の合計残高が amount 以上であることを確かめておくこと。
+    // actorUuid の口座には、解決済みの最新の名前 actorPlayer を使う。
+    private static async Task WithdrawFromAccountsAsync(
+        BankDbContext db, IEnumerable<UserBank> accounts, decimal amount, string note, string displayNote,
+        string actorUuid, string actorPlayer)
+    {
+        var remaining = amount;
+        foreach (var account in accounts)
+        {
+            if (remaining <= 0m)
+                break;
+
+            var withdraw = Math.Min(account.Balance, remaining);
+            if (withdraw <= 0m)
+                continue;
+
+            var player = account.Uuid == actorUuid ? actorPlayer : account.Player;
+            await BankRepository.ChangeBalanceCoreAsync(
+                db, account.Uuid, player, -withdraw,
+                "server_loan", note, displayNote, "system");
+            remaining -= withdraw;
+        }
+    }
+
+    // uuid が使う契約の借入枠。
     public async Task<ApiResult<decimal>> CalculateBorrowLimitAsync(string uuid)
+    {
+        var contractRes = await ResolveContractUuidAsync(uuid);
+        if (!contractRes.IsSuccess)
+            return ApiResult<decimal>.Fail(contractRes.Code);
+        return await CalculateContractBorrowLimitAsync(contractRes.Data!);
+    }
+
+    private async Task<ApiResult<decimal>> CalculateContractBorrowLimitAsync(string contractUuid)
     {
         try
         {
             var repo = new ServerLoanRepository(_dbFactory, _profileService);
-            var (debt, logs) = await repo.GetBorrowLimitSourceAsync(uuid);
+            var (debt, logs) = await repo.GetBorrowLimitSourceAsync(contractUuid);
             return ApiResult<decimal>.Ok(CalculateBorrowLimit(logs, debt));
         }
         catch (Exception)
@@ -325,7 +406,47 @@ public class ServerLoanService
         }
     }
 
-    // 残債があり延滞中(直近の定期返済が失敗のまま)かどうか。ローンが無いプレイヤーは false で、行は作らない。
+    // uuid が使う契約の本垢。承認済みで他のプレイヤーの契約に参加していればその本垢、していなければ自分自身。
+    private async Task<ApiResult<string>> ResolveContractUuidAsync(string uuid)
+    {
+        try
+        {
+            var repo = new ServerLoanRepository(_dbFactory, _profileService);
+            return ApiResult<string>.Ok(await repo.ResolveContractUuidAsync(uuid));
+        }
+        catch (Exception)
+        {
+            return ApiResult<string>.Fail(ErrorCode.UnexpectedError);
+        }
+    }
+
+    // 契約に承認済みの参加者がいるかどうか(連携契約向けの日利・枠の上限を使うかどうかの判定)。
+    private async Task<ApiResult<bool>> HasMembersAsync(string contractUuid)
+    {
+        try
+        {
+            var repo = new ServerLoanRepository(_dbFactory, _profileService);
+            return ApiResult<bool>.Ok(await repo.HasMembersAsync(contractUuid));
+        }
+        catch (Exception)
+        {
+            return ApiResult<bool>.Fail(ErrorCode.UnexpectedError);
+        }
+    }
+
+    private static Task<bool> HasMembersAsync(BankDbContext db, string contractUuid)
+    {
+        return ServerLoanRepository.HasMembersAsync(db, contractUuid);
+    }
+
+    // 契約の行(server_loan_tbl.player)に書く本垢の名前。
+    // 操作したアカウントが本垢自身ならその名前を、参加しているアカウントなら空(既存の名前を保つ)を返す。
+    private static string ContractPlayerName(string contractUuid, string actorUuid, string actorPlayer)
+    {
+        return contractUuid == actorUuid ? actorPlayer : string.Empty;
+    }
+
+    // uuid が使う契約に残債があり延滞中(直近の定期返済が失敗のまま)かどうか。ローンが無いプレイヤーは false で、行は作らない。
     public async Task<ApiResult<bool>> HasOverdueDebtAsync(string uuid)
     {
         try
@@ -339,12 +460,12 @@ public class ServerLoanService
         }
     }
 
-    private async Task<ApiResult<bool>> IsRepaymentOverdueAsync(string uuid)
+    private async Task<ApiResult<bool>> IsRepaymentOverdueAsync(string contractUuid)
     {
         try
         {
             var repo = new ServerLoanRepository(_dbFactory, _profileService);
-            return ApiResult<bool>.Ok(await repo.IsLatestScheduledRepayFailureAsync(uuid));
+            return ApiResult<bool>.Ok(await repo.IsLatestScheduledRepayFailureAsync(contractUuid));
         }
         catch (Exception)
         {
@@ -356,12 +477,16 @@ public class ServerLoanService
     //  - MinAmount から始める。
     //  - 定期返済の成功: CalculateGrowth の額だけ増やす。
     //  - 定期返済の失敗: FailureCutRate を掛けて減らす。
+    //  - 参加・脱退: 参加者がいる間だけ枠の上限が LinkedMaxAmount に切り替わる。
+    //  - 枠の初期化(運営による強制リンク時の罰則): MinAmount に戻す。以後の成功でまた増える。
     //  - 手動返済・延滞分の回収・借入などは枠に影響しない。
     private static decimal CalculateBorrowLimit(IReadOnlyList<ServerLoanLog> logs, decimal currentDebt)
     {
         var debtBeforeLog = CalculateDebtBeforeEachLog(logs, currentDebt);
 
-        var limit = ClampBorrowLimit(MinAmount);
+        // その時点で契約に参加者がいたかどうか(参加・脱退のログから数える)。枠の上限の切り替えに使う。
+        var members = 0;
+        var limit = ClampBorrowLimit(MinAmount, linked: false);
         // 前回の定期返済より後に、利息が付いた時点の残債(平均残債の材料)
         var interestDebts = new List<(DateTime Date, decimal Debt)>();
 
@@ -375,8 +500,23 @@ public class ServerLoanService
                     break;
 
                 case RepayFailureAction:
-                    limit = ClampBorrowLimit(limit * FailureCutRate);
+                    limit = ClampBorrowLimit(limit * FailureCutRate, members > 0);
                     interestDebts.Clear();
+                    break;
+
+                // 参加者の有無で枠の上限が変わるので、その時点の上限に収め直す。
+                case MemberJoinAction:
+                    members++;
+                    limit = ClampBorrowLimit(limit, members > 0);
+                    break;
+
+                case MemberLeaveAction:
+                    members = Math.Max(0, members - 1);
+                    limit = ClampBorrowLimit(limit, members > 0);
+                    break;
+
+                case LimitResetAction:
+                    limit = ClampBorrowLimit(MinAmount, members > 0);
                     break;
 
                 // 0 円の成功は延滞解消の記録なので、枠を増やさず、その週の利息の記録も消費しない。
@@ -384,7 +524,7 @@ public class ServerLoanService
                     // 返済ログの金額は残債の増減(負数)で記録されるため、絶対値が返済額になる。
                     var paid = Math.Abs(log.Amount);
                     var averageDebt = CalculateAverageDebt(interestDebts, log.Date);
-                    limit = ClampBorrowLimit(limit + CalculateGrowth(limit, paid, averageDebt));
+                    limit = ClampBorrowLimit(limit + CalculateGrowth(limit, paid, averageDebt), members > 0);
                     interestDebts.Clear();
                     break;
             }
@@ -426,11 +566,13 @@ public class ServerLoanService
         return Math.Min(growth, maxGrowth);
     }
 
-    // 借入枠を MinAmount 〜 MaxAmount の範囲に収め、1 円未満を切り捨てる。
-    private static decimal ClampBorrowLimit(decimal limit)
+    // 借入枠を MinAmount 〜 上限の範囲に収め、1 円未満を切り捨てる。
+    // 上限は、参加者がいる契約(linked)なら LinkedMaxAmount(未設定なら MaxAmount)、いなければ MaxAmount。
+    private static decimal ClampBorrowLimit(decimal limit, bool linked)
     {
+        var maxAmount = linked ? LinkedMaxAmount ?? MaxAmount : MaxAmount;
         limit = Math.Max(MinAmount, limit);
-        limit = Math.Min(MaxAmount, limit);
+        limit = Math.Min(maxAmount, limit);
         return Math.Max(0m, Math.Floor(limit));
     }
 
@@ -439,7 +581,8 @@ public class ServerLoanService
         try
         {
             var repo = new ServerLoanRepository(_dbFactory, _profileService);
-            var loan = await repo.SetPaymentAmountAsync(uuid, paymentAmount);
+            var contractUuid = await repo.ResolveContractUuidAsync(uuid);
+            var loan = await repo.SetPaymentAmountAsync(contractUuid, paymentAmount);
             if (loan == null)
                 return ApiResult<ServerLoan?>.Fail(ErrorCode.LoanNotFound);
             return ApiResult<ServerLoan?>.Ok(loan);
@@ -459,19 +602,18 @@ public class ServerLoanService
         if (amount < 0m)
             return ApiResult<ServerLoan?>.Fail(ErrorCode.BorrowAmountMustBeZeroOrGreater);
 
-        var paymentAmount = CalculateInitialPaymentAmount(amount);
-        if (paymentAmount < 0m)
-            return ApiResult<ServerLoan?>.Fail(ErrorCode.BorrowAmountMustBeZeroOrGreater);
-
         var repo = new ServerLoanRepository(_dbFactory, _profileService);
 
         try
         {
-            var player = await _profileService.GetNameByUuidAsync(uuid);
+            // 運営による残債の調整も、uuid が使う契約に対して行う。
+            var contractUuid = await repo.ResolveContractUuidAsync(uuid);
+            var paymentAmount = CalculateInitialPaymentAmount(amount, await repo.HasMembersAsync(contractUuid));
+            var player = await _profileService.GetNameByUuidAsync(contractUuid);
             if (player == null)
                 return ApiResult<ServerLoan?>.Fail(ErrorCode.PlayerNotFound);
 
-            var loan = await repo.SetBorrowAmountAsync(uuid, player, amount, paymentAmount);
+            var loan = await repo.SetBorrowAmountAsync(contractUuid, player, amount, paymentAmount);
             return ApiResult<ServerLoan?>.Ok(loan);
         }
         catch (Exception)
@@ -480,37 +622,43 @@ public class ServerLoanService
         }
     }
     
-    // 1日分の利息: 残債 × DailyInterestRate(1 円未満は四捨五入)。
+    // 契約の日利。参加者がいる契約(linked)は LinkedDailyInterestRate(未設定なら DailyInterestRate)を使う。
+    private static decimal GetDailyInterestRate(bool linked)
+    {
+        return linked ? LinkedDailyInterestRate ?? DailyInterestRate : DailyInterestRate;
+    }
+
+    // 1日分の利息: 残債 × 日利(1 円未満は四捨五入)。
     // 利息で残債(元本 + 利息)が MaxDebtAmount を超えないよう、超える分の利息は付けない(MaxDebtAmount が 0 以下なら上限なし)。
-    public static decimal CalculateDailyInterestAmount(decimal debt)
+    public static decimal CalculateDailyInterestAmount(decimal debt, bool linked = false)
     {
         if (debt <= 0m)
             return 0m;
 
-        var interest = Math.Round(debt * DailyInterestRate, 0, MidpointRounding.AwayFromZero);
+        var interest = Math.Round(debt * GetDailyInterestRate(linked), 0, MidpointRounding.AwayFromZero);
         if (MaxDebtAmount > 0m)
             interest = Math.Min(interest, MaxDebtAmount - debt);
         return Math.Max(0m, interest);
     }
 
     // 現在の残債に、定期返済の間隔(1週間)ぶんの利息を日次の計算どおりに付けた場合の利息合計。
-    private static decimal CalculateWeeklyInterestAmount(decimal debt)
+    private static decimal CalculateWeeklyInterestAmount(decimal debt, bool linked)
     {
         var debtAfterWeek = debt;
         for (var day = 0; day < RepayIntervalDays; day++)
-            debtAfterWeek += CalculateDailyInterestAmount(debtAfterWeek);
+            debtAfterWeek += CalculateDailyInterestAmount(debtAfterWeek, linked);
         return debtAfterWeek - debt;
     }
 
     // 支払額(設定)の初期値: 単利で InitialPaymentWeeks 週間分の利息(最低 1 円)。
     // 支払額が未設定の状態で借りたときと、運営が残債を調整したときに設定する。
-    private static decimal CalculateInitialPaymentAmount(decimal debt)
+    private static decimal CalculateInitialPaymentAmount(decimal debt, bool linked)
     {
         if (debt <= 0m)
             return 0m;
 
         var days = RepayIntervalDays * InitialPaymentWeeks;
-        var paymentAmount = Math.Round(debt * DailyInterestRate * days, 0, MidpointRounding.AwayFromZero);
+        var paymentAmount = Math.Round(debt * GetDailyInterestRate(linked) * days, 0, MidpointRounding.AwayFromZero);
         return Math.Max(1m, paymentAmount);
     }
 
@@ -518,7 +666,7 @@ public class ServerLoanService
     //  - 残債 × MinPaymentRate
     //  - MinPaymentAmount
     //  - 1週間分の利息 + 残債 × MinPrincipalRate(金利を上げても最低返済額で残債が減るようにする。MinPrincipalRate が 0 以下なら適用しない)
-    public static decimal CalculateMinimumPayment(decimal debt, bool stopInterest = false)
+    public static decimal CalculateMinimumPayment(decimal debt, bool stopInterest = false, bool linked = false)
     {
         if (debt <= 0m)
             return 0m;
@@ -526,7 +674,7 @@ public class ServerLoanService
         var minimum = Math.Max(Math.Ceiling(debt * MinPaymentRate), MinPaymentAmount);
         if (MinPrincipalRate > 0m)
         {
-            var weeklyInterest = stopInterest ? 0m : CalculateWeeklyInterestAmount(debt);
+            var weeklyInterest = stopInterest ? 0m : CalculateWeeklyInterestAmount(debt, linked);
             var principal = Math.Ceiling(debt * MinPrincipalRate);
             minimum = Math.Max(minimum, weeklyInterest + principal);
         }
@@ -535,12 +683,12 @@ public class ServerLoanService
     }
 
     // 定期返済で引き落とす額: 支払額(設定)と最低返済額の大きいほう(残債を超えない)。
-    private static decimal CalculateScheduledPayment(decimal debt, decimal paymentAmount, bool stopInterest)
+    private static decimal CalculateScheduledPayment(decimal debt, decimal paymentAmount, bool stopInterest, bool linked)
     {
         if (debt <= 0m)
             return 0m;
 
-        var requested = Math.Max(paymentAmount, CalculateMinimumPayment(debt, stopInterest));
+        var requested = Math.Max(paymentAmount, CalculateMinimumPayment(debt, stopInterest, linked));
         return Math.Min(requested, debt);
     }
 
@@ -558,7 +706,7 @@ public class ServerLoanService
         return candidate;
     }
     
-    private async Task<ApiResult<ServerLoan?>> AddDailyInterestAsync(string uuid, string player)
+    private async Task<ApiResult<ServerLoan?>> AddDailyInterestAsync(string uuid, string player, bool linked)
     {
         try
         {
@@ -570,7 +718,7 @@ public class ServerLoanService
             if (loan.BorrowAmount <= 0m)
                 return ApiResult<ServerLoan?>.Ok(loan, ErrorCode.InterestZero);
 
-            var rounded = CalculateDailyInterestAmount(loan.BorrowAmount);
+            var rounded = CalculateDailyInterestAmount(loan.BorrowAmount, linked);
             if (rounded <= 0m)
                 return ApiResult<ServerLoan?>.Ok(loan, ErrorCode.InterestZero);
 
@@ -613,11 +761,12 @@ public class ServerLoanService
         var date = today ?? DateOnly.FromDateTime(DateTime.UtcNow);
         var repo = new ServerLoanRepository(_dbFactory, _profileService);
         var loans = await repo.GetAllAsync();
+        var linkedOwnerUuids = await repo.GetLinkedOwnerUuidsAsync();
         foreach (var loan in loans)
         {
             if (await repo.HasInterestLogOnDateAsync(loan.Uuid, date))
                 continue;
-            await AddDailyInterestAsync(loan.Uuid, loan.Player);
+            await AddDailyInterestAsync(loan.Uuid, loan.Player, linkedOwnerUuids.Contains(loan.Uuid));
         }
     }
 
@@ -661,6 +810,8 @@ public class ServerLoanService
         MinPaymentRate = s.GetValue("MinPaymentRate", 0.02m);
         MinPaymentAmount = s.GetValue("MinPaymentAmount", 10000m);
         MinPrincipalRate = s.GetValue("MinPrincipalRate", 0.01m);
+        LinkedMaxAmount = s.GetValue<decimal?>("LinkedMaxAmount");
+        LinkedDailyInterestRate = s.GetValue<decimal?>("LinkedDailyInterestRate");
 
         if (TimeSpan.TryParse(s["DailyInterestTime"], out var dit))
             DailyInterestTime = dit;

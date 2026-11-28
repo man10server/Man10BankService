@@ -17,6 +17,65 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
         SetBorrowAmount,
         EarlyRepay,
         OverdueCollect,
+        // 他のプレイヤーの契約への参加(参加先の契約に記録。金額は移ってきた残債)と脱退
+        MemberJoin,
+        MemberLeave,
+        // 借入枠を初期枠(MinAmount)に戻す(運営による強制リンク時の罰則)
+        LimitReset,
+    }
+
+    // uuid が使う契約の本垢を返す。承認済みで他のプレイヤーの契約に参加していればその本垢、していなければ自分自身。
+    public async Task<string> ResolveContractUuidAsync(string uuid)
+    {
+        await using var db = await factory.CreateDbContextAsync();
+        return await ResolveContractUuidAsync(db, uuid);
+    }
+
+    public static async Task<string> ResolveContractUuidAsync(BankDbContext db, string uuid)
+    {
+        var ownerUuid = await db.ServerLoanMembers
+            .AsNoTracking()
+            .Where(x => x.Uuid == uuid && x.ApprovedAt != null)
+            .Select(x => x.OwnerUuid)
+            .FirstOrDefaultAsync();
+        return ownerUuid ?? uuid;
+    }
+
+    // 契約の定期返済・延滞回収で引き落とすアカウント。本垢を先頭に、承認済みのメンバーを承認が古い順に並べる。
+    public static async Task<List<string>> GetContractAccountUuidsAsync(BankDbContext db, string ownerUuid)
+    {
+        var members = await db.ServerLoanMembers
+            .AsNoTracking()
+            .Where(x => x.OwnerUuid == ownerUuid && x.ApprovedAt != null)
+            .OrderBy(x => x.ApprovedAt).ThenBy(x => x.Uuid)
+            .Select(x => x.Uuid)
+            .ToListAsync();
+        return [ownerUuid, .. members];
+    }
+
+    // 契約に承認済みの参加者がいるかどうか。
+    public async Task<bool> HasMembersAsync(string ownerUuid)
+    {
+        await using var db = await factory.CreateDbContextAsync();
+        return await HasMembersAsync(db, ownerUuid);
+    }
+
+    public static Task<bool> HasMembersAsync(BankDbContext db, string ownerUuid)
+    {
+        return db.ServerLoanMembers.AnyAsync(x => x.OwnerUuid == ownerUuid && x.ApprovedAt != null);
+    }
+
+    // 承認済みの参加者がいる契約の本垢の一覧。
+    public async Task<HashSet<string>> GetLinkedOwnerUuidsAsync()
+    {
+        await using var db = await factory.CreateDbContextAsync();
+        var owners = await db.ServerLoanMembers
+            .AsNoTracking()
+            .Where(x => x.ApprovedAt != null)
+            .Select(x => x.OwnerUuid)
+            .Distinct()
+            .ToListAsync();
+        return owners.ToHashSet();
     }
 
     public async Task<ServerLoan> GetOrCreateByUuidAsync(string uuid)
@@ -128,6 +187,13 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
             case ServerLoanLogAction.RepayFailure:
                 // 残債は変えず、失敗のログだけを残す。
                 break;
+            case ServerLoanLogAction.SetBorrowAmount:
+            case ServerLoanLogAction.MemberJoin:
+                loan.BorrowAmount += delta;
+                break;
+            case ServerLoanLogAction.MemberLeave:
+            case ServerLoanLogAction.LimitReset:
+                break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(action), action, null);
         }
@@ -189,15 +255,17 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
         return latest?.Action == ServerLoanLogAction.RepayFailure.ToString();
     }
 
-    // 残債があり、かつ延滞中(直近の定期返済が失敗のまま)かどうか。
+    // uuid が使う契約に残債があり、かつ延滞中(直近の定期返済が失敗のまま)かどうか。
     // 延滞中は銀行からの出金・送金・小切手作成・貸付を拒否するために使う。
+    // 他のプレイヤーの契約に参加しているアカウントは、参加先の契約で判定する。
     public static async Task<bool> HasOverdueDebtAsync(BankDbContext db, string uuid)
     {
-        var debt = await GetDebtAsync(db, uuid);
+        var contractUuid = await ResolveContractUuidAsync(db, uuid);
+        var debt = await GetDebtAsync(db, contractUuid);
         if (debt is null or <= 0m)
             return false;
 
-        return await IsLatestScheduledRepayFailureAsync(db, uuid);
+        return await IsLatestScheduledRepayFailureAsync(db, contractUuid);
     }
 
     // 現在の残債。ローンが無いプレイヤーは null で、行は作らない。
