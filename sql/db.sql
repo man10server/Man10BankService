@@ -173,6 +173,7 @@ create table server_loan_contract
     uuid           varchar(36)                        not null comment '契約の本垢',
     player         varchar(16)                        not null comment '本垢の名前',
     borrow_amount  decimal(20) default 0              not null comment '残債(元本 + 利息)',
+    principal      decimal(20) default 0              not null comment '残債のうちの元本',
     payment_amount decimal(20) default 0              not null comment '支払額(設定)',
     stop_interest  tinyint     default 0              not null comment '1 の間は利息を付けない',
     last_pay_date  datetime default CURRENT_TIMESTAMP not null comment '前回返済日',
@@ -191,6 +192,7 @@ create table server_loan_contract_log
     action     varchar(16)                        not null comment '操作の種類',
     amount     decimal(20)                        not null comment '残債の増減',
     debt_after decimal(20)                        not null comment '操作後の残債(監査用)',
+    principal_after decimal(20) default 0         not null comment '操作後の元本(監査用)',
     actor_uuid varchar(36)                        null comment '操作したプレイヤー。自動処理・運営の調整は NULL',
     date       datetime default CURRENT_TIMESTAMP not null
 );

@@ -3377,7 +3377,8 @@
                     "amount",
                     "date",
                     "actorUuid",
-                    "debtAfter"
+                    "debtAfter",
+                    "principalAfter"
                 ],
                 "type": "object",
                 "properties": {
@@ -3407,6 +3408,11 @@
                         "nullable": true
                     },
                     "debtAfter": {
+                        "type": "number",
+                        "format": "double",
+                        "nullable": true
+                    },
+                    "principalAfter": {
                         "type": "number",
                         "format": "double",
                         "nullable": true
@@ -3450,6 +3456,7 @@
                     "uuid",
                     "lastPayDate",
                     "borrowAmount",
+                    "principal",
                     "paymentAmount",
                     "stopInterest",
                     "legacy"
@@ -3471,6 +3478,10 @@
                         "format": "date-time"
                     },
                     "borrowAmount": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "principal": {
                         "type": "number",
                         "format": "double"
                     },

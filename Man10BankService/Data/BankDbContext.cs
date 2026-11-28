@@ -175,6 +175,7 @@ public class BankDbContext : DbContext
             e.HasIndex(x => x.Uuid).IsUnique();
             e.Property(x => x.Uuid).HasColumnName("uuid");
             e.Property(x => x.BorrowAmount).HasColumnName("borrow_amount").HasPrecision(20, 0);
+            e.Property(x => x.Principal).HasColumnName("principal").HasPrecision(20, 0);
             e.Property(x => x.PaymentAmount).HasColumnName("payment_amount").HasPrecision(20, 0);
             e.Property(x => x.StopInterest).HasColumnName("stop_interest").HasDefaultValue(false);
             e.Property(x => x.LastPayDate).HasColumnName("last_pay_date").HasDefaultValueSql("CURRENT_TIMESTAMP");
@@ -188,6 +189,7 @@ public class BankDbContext : DbContext
             e.Property(x => x.Amount).HasPrecision(20, 0);
             e.Property(x => x.ActorUuid).HasColumnName("actor_uuid");
             e.Property(x => x.DebtAfter).HasColumnName("debt_after").HasPrecision(20, 0);
+            e.Property(x => x.PrincipalAfter).HasColumnName("principal_after").HasPrecision(20, 0);
             e.Property(x => x.Date).HasDefaultValueSql("CURRENT_TIMESTAMP").ValueGeneratedOnAdd();
         });
 

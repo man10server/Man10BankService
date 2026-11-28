@@ -151,9 +151,15 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
     //  - delta: 残債の増減(借入・利息は正、返済は負)。ログの金額にもこの値を記録する。
     //    RepayFailure だけは「引き落とそうとした額」を渡す。記録するだけで、残債は変えない。
     //  - actorUuid: 操作したプレイヤー。自動処理(利息・定期返済・延滞分の回収)と運営の調整は null。
+    //  - movedPrincipal: MemberJoin のときだけ使う。移ってきた残債(delta)のうち、元本だった額。
+    //
+    // 元本(principal)もここで更新する。
+    //  - 借入と、運営による残債の引き上げは、増えた額がそのまま元本になる。利息は元本に入れない。
+    //  - 残債が減るとき(返済・回収・運営による引き下げ)は、未払いの利息から先に減らす。
+    //    つまり、減った後の残債が元本を下回った分だけ元本が減る。
     public static void AdjustLoanCore(
         BankDbContext db, ServerLoan loan, decimal delta, ServerLoanLogAction action,
-        string? actorUuid = null)
+        string? actorUuid = null, decimal movedPrincipal = 0m)
     {
         var now = DateTime.UtcNow;
         switch (action)
@@ -189,6 +195,15 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
                 throw new ArgumentOutOfRangeException(nameof(action), action, null);
         }
 
+        loan.Principal += action switch
+        {
+            ServerLoanLogAction.Borrow => delta,
+            ServerLoanLogAction.SetBorrowAmount => Math.Max(0m, delta),
+            ServerLoanLogAction.MemberJoin => movedPrincipal,
+            _ => 0m,
+        };
+        loan.Principal = Math.Clamp(loan.Principal, 0m, Math.Max(0m, loan.BorrowAmount));
+
         // 残債を更新した後に記録する(操作後の残債 debt_after を残すため)。
         db.ServerLoanLogs.Add(new ServerLoanLog
         {
@@ -198,6 +213,7 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
             Amount = delta,
             ActorUuid = actorUuid,
             DebtAfter = loan.BorrowAmount,
+            PrincipalAfter = loan.Principal,
             // Date は DB の既定値(CURRENT_TIMESTAMP)
         });
     }

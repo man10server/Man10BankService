@@ -14,6 +14,7 @@ namespace Man10BankService.Services;
 //  - 参加者: 他のプレイヤーの契約に参加しているアカウント(server_loan_contract_member)。
 //    参加者の操作は、すべて参加先の契約に対して行う(読み替えは ServerLoanRepository.ResolveContractUuidAsync)。
 //  - 残債: 契約の借入残高(borrow_amount)。利息を含む。
+//  - 元本: 残債のうち、借りた額の残り(principal)。残債 − 元本 が未払いの利息で、利息の上限の判定に使う。
 //  - 借入枠: 残債の上限。DB には保存せず、契約のログ(server_loan_contract_log)から毎回計算する。
 //  - 延滞: 直近の定期返済のログが失敗(RepayFailure)である状態。これも保存せず、ログで判定する。
 //  - 旧リボ: 0.5.0 までの借入の残債。別の仕組み(LegacyServerLoanService)で管理し、残っている間は借入を止める。
@@ -86,8 +87,8 @@ public partial class ServerLoanService
         return await ReadAsync(async repo =>
         {
             var linked = await repo.HasMembersAsync(loan.Uuid);
-            var interestPerDay = loan.StopInterest ? 0m : CalculateDailyInterestAmount(loan.BorrowAmount, linked);
-            var nextPayment = CalculateScheduledPayment(loan.BorrowAmount, loan.PaymentAmount, loan.StopInterest, linked);
+            var interestPerDay = loan.StopInterest ? 0m : CalculateDailyInterestAmount(loan.BorrowAmount, loan.Principal, linked);
+            var nextPayment = CalculateScheduledPayment(loan, linked);
             return ApiResult<PaymentInfoResponse>.Ok(new PaymentInfoResponse(GetNextWeeklyRepayDateTime(), interestPerDay, nextPayment));
         });
     }

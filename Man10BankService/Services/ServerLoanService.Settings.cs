@@ -15,6 +15,9 @@ public partial class ServerLoanService
     private static decimal MaxAmount { get; set; } = 3000000m;
     // 利息で増える残債(元本 + 利息)の上限。0 以下なら上限なし。
     private static decimal MaxDebtAmount { get; set; } = 10000000m;
+    // 未払いの利息(残債 − 元本)の上限を、元本の何倍までにするか。0 以下なら上限なし。
+    // 例: 1 なら、利息は元本と同額まで(残債は元本の 2 倍まで)しか増えない。
+    private static decimal MaxInterestMultiplier { get; set; }
     // 定期返済の成功時に、「返済額」と「その週の平均残債」の小さいほうへ掛けて枠に加える係数
     private static decimal GrowthFactor { get; set; } = 0.5m;
     // 1回の増枠の上限(その時点の枠に対する割合)
@@ -57,6 +60,7 @@ public partial class ServerLoanService
         MinAmount = s.GetValue("MinAmount", 100000m);
         MaxAmount = s.GetValue("MaxAmount", 3000000m);
         MaxDebtAmount = s.GetValue("MaxDebtAmount", 10000000m);
+        MaxInterestMultiplier = s.GetValue("MaxInterestMultiplier", 0m);
         GrowthFactor = s.GetValue("GrowthFactor", 0.5m);
         MaxGrowthRate = s.GetValue("MaxGrowthRate", 0.1m);
         FailureCutRate = s.GetValue("FailureCutRate", 0.5m);

@@ -228,12 +228,14 @@ public partial class ServerLoanService
         var own = await DbLockHelper.GetServerLoanForUpdateAsync(db, memberUuid);
 
         var moved = Math.Max(0m, own?.BorrowAmount ?? 0m);
+        // 移す残債のうちの元本。元本と利息の内訳は、そのまま参加先の契約に引き継ぐ。
+        var movedPrincipal = Math.Clamp(own?.Principal ?? 0m, 0m, moved);
         if (own != null && moved > 0m)
             ServerLoanRepository.AdjustLoanCore(db, own, -moved, ServerLoanRepository.ServerLoanLogAction.SetBorrowAmount, actorUuid: memberUuid);
 
         // 支払額が未設定の契約に残債が移ってきた場合は、借入時と同じく初期値を設定する。
         var needPayment = owner.PaymentAmount <= 0m && moved > 0m;
-        ServerLoanRepository.AdjustLoanCore(db, owner, moved, ServerLoanRepository.ServerLoanLogAction.MemberJoin, actorUuid: memberUuid);
+        ServerLoanRepository.AdjustLoanCore(db, owner, moved, ServerLoanRepository.ServerLoanLogAction.MemberJoin, actorUuid: memberUuid, movedPrincipal: movedPrincipal);
         if (needPayment)
             owner.PaymentAmount = CalculateInitialPaymentAmount(owner.BorrowAmount, linked: true);
         if (resetLimit)

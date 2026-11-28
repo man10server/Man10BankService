@@ -22,4 +22,6 @@ public class ServerLoanLog
     public string? ActorUuid { get; set; }
     // 操作後の残債。監査用で、借入枠などの計算には使わない。
     public decimal DebtAfter { get; set; }
+    // 操作後の元本。こちらも監査用。
+    public decimal PrincipalAfter { get; set; }
 }
