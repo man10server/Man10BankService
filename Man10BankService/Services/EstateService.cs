@@ -71,7 +71,7 @@ public class EstateService(IDbContextFactory<BankDbContext> dbFactory, IPlayerPr
                 return ApiResult<bool>.Fail(ErrorCode.PlayerNotFound);
             }
 
-            // サーバーローンの残債（BorrowAmount が残債）
+            // サーバーローンの残債（新リボの自分の契約 + 旧リボ）
             var loanOutstanding = await GetServerLoanBorrowAmountAsync(uuid);
             
             // 銀行残高
@@ -117,7 +117,10 @@ public class EstateService(IDbContextFactory<BankDbContext> dbFactory, IPlayerPr
     {
         var repo = new ServerLoanRepository(dbFactory, profileService);
         var loan = await repo.GetOrCreateByUuidAsync(uuid);
-        return loan.BorrowAmount;
+
+        // 旧リボの残債が残っていれば、それも負債に含める(旧リボの廃止時に削除する)。
+        await using var db = await dbFactory.CreateDbContextAsync();
+        return loan.BorrowAmount + await LegacyServerLoanRepository.GetDebtAsync(db, uuid);
     }
 
     private async Task<decimal> GetBankAsync(string uuid)

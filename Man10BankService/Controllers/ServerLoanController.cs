@@ -11,14 +11,28 @@ namespace Man10BankService.Controllers;
 
 // サーバーローン(リボ)の API。{uuid} は操作するプレイヤー。
 // 他のプレイヤーの契約に参加しているアカウントを指定すると、参加先の契約に対して操作する。
+//
+// 旧リボ(0.5.0 までの借入)の残債が残っているプレイヤーについては、参照・返済・支払額の変更・
+// 残債の上書き・ログ・返済情報を旧リボ(LegacyServerLoanService)へ振り分ける。完済すると新リボに切り替わる。
+// 借入・借入枠・延滞・契約の共有は、いつも新リボに対して行う(借入は、旧リボが残っている間は拒否される)。
 [ApiController]
 [Route("api/[controller]/{uuid:uuid}")]
-public class ServerLoanController(ServerLoanService service) : ControllerBase
+public class ServerLoanController(ServerLoanService service, LegacyServerLoanService legacyService) : ControllerBase
 {
     private const string UuidPattern = @"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$";
     private const string UuidErrorMessage = "UUID の形式が不正です。";
 
-    // uuid が使っている契約(残債・支払額など)を返す。
+    // uuid に旧リボの残債が残っていれば legacy を、無ければ current を実行する(旧リボの廃止時に、振り分けごと削除する)。
+    private async Task<ActionResult<T>> RouteAsync<T>(
+        string uuid, Func<Task<ActionResult<T>>> legacy, Func<Task<ActionResult<T>>> current)
+    {
+        var hasLegacyDebt = await legacyService.HasDebtAsync(uuid);
+        if (!hasLegacyDebt.IsSuccess)
+            return this.BuildErrorResult(hasLegacyDebt.Code);
+        return hasLegacyDebt.Data ? await legacy() : await current();
+    }
+
+    // uuid が使っている契約(残債・支払額など)を返す。旧リボの残債が残っていれば、旧リボを返す(legacy = true)。
     [HttpGet("")]
     [Produces("application/json")]
     [ProducesResponseType(typeof(ServerLoanResponse), StatusCodes.Status200OK)]
@@ -26,11 +40,12 @@ public class ServerLoanController(ServerLoanService service) : ControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<ServerLoanResponse>> GetByUuid([FromRoute] string uuid)
     {
-        var res = await service.GetByUuidAsync(uuid);
-        return this.ToActionResult(res, ServerLoanResponse.From);
+        return await RouteAsync(uuid,
+            async () => this.ToActionResult(await legacyService.GetAsync(uuid), ServerLoanResponse.FromLegacy),
+            async () => this.ToActionResult(await service.GetByUuidAsync(uuid), ServerLoanResponse.From));
     }
 
-    // 借入。借りたお金は uuid の銀行口座に入る。
+    // 借入。借りたお金は uuid の銀行口座に入る。旧リボの残債が残っている間は借りられない(LegacyLoanOutstanding)。
     [HttpPost("borrow")]
     [Authorize(Policy = "RequireWriteScope")]
     [Consumes("application/json")]
@@ -58,8 +73,9 @@ public class ServerLoanController(ServerLoanService service) : ControllerBase
         [FromRoute] string uuid,
         [FromQuery, BindRequired, Range(typeof(decimal), AmountLimits.MinText, AmountLimits.MaxText, ErrorMessage = "金額は 0 以上 1 兆以下で指定してください。")] decimal amount)
     {
-        var res = await service.RepayAsync(uuid, amount);
-        return this.ToActionResult(res, ServerLoanResponse.From);
+        return await RouteAsync(uuid,
+            async () => this.ToActionResult(await legacyService.RepayAsync(uuid, amount), ServerLoanResponse.FromLegacy),
+            async () => this.ToActionResult(await service.RepayAsync(uuid, amount), ServerLoanResponse.From));
     }
 
     // 支払額(設定)の変更。定期返済で引き落としてほしい額を決める。
@@ -74,11 +90,12 @@ public class ServerLoanController(ServerLoanService service) : ControllerBase
         [FromRoute] string uuid,
         [FromQuery, BindRequired, Range(typeof(decimal), AmountLimits.MinText, AmountLimits.MaxText, ErrorMessage = "金額は 0 以上 1 兆以下で指定してください。")] decimal paymentAmount)
     {
-        var res = await service.SetPaymentAmountAsync(uuid, paymentAmount);
-        return this.ToActionResult(res, ServerLoanResponse.From);
+        return await RouteAsync(uuid,
+            async () => this.ToActionResult(await legacyService.SetPaymentAmountAsync(uuid, paymentAmount), ServerLoanResponse.FromLegacy),
+            async () => this.ToActionResult(await service.SetPaymentAmountAsync(uuid, paymentAmount), ServerLoanResponse.From));
     }
 
-    // 運営用: 残債を amount に上書きする。
+    // 運営用: 残債を amount に上書きする。旧リボの残債が残っているプレイヤーは、旧リボの残債を上書きする。
     [HttpPost("borrow-amount")]
     [Authorize(Policy = "RequireWriteScope")]
     [Produces("application/json")]
@@ -90,11 +107,12 @@ public class ServerLoanController(ServerLoanService service) : ControllerBase
         [FromRoute] string uuid,
         [FromQuery, BindRequired, Range(typeof(decimal), AmountLimits.MinText, AmountLimits.MaxText, ErrorMessage = "金額は 0 以上 1 兆以下で指定してください。")] decimal amount)
     {
-        var res = await service.SetBorrowAmountAsync(uuid, amount);
-        return this.ToActionResult(res, ServerLoanResponse.From);
+        return await RouteAsync(uuid,
+            async () => this.ToActionResult(await legacyService.SetBorrowAmountAsync(uuid, amount), ServerLoanResponse.FromLegacy),
+            async () => this.ToActionResult(await service.SetBorrowAmountAsync(uuid, amount), ServerLoanResponse.From));
     }
 
-    // 借入枠(残債の上限)。
+    // 新リボの借入枠(残債の上限)。旧リボの残債が残っていても、新リボの枠を返す。
     [HttpGet("borrow-limit")]
     [Produces("application/json")]
     [ProducesResponseType(typeof(BorrowLimitResponse), StatusCodes.Status200OK)]
@@ -105,7 +123,7 @@ public class ServerLoanController(ServerLoanService service) : ControllerBase
         return this.ToActionResult(res, limit => new BorrowLimitResponse(limit));
     }
 
-    // 残債があり延滞中かどうか。契約の行は作らない。
+    // 新リボに残債があり延滞中かどうか。契約の行は作らない。旧リボに延滞は無い。
     [HttpGet("overdue")]
     [Produces("application/json")]
     [ProducesResponseType(typeof(OverdueResponse), StatusCodes.Status200OK)]
@@ -116,7 +134,7 @@ public class ServerLoanController(ServerLoanService service) : ControllerBase
         return this.ToActionResult(res, overdue => new OverdueResponse(overdue));
     }
 
-    // 契約のログ(新しい順)。
+    // 契約のログ(新しい順)。旧リボの残債が残っていれば、旧リボのログを返す。
     [HttpGet("logs")]
     [Produces("application/json")]
     [ProducesResponseType(typeof(List<ServerLoanLogResponse>), StatusCodes.Status200OK)]
@@ -124,8 +142,9 @@ public class ServerLoanController(ServerLoanService service) : ControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<List<ServerLoanLogResponse>>> GetLogs([FromRoute] string uuid, [FromQuery] int limit = 100, [FromQuery] int offset = 0)
     {
-        var res = await service.GetLogsAsync(uuid, limit, offset);
-        return this.ToActionResult(res, logs => logs.Select(ServerLoanLogResponse.From).ToList());
+        return await RouteAsync(uuid,
+            async () => this.ToActionResult(await legacyService.GetLogsAsync(uuid, limit, offset), logs => logs.Select(ServerLoanLogResponse.FromLegacy).ToList()),
+            async () => this.ToActionResult(await service.GetLogsAsync(uuid, limit, offset), logs => logs.Select(ServerLoanLogResponse.From).ToList()));
     }
 
     // 次回の定期返済の日時、1 日あたりの利息、次回の引き落とし額。
@@ -136,8 +155,9 @@ public class ServerLoanController(ServerLoanService service) : ControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<PaymentInfoResponse>> GetPaymentInfo([FromRoute] string uuid)
     {
-        var res = await service.GetPaymentInfoAsync(uuid);
-        return this.ToActionResult(res);
+        return await RouteAsync(uuid,
+            async () => this.ToActionResult(await legacyService.GetPaymentInfoAsync(uuid)),
+            async () => this.ToActionResult(await service.GetPaymentInfoAsync(uuid)));
     }
 
     // ===== 契約の共有(リンク) =====

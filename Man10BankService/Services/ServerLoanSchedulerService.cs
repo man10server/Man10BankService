@@ -1,9 +1,10 @@
 namespace Man10BankService.Services;
 
-// サーバーローンの日次処理(利息の加算・延滞分の回収)と週次の定期返済を、決まった時刻に実行する。
+// サーバーローンの日次処理(利息の加算・延滞分の回収)と週次の定期返済(旧リボの分を含む)を、決まった時刻に実行する。
 // 1 分ごとに現在時刻(UTC)を見て、実行時刻を過ぎていて今日まだ実行していなければ実行する。
 // Scheduler:Enabled が true のインスタンスでだけ動く(Program.cs)。
-public sealed class ServerLoanSchedulerService(ServerLoanService loanService, ILogger<ServerLoanSchedulerService> logger)
+public sealed class ServerLoanSchedulerService(
+    ServerLoanService loanService, LegacyServerLoanService legacyLoanService, ILogger<ServerLoanSchedulerService> logger)
     : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -35,6 +36,8 @@ public sealed class ServerLoanSchedulerService(ServerLoanService loanService, IL
                                 && now.TimeOfDay >= ServerLoanService.WeeklyRepayTimeOfDay;
                 if (weeklyDue && lastWeeklyRun != today)
                 {
+                    // 旧リボの定期返済も同じ時刻に行う(旧リボの廃止時に削除する)。
+                    await legacyLoanService.RunWeeklyRepayForAllAsync();
                     await loanService.RunWeeklyRepayForAllAsync();
                     lastWeeklyRun = today;
                 }

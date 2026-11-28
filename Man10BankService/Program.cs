@@ -98,6 +98,7 @@ builder.Services.AddSingleton<Man10BankService.Services.BankService>();
 builder.Services.AddSingleton<Man10BankService.Services.AtmService>();
 builder.Services.AddSingleton<Man10BankService.Services.ChequeService>();
 builder.Services.AddSingleton<Man10BankService.Services.ServerLoanService>();
+builder.Services.AddSingleton<Man10BankService.Services.LegacyServerLoanService>();
 builder.Services.AddSingleton<Man10BankService.Services.LoanService>();
 builder.Services.AddSingleton<Man10BankService.Services.EstateService>();
 builder.Services.AddSingleton<Man10BankService.Services.ServerEstateService>();

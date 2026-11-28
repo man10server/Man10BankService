@@ -6,13 +6,13 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Man10BankService.Repositories;
 
-// サーバーローンのテーブル(server_loan_tbl / server_loan_log / server_loan_member)の読み書き。
+// サーバーローンのテーブル(server_loan_contract / server_loan_contract_log / server_loan_contract_member)の読み書き。
 // 判断(借りられるか、いくら引き落とすか等)は ServerLoanService が行い、ここは行の取得と更新だけを受け持つ。
 //  - BankDbContext を受け取る static メソッド: 呼び出し側のトランザクションの中で使う。SaveChanges は呼ばない。
 //  - それ以外のメソッド: 自分で接続を開いて読む、参照用。
 public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPlayerProfileService profileService)
 {
-    // server_loan_log.action の値。ログの金額(amount)は残債の増減で、種類ごとの意味は次のとおり。
+    // server_loan_contract_log.action の値。ログの金額(amount)は残債の増減で、種類ごとの意味は次のとおり。
     public enum ServerLoanLogAction
     {
         // 借入。金額は借入額(正)。
@@ -80,7 +80,7 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
         return db.ServerLoanMembers.AnyAsync(x => x.OwnerUuid == ownerUuid && x.ApprovedAt != null);
     }
 
-    // ===== 契約の行(server_loan_tbl) =====
+    // ===== 契約の行(server_loan_contract) =====
 
     // 契約の行を返す(参照用)。無ければ残債 0 の行を作って保存する。
     public async Task<ServerLoan> GetOrCreateByUuidAsync(string uuid)
@@ -202,7 +202,7 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
         });
     }
 
-    // ===== ログの参照(server_loan_log) =====
+    // ===== ログの参照(server_loan_contract_log) =====
 
     // 契約のログ(新しい順)。limit / offset の範囲は呼び出し側(ServerLoanService)が確かめる。
     public async Task<List<ServerLoanLog>> GetLogsAsync(string uuid, int limit, int offset)
