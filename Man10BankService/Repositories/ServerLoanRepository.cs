@@ -65,19 +65,6 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
         return db.ServerLoanMembers.AnyAsync(x => x.OwnerUuid == ownerUuid && x.ApprovedAt != null);
     }
 
-    // 承認済みの参加者がいる契約の本垢の一覧。
-    public async Task<HashSet<string>> GetLinkedOwnerUuidsAsync()
-    {
-        await using var db = await factory.CreateDbContextAsync();
-        var owners = await db.ServerLoanMembers
-            .AsNoTracking()
-            .Where(x => x.ApprovedAt != null)
-            .Select(x => x.OwnerUuid)
-            .Distinct()
-            .ToListAsync();
-        return owners.ToHashSet();
-    }
-
     public async Task<ServerLoan> GetOrCreateByUuidAsync(string uuid)
     {
         await using var db = await factory.CreateDbContextAsync();
@@ -162,10 +149,7 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
                 loan.BorrowAmount += delta;
                 break;
             case ServerLoanLogAction.Interest:
-                if (!loan.StopInterest)
-                {
-                    loan.BorrowAmount += delta;
-                }
+                loan.BorrowAmount += delta;
                 break;
             case ServerLoanLogAction.RepaySuccess:
             case ServerLoanLogAction.EarlyRepay:
@@ -188,19 +172,6 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
         }
 
         AddLog(db, loan, action, delta, actorUuid);
-    }
-
-    // 単一 DbContext・単一トランザクションで残債を更新する独立メソッド。
-    public async Task<ServerLoan?> AdjustLoanAsync(string uuid, decimal delta, ServerLoanLogAction action)
-    {
-        await using var db = await factory.CreateDbContextAsync();
-        await using var tx = await db.Database.BeginTransactionAsync();
-
-        var loan = await GetOrCreateForUpdateAsync(db, uuid);
-        AdjustLoanCore(db, loan, delta, action);
-        await db.SaveChangesAsync();
-        await tx.CommitAsync();
-        return loan;
     }
 
     public async Task<List<ServerLoanLog>> GetLogsAsync(string uuid, int limit = 100, int offset = 0)
@@ -298,48 +269,15 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
     }
 
     // 当日分の Interest ログが存在するか(日次利息の冪等判定に使用)。
-    public async Task<bool> HasInterestLogOnDateAsync(string uuid, DateOnly date)
+    public static async Task<bool> HasInterestLogOnDateAsync(BankDbContext db, string uuid, DateOnly date)
     {
         var start = date.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
         var end = start.AddDays(1);
         var action = ServerLoanLogAction.Interest.ToString();
 
-        await using var db = await factory.CreateDbContextAsync();
         return await db.ServerLoanLogs
             .AsNoTracking()
             .AnyAsync(x => x.Uuid == uuid && x.Action == action && x.Date >= start && x.Date < end);
-    }
-
-    // 週次等の支払額を設定する
-    public async Task<ServerLoan?> SetPaymentAmountAsync(string uuid, decimal paymentAmount)
-    {
-        if (paymentAmount < 0m) throw new ArgumentException("支払額は 0 以上で指定してください。", nameof(paymentAmount));
-
-        await using var db = await factory.CreateDbContextAsync();
-        await using var tx = await db.Database.BeginTransactionAsync();
-
-        var loan = await GetOrCreateForUpdateAsync(db, uuid);
-
-        loan.PaymentAmount = paymentAmount;
-        await db.SaveChangesAsync();
-        await tx.CommitAsync();
-        return loan;
-    }
-
-    public async Task<ServerLoan?> SetBorrowAmountAsync(string uuid, decimal borrowAmount, decimal paymentAmount)
-    {
-        await using var db = await factory.CreateDbContextAsync();
-        await using var tx = await db.Database.BeginTransactionAsync();
-
-        var loan = await GetOrCreateForUpdateAsync(db, uuid);
-        var delta = borrowAmount - loan.BorrowAmount;
-
-        loan.BorrowAmount = borrowAmount;
-        loan.PaymentAmount = paymentAmount;
-        AddLog(db, loan, ServerLoanLogAction.SetBorrowAmount, delta, actorUuid: null);
-        await db.SaveChangesAsync();
-        await tx.CommitAsync();
-        return loan;
     }
 
     // 残債を更新した後の loan を渡す(操作後の残債を記録する)。

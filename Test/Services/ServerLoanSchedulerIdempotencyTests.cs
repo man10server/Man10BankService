@@ -48,13 +48,11 @@ public class ServerLoanSchedulerIdempotencyTests
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
 
         // 1回目: 利息が加算される
-        (await loan.HasDailyInterestRunAsync(today)).Should().BeFalse();
         await loan.RunDailyInterestForAllAsync(today);
         var afterFirst = (await loan.GetByUuidAsync(Uuid)).Data!.BorrowAmount;
         afterFirst.Should().BeGreaterThan(afterBorrow);
 
         // 2回目: 当日分のInterestログが存在するためスキップされ、残債は変化しない
-        (await loan.HasDailyInterestRunAsync(today)).Should().BeTrue();
         await loan.RunDailyInterestForAllAsync(today);
         var afterSecond = (await loan.GetByUuidAsync(Uuid)).Data!.BorrowAmount;
         afterSecond.Should().Be(afterFirst);

@@ -51,7 +51,6 @@ public static class ErrorCodeMapper
 
         // 予期せぬエラー・補償失敗(500)
         ErrorCode.UnexpectedError => 500,
-        ErrorCode.SetBorrowAmountFailed => 500,
 
         // それ以外(成功に付随する補足コード等が誤って渡された場合)は 500 とする
         _ => 500

@@ -578,52 +578,45 @@ public partial class ServerLoanService
         return Math.Max(0m, Math.Floor(limit));
     }
 
+    // 支払額(設定)の変更。uuid が使う契約の設定を変える(参加者が変えても、契約の設定が変わる)。
     public async Task<ApiResult<ServerLoan?>> SetPaymentAmountAsync(string uuid, decimal paymentAmount)
     {
-        try
-        {
-            var repo = new ServerLoanRepository(_dbFactory, _profileService);
-            var contractUuid = await repo.ResolveContractUuidAsync(uuid);
-            var loan = await repo.SetPaymentAmountAsync(contractUuid, paymentAmount);
-            if (loan == null)
-                return ApiResult<ServerLoan?>.Fail(ErrorCode.LoanNotFound);
-            return ApiResult<ServerLoan?>.Ok(loan);
-        }
-        catch (ArgumentException)
-        {
+        if (paymentAmount < 0m)
             return ApiResult<ServerLoan?>.Fail(ErrorCode.ValidationError);
-        }
-        catch (Exception)
+
+        var repo = new ServerLoanRepository(_dbFactory, _profileService);
+
+        return await _bank.RunExclusiveAsync<ServerLoan?>(async db =>
         {
-            return ApiResult<ServerLoan?>.Fail(ErrorCode.UnexpectedError);
-        }
+            var contractUuid = await ServerLoanRepository.ResolveContractUuidAsync(db, uuid);
+            var loan = await repo.GetOrCreateForUpdateAsync(db, contractUuid);
+            loan.PaymentAmount = paymentAmount;
+            return ApiResult<ServerLoan?>.Ok(loan);
+        });
     }
 
+    // 運営による残債の上書き。uuid が使う契約の残債を amount にし、差額を SetBorrowAmount として記録する。
+    // 支払額(設定)も、上書き後の残債に合わせた初期値に置き換える。
     public async Task<ApiResult<ServerLoan?>> SetBorrowAmountAsync(string uuid, decimal amount)
     {
         if (amount < 0m)
             return ApiResult<ServerLoan?>.Fail(ErrorCode.BorrowAmountMustBeZeroOrGreater);
+        if (await _profileService.GetNameByUuidAsync(uuid) == null)
+            return ApiResult<ServerLoan?>.Fail(ErrorCode.PlayerNotFound);
 
         var repo = new ServerLoanRepository(_dbFactory, _profileService);
 
-        try
+        return await _bank.RunExclusiveAsync<ServerLoan?>(async db =>
         {
-            // 運営による残債の調整も、uuid が使う契約に対して行う。
-            var contractUuid = await repo.ResolveContractUuidAsync(uuid);
-            var paymentAmount = CalculateInitialPaymentAmount(amount, await repo.HasMembersAsync(contractUuid));
-            var player = await _profileService.GetNameByUuidAsync(contractUuid);
-            if (player == null)
-                return ApiResult<ServerLoan?>.Fail(ErrorCode.PlayerNotFound);
+            var contractUuid = await ServerLoanRepository.ResolveContractUuidAsync(db, uuid);
+            var loan = await repo.GetOrCreateForUpdateAsync(db, contractUuid);
 
-            var loan = await repo.SetBorrowAmountAsync(contractUuid, amount, paymentAmount);
+            ServerLoanRepository.AdjustLoanCore(db, loan, amount - loan.BorrowAmount, ServerLoanRepository.ServerLoanLogAction.SetBorrowAmount);
+            loan.PaymentAmount = CalculateInitialPaymentAmount(amount, await HasMembersAsync(db, contractUuid));
             return ApiResult<ServerLoan?>.Ok(loan);
-        }
-        catch (Exception)
-        {
-            return ApiResult<ServerLoan?>.Fail(ErrorCode.SetBorrowAmountFailed);
-        }
+        });
     }
-    
+
     // 契約の日利。参加者がいる契約(linked)は LinkedDailyInterestRate(未設定なら DailyInterestRate)を使う。
     private static decimal GetDailyInterestRate(bool linked)
     {
@@ -708,64 +701,38 @@ public partial class ServerLoanService
         return candidate;
     }
     
-    private async Task<ApiResult<ServerLoan?>> AddDailyInterestAsync(string uuid, bool linked)
+    // 日次利息(契約 1 件分): 残債に 1 日分の利息を加え、Interest として記録する。
+    //  - date の分の Interest ログがすでにある契約には付けない(同じ日に 2 回実行されても二重に付かない)。
+    //  - 残債が 0 の契約と、利息停止(stop_interest)の契約には付けない。
+    // 戻り値は、利息を付けたかどうか。
+    private async Task<ApiResult<bool>> AddDailyInterestAsync(string ownerUuid, DateOnly date)
     {
-        try
+        return await _bank.RunExclusiveAsync<bool>(async db =>
         {
-            var repo = new ServerLoanRepository(_dbFactory, _profileService);
-            var loan = await repo.GetOrCreateByUuidAsync(uuid);
-            if (loan.StopInterest)
-                return ApiResult<ServerLoan?>.Ok(loan, ErrorCode.InterestStopped);
+            var loan = await DbLockHelper.GetServerLoanForUpdateAsync(db, ownerUuid);
+            if (loan == null || loan.StopInterest)
+                return ApiResult<bool>.Ok(false);
+            if (await ServerLoanRepository.HasInterestLogOnDateAsync(db, ownerUuid, date))
+                return ApiResult<bool>.Ok(false);
 
-            if (loan.BorrowAmount <= 0m)
-                return ApiResult<ServerLoan?>.Ok(loan, ErrorCode.InterestZero);
+            var interest = CalculateDailyInterestAmount(loan.BorrowAmount, await HasMembersAsync(db, ownerUuid));
+            if (interest <= 0m)
+                return ApiResult<bool>.Ok(false);
 
-            var rounded = CalculateDailyInterestAmount(loan.BorrowAmount, linked);
-            if (rounded <= 0m)
-                return ApiResult<ServerLoan?>.Ok(loan, ErrorCode.InterestZero);
-
-            var updated = await repo.AdjustLoanAsync(uuid, rounded, ServerLoanRepository.ServerLoanLogAction.Interest);
-
-            return ApiResult<ServerLoan?>.Ok(updated);
-        }
-        catch (ArgumentException)
-        {
-            return ApiResult<ServerLoan?>.Fail(ErrorCode.ValidationError);
-        }
-        catch (Exception)
-        {
-            return ApiResult<ServerLoan?>.Fail(ErrorCode.UnexpectedError);
-        }
-    }
-    
-    // 当日分の Interest ログが既に存在するローンが1件でもあるか(検証・テスト用の参照クエリ)。
-    // 注意: ローン横断のORなので冪等ガードには使わないこと。スケジューラの冪等性は
-    // RunDailyInterestForAllAsync 内のローン単位判定(HasInterestLogOnDateAsync)が担保する。
-    public async Task<bool> HasDailyInterestRunAsync(DateOnly date)
-    {
-        var repo = new ServerLoanRepository(_dbFactory, _profileService);
-        var loans = await repo.GetAllAsync();
-        foreach (var loan in loans)
-        {
-            if (await repo.HasInterestLogOnDateAsync(loan.Uuid, date))
-                return true;
-        }
-        return false;
+            ServerLoanRepository.AdjustLoanCore(db, loan, interest, ServerLoanRepository.ServerLoanLogAction.Interest);
+            return ApiResult<bool>.Ok(true);
+        });
     }
 
-    // 日次利息を全ローンへ加算（スケジューラから呼ばれる）。
-    // 冪等化: 当日分の Interest ログが既にあるローンはスキップし、再起動後の二重課金を防ぐ。
+    // 日次利息を全契約へ加算する(スケジューラから毎日呼ばれる)。
     public async Task RunDailyInterestForAllAsync(DateOnly? today = null)
     {
         var date = today ?? DateOnly.FromDateTime(DateTime.UtcNow);
         var repo = new ServerLoanRepository(_dbFactory, _profileService);
         var loans = await repo.GetAllAsync();
-        var linkedOwnerUuids = await repo.GetLinkedOwnerUuidsAsync();
         foreach (var loan in loans)
         {
-            if (await repo.HasInterestLogOnDateAsync(loan.Uuid, date))
-                continue;
-            await AddDailyInterestAsync(loan.Uuid, linkedOwnerUuids.Contains(loan.Uuid));
+            await AddDailyInterestAsync(loan.Uuid, date);
         }
     }
 
