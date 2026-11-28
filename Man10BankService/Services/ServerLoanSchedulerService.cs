@@ -1,20 +1,19 @@
 namespace Man10BankService.Services;
 
-// サーバーローンの日次利息・週次返済を実行するスケジューラ。
-// 冪等化(DESIGN 2.4): 実行済み判定は DB 由来(当日 Interest ログの存在)で行い、
-// インメモリの lastRun 変数を廃止。プロセス再起動後も同日二重課金しない。
+// サーバーローンの日次処理(利息の加算・延滞分の回収)と週次の定期返済を、決まった時刻に実行する。
+// 1 分ごとに現在時刻(UTC)を見て、実行時刻を過ぎていて今日まだ実行していなければ実行する。
+// Scheduler:Enabled が true のインスタンスでだけ動く(Program.cs)。
 public sealed class ServerLoanSchedulerService(ServerLoanService loanService, ILogger<ServerLoanSchedulerService> logger)
     : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        // 日次利息の冪等性はローン単位の DB 判定(HasInterestLogOnDateAsync)が担保する。
-        // lastDailyRun は毎分の全件クエリを避けるための省力化マーカーであり、
-        // 全件パスが例外なく完走した場合のみ更新する(途中クラッシュ時は次ティックで再走し、
-        // 処理済みローンはローン単位の判定でスキップされ、未処理ローンだけが拾われる)。
+        // 今日の日次処理を済ませたかどうか。最後まで走り切ったときだけ更新する。
+        // メモリにしか持たないので再起動すると忘れるが、もう一度走っても二重にはならない:
+        // 利息は契約ごとに当日分のログがあれば付けず、延滞分の回収は未回収の額までしか行わない。
         DateOnly? lastDailyRun = null;
-        // 週次返済はサーバーローンログに専用の冪等マーカーが無いため、当日内の重複実行のみ
-        // インメモリで抑止する(再起動時の冪等性は将来課題。日次利息は DB 由来で完全冪等)。
+        // 今日の定期返済を済ませたかどうか。こちらもメモリにしか持たず、DB での判定は無い。
+        // 返済日に実行した後、同じ日のうちに再起動すると、もう一度引き落とされる(既知の制約)。
         DateOnly? lastWeeklyRun = null;
 
         while (!stoppingToken.IsCancellationRequested)

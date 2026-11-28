@@ -6,23 +6,38 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Man10BankService.Repositories;
 
+// サーバーローンのテーブル(server_loan_tbl / server_loan_log / server_loan_member)の読み書き。
+// 判断(借りられるか、いくら引き落とすか等)は ServerLoanService が行い、ここは行の取得と更新だけを受け持つ。
+//  - BankDbContext を受け取る static メソッド: 呼び出し側のトランザクションの中で使う。SaveChanges は呼ばない。
+//  - それ以外のメソッド: 自分で接続を開いて読む、参照用。
 public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPlayerProfileService profileService)
 {
+    // server_loan_log.action の値。ログの金額(amount)は残債の増減で、種類ごとの意味は次のとおり。
     public enum ServerLoanLogAction
     {
+        // 借入。金額は借入額(正)。
         Borrow,
+        // 定期返済の成功。金額は返済額(負)。0 は、返済を伴わない延滞の解消を表す。
         RepaySuccess,
+        // 定期返済の失敗(残高不足)。金額は引き落とそうとした額(正)で、残債は変わらない。
         RepayFailure,
+        // 日次の利息。金額は利息額(正)。
         Interest,
+        // 運営による残債の上書きと、契約への参加で自分の契約の残債を移したとき。金額は前後の差額。
         SetBorrowAmount,
+        // 手動返済。金額は返済額(負)。
         EarlyRepay,
+        // 延滞分の回収。金額は回収額(負)。
         OverdueCollect,
-        // 他のプレイヤーの契約への参加(参加先の契約に記録。金額は移ってきた残債)と脱退
+        // 他のプレイヤーの契約への参加(参加先の契約に記録)。金額は移ってきた残債(正。無ければ 0)。
         MemberJoin,
+        // 契約からの脱退(参加していた契約に記録)。金額は 0。
         MemberLeave,
-        // 借入枠を初期枠(MinAmount)に戻す(運営による強制リンク時の罰則)
+        // 借入枠を初期枠(MinAmount)に戻す(運営による強制リンク時の罰則)。金額は 0。
         LimitReset,
     }
+
+    // ===== どの契約を使うか(契約の共有) =====
 
     // uuid が使う契約の本垢を返す。承認済みで他のプレイヤーの契約に参加していればその本垢、していなければ自分自身。
     public async Task<string> ResolveContractUuidAsync(string uuid)
@@ -65,6 +80,9 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
         return db.ServerLoanMembers.AnyAsync(x => x.OwnerUuid == ownerUuid && x.ApprovedAt != null);
     }
 
+    // ===== 契約の行(server_loan_tbl) =====
+
+    // 契約の行を返す(参照用)。無ければ残債 0 の行を作って保存する。
     public async Task<ServerLoan> GetOrCreateByUuidAsync(string uuid)
     {
         await using var db = await factory.CreateDbContextAsync();
@@ -119,60 +137,76 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
         };
     }
 
+    // 全契約。スケジューラが 1 件ずつ処理するために使う。
     public async Task<List<ServerLoan>> GetAllAsync()
     {
         await using var db = await factory.CreateDbContextAsync();
         return await db.ServerLoans.AsNoTracking().ToListAsync();
     }
 
-    // トランザクション合成用のコアメソッド。
-    // 既にロック取得済みの loan エンティティ(同一 context にアタッチ済み)に対して
-    // 残債(BorrowAmount)を更新し、ログを同一 context に追加する。SaveChanges / Commit は呼び出し側。
-    // actorUuid には操作したプレイヤーを渡す(自動処理は null)。
+    // ===== 残債の変更とログ =====
+
+    // 契約の残債を増減し、その操作をログに残す。残債を変える処理は必ずここを通す。
+    // loan には、呼び出し側が行ロックして取得したもの(同じ db で追跡中のもの)を渡す。SaveChanges / Commit は呼び出し側。
+    //  - delta: 残債の増減(借入・利息は正、返済は負)。ログの金額にもこの値を記録する。
+    //    RepayFailure だけは「引き落とそうとした額」を渡す。記録するだけで、残債は変えない。
+    //  - actorUuid: 操作したプレイヤー。自動処理(利息・定期返済・延滞分の回収)と運営の調整は null。
     public static void AdjustLoanCore(
         BankDbContext db, ServerLoan loan, decimal delta, ServerLoanLogAction action,
         string? actorUuid = null)
     {
+        var now = DateTime.UtcNow;
         switch (action)
         {
             case ServerLoanLogAction.Borrow:
+                // 残債 0 から借り始めるときは、前回返済日(last_pay_date)を今に置き直す。
                 if (loan.BorrowAmount == 0m)
-                {
-                    loan.LastPayDate = DateTime.UtcNow;
-                }
+                    loan.LastPayDate = now;
                 loan.BorrowAmount += delta;
                 break;
+
             case ServerLoanLogAction.Interest:
-                loan.BorrowAmount += delta;
-                break;
-            case ServerLoanLogAction.RepaySuccess:
-            case ServerLoanLogAction.EarlyRepay:
-            case ServerLoanLogAction.OverdueCollect:
-                loan.BorrowAmount += delta;
-                loan.LastPayDate = DateTime.UtcNow;
-                break;
-            case ServerLoanLogAction.RepayFailure:
-                // 残債は変えず、失敗のログだけを残す。
-                break;
             case ServerLoanLogAction.SetBorrowAmount:
             case ServerLoanLogAction.MemberJoin:
                 loan.BorrowAmount += delta;
                 break;
+
+            // 返済は、前回返済日も更新する。
+            case ServerLoanLogAction.RepaySuccess:
+            case ServerLoanLogAction.EarlyRepay:
+            case ServerLoanLogAction.OverdueCollect:
+                loan.BorrowAmount += delta;
+                loan.LastPayDate = now;
+                break;
+
+            // ログを残すだけで、残債は変えない。
+            case ServerLoanLogAction.RepayFailure:
             case ServerLoanLogAction.MemberLeave:
             case ServerLoanLogAction.LimitReset:
                 break;
+
             default:
                 throw new ArgumentOutOfRangeException(nameof(action), action, null);
         }
 
-        AddLog(db, loan, action, delta, actorUuid);
+        // 残債を更新した後に記録する(操作後の残債 debt_after を残すため)。
+        db.ServerLoanLogs.Add(new ServerLoanLog
+        {
+            Uuid = loan.Uuid,
+            Player = loan.Player,
+            Action = action.ToString(),
+            Amount = delta,
+            ActorUuid = actorUuid,
+            DebtAfter = loan.BorrowAmount,
+            // Date は DB の既定値(CURRENT_TIMESTAMP)
+        });
     }
 
-    public async Task<List<ServerLoanLog>> GetLogsAsync(string uuid, int limit = 100, int offset = 0)
-    {
-        limit = Math.Clamp(limit, 1, 1000);
-        if (offset < 0) offset = 0;
+    // ===== ログの参照(server_loan_log) =====
 
+    // 契約のログ(新しい順)。limit / offset の範囲は呼び出し側(ServerLoanService)が確かめる。
+    public async Task<List<ServerLoanLog>> GetLogsAsync(string uuid, int limit, int offset)
+    {
         await using var db = await factory.CreateDbContextAsync();
         return await db.ServerLoanLogs
             .AsNoTracking()
@@ -201,7 +235,10 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
             .ToListAsync();
     }
 
-    // 直近の定期返済(週次)が失敗かどうか。手動返済は判定に含めない。
+    // ===== 延滞の判定 =====
+    // 延滞は「直近の定期返済のログ(RepaySuccess / RepayFailure)が失敗である」状態。手動返済や延滞分の回収のログは見ない。
+
+    // 直近の定期返済が失敗かどうか(= 延滞中かどうか)。
     public static async Task<bool> IsLatestScheduledRepayFailureAsync(BankDbContext db, string uuid)
     {
         var latest = await GetLatestScheduledRepayLogAsync(db, uuid);
@@ -249,6 +286,7 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
         return Math.Max(0m, latest.Amount + collected.Sum());
     }
 
+    // 直近の定期返済のログ(成功または失敗)。一度も定期返済の対象になっていなければ null。
     private static async Task<ServerLoanLog?> GetLatestScheduledRepayLogAsync(BankDbContext db, string uuid)
     {
         var success = ServerLoanLogAction.RepaySuccess.ToString();
@@ -261,7 +299,7 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
             .FirstOrDefaultAsync();
     }
 
-    // 当日分の Interest ログが存在するか(日次利息の冪等判定に使用)。
+    // date(UTC)の分の Interest ログがあるかどうか。同じ日に利息を二重に付けないための判定に使う。
     public static async Task<bool> HasInterestLogOnDateAsync(BankDbContext db, string uuid, DateOnly date)
     {
         var start = date.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
@@ -271,21 +309,5 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
         return await db.ServerLoanLogs
             .AsNoTracking()
             .AnyAsync(x => x.Uuid == uuid && x.Action == action && x.Date >= start && x.Date < end);
-    }
-
-    // 残債を更新した後の loan を渡す(操作後の残債を記録する)。
-    private static void AddLog(BankDbContext db, ServerLoan loan, ServerLoanLogAction action, decimal amount, string? actorUuid)
-    {
-        var log = new ServerLoanLog
-        {
-            Uuid = loan.Uuid,
-            Player = loan.Player,
-            Action = action.ToString(),
-            Amount = amount,
-            ActorUuid = actorUuid,
-            DebtAfter = loan.BorrowAmount,
-            // Date は DB 既定値
-        };
-        db.ServerLoanLogs.Add(log);
     }
 }

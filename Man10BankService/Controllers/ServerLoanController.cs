@@ -9,6 +9,8 @@ using Microsoft.AspNetCore.Mvc.ModelBinding;
 
 namespace Man10BankService.Controllers;
 
+// サーバーローン(リボ)の API。{uuid} は操作するプレイヤー。
+// 他のプレイヤーの契約に参加しているアカウントを指定すると、参加先の契約に対して操作する。
 [ApiController]
 [Route("api/[controller]/{uuid:uuid}")]
 public class ServerLoanController(ServerLoanService service) : ControllerBase
@@ -16,6 +18,7 @@ public class ServerLoanController(ServerLoanService service) : ControllerBase
     private const string UuidPattern = @"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$";
     private const string UuidErrorMessage = "UUID の形式が不正です。";
 
+    // uuid が使っている契約(残債・支払額など)を返す。
     [HttpGet("")]
     [Produces("application/json")]
     [ProducesResponseType(typeof(ServerLoanResponse), StatusCodes.Status200OK)]
@@ -27,6 +30,7 @@ public class ServerLoanController(ServerLoanService service) : ControllerBase
         return this.ToActionResult(res, ServerLoanResponse.From);
     }
 
+    // 借入。借りたお金は uuid の銀行口座に入る。
     [HttpPost("borrow")]
     [Authorize(Policy = "RequireWriteScope")]
     [Consumes("application/json")]
@@ -41,6 +45,7 @@ public class ServerLoanController(ServerLoanService service) : ControllerBase
         return this.ToActionResult(res, ServerLoanResponse.From);
     }
 
+    // 手動返済。uuid の銀行口座から amount を返す(残債を超える分は返さない)。
     [HttpPost("repay")]
     [Authorize(Policy = "RequireWriteScope")]
     [Produces("application/json")]
@@ -57,6 +62,7 @@ public class ServerLoanController(ServerLoanService service) : ControllerBase
         return this.ToActionResult(res, ServerLoanResponse.From);
     }
 
+    // 支払額(設定)の変更。定期返済で引き落としてほしい額を決める。
     [HttpPost("payment-amount")]
     [Authorize(Policy = "RequireWriteScope")]
     [Produces("application/json")]
@@ -72,6 +78,7 @@ public class ServerLoanController(ServerLoanService service) : ControllerBase
         return this.ToActionResult(res, ServerLoanResponse.From);
     }
 
+    // 運営用: 残債を amount に上書きする。
     [HttpPost("borrow-amount")]
     [Authorize(Policy = "RequireWriteScope")]
     [Produces("application/json")]
@@ -87,6 +94,7 @@ public class ServerLoanController(ServerLoanService service) : ControllerBase
         return this.ToActionResult(res, ServerLoanResponse.From);
     }
 
+    // 借入枠(残債の上限)。
     [HttpGet("borrow-limit")]
     [Produces("application/json")]
     [ProducesResponseType(typeof(BorrowLimitResponse), StatusCodes.Status200OK)]
@@ -97,6 +105,7 @@ public class ServerLoanController(ServerLoanService service) : ControllerBase
         return this.ToActionResult(res, limit => new BorrowLimitResponse(limit));
     }
 
+    // 残債があり延滞中かどうか。契約の行は作らない。
     [HttpGet("overdue")]
     [Produces("application/json")]
     [ProducesResponseType(typeof(OverdueResponse), StatusCodes.Status200OK)]
@@ -107,6 +116,7 @@ public class ServerLoanController(ServerLoanService service) : ControllerBase
         return this.ToActionResult(res, overdue => new OverdueResponse(overdue));
     }
 
+    // 契約のログ(新しい順)。
     [HttpGet("logs")]
     [Produces("application/json")]
     [ProducesResponseType(typeof(List<ServerLoanLogResponse>), StatusCodes.Status200OK)]
@@ -118,6 +128,7 @@ public class ServerLoanController(ServerLoanService service) : ControllerBase
         return this.ToActionResult(res, logs => logs.Select(ServerLoanLogResponse.From).ToList());
     }
 
+    // 次回の定期返済の日時、1 日あたりの利息、次回の引き落とし額。
     [HttpGet("payment-info")]
     [Produces("application/json")]
     [ProducesResponseType(typeof(PaymentInfoResponse), StatusCodes.Status200OK)]
