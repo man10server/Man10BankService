@@ -11,6 +11,8 @@ public class BankDbContext : DbContext
     public DbSet<Estate> Estates => Set<Estate>();
     public DbSet<EstateHistory> EstateHistories => Set<EstateHistory>();
     public DbSet<IdempotencyKey> IdempotencyKeys => Set<IdempotencyKey>();
+    public DbSet<LegacyServerLoan> LegacyServerLoans => Set<LegacyServerLoan>();
+    public DbSet<LegacyServerLoanLog> LegacyServerLoanLogs => Set<LegacyServerLoanLog>();
     public DbSet<Loan> Loans => Set<Loan>();
     public DbSet<MoneyLog> MoneyLogs => Set<MoneyLog>();
     public DbSet<PlayerProfile> PlayerProfiles => Set<PlayerProfile>();
@@ -198,6 +200,27 @@ public class BankDbContext : DbContext
             e.Property(x => x.LinkedBy).HasColumnName("linked_by");
             e.Property(x => x.RequestedAt).HasColumnName("requested_at").HasDefaultValueSql("CURRENT_TIMESTAMP").ValueGeneratedOnAdd();
             e.Property(x => x.ApprovedAt).HasColumnName("approved_at");
+        });
+
+        // 旧リボ(0.5.0 までのサーバーローン)。テーブルは当時のものをそのまま使う。
+        modelBuilder.Entity<LegacyServerLoan>(e =>
+        {
+            e.ToTable("server_loan_tbl");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.Uuid);
+            e.Property(x => x.Uuid).HasColumnName("uuid");
+            e.Property(x => x.BorrowAmount).HasColumnName("borrow_amount").HasPrecision(20, 0);
+            e.Property(x => x.PaymentAmount).HasColumnName("payment_amount").HasPrecision(20, 0);
+            e.Property(x => x.LastPayDate).HasColumnName("last_pay_date").HasDefaultValueSql("CURRENT_TIMESTAMP");
+        });
+
+        modelBuilder.Entity<LegacyServerLoanLog>(e =>
+        {
+            e.ToTable("server_loan_log");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.Uuid, x.Date });
+            e.Property(x => x.Amount).HasPrecision(20, 0);
+            e.Property(x => x.Date).HasDefaultValueSql("CURRENT_TIMESTAMP").ValueGeneratedOnAdd();
         });
 
         modelBuilder.Entity<UserBank>(e =>

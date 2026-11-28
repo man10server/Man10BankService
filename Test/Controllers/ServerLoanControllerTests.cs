@@ -47,7 +47,7 @@ public class ServerLoanControllerTests
         var bank = new BankService(db.Factory, profile);
         var loanService = new ServerLoanService(db.Factory, bank, profile, config);
 
-        var ctrl = new ServerLoanController(loanService)
+        var ctrl = new ServerLoanController(loanService, new LegacyServerLoanService(db.Factory, bank, profile))
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
             ObjectValidator = sp.GetRequiredService<IObjectModelValidator>(),

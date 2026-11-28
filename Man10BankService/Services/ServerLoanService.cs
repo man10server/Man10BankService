@@ -16,6 +16,7 @@ namespace Man10BankService.Services;
 //  - 残債: 契約の借入残高(borrow_amount)。利息を含む。
 //  - 借入枠: 残債の上限。DB には保存せず、契約のログ(server_loan_contract_log)から毎回計算する。
 //  - 延滞: 直近の定期返済のログが失敗(RepayFailure)である状態。これも保存せず、ログで判定する。
+//  - 旧リボ: 0.5.0 までの借入の残債。別の仕組み(LegacyServerLoanService)で管理し、残っている間は借入を止める。
 //
 // ファイルの分け方(すべて同じ partial class)
 //  - ServerLoanService.cs             参照と、プレイヤー・運営の操作(借入・手動返済・支払額の変更・残債の上書き)
@@ -144,7 +145,7 @@ public partial class ServerLoanService
     // ===== プレイヤーの操作 =====
 
     // 借入: uuid が使う契約(参加先があればその本垢の契約)の残債を増やし、借りたお金を uuid の口座に入れる。
-    // 判定から記録までを 1 トランザクションで行う(契約の行ロック → 延滞と借入枠の判定 → 残債の加算とログ → 口座への入金)。
+    // 判定から記録までを 1 トランザクションで行う(契約の行ロック → 延滞・旧リボ・借入枠の判定 → 残債の加算とログ → 口座への入金)。
     // ロック順序規約: 契約の行(server_loan_contract)→user_bank 行。
     public async Task<ApiResult<ServerLoan>> BorrowAsync(string uuid, decimal amount)
     {
@@ -170,7 +171,13 @@ public partial class ServerLoanService
             if (await ServerLoanRepository.IsLatestScheduledRepayFailureAsync(db, contractUuid))
                 return ApiResult<ServerLoan>.Fail(ErrorCode.RepaymentOverdue);
 
-            // 3) 借入枠の判定(枠は契約のログから毎回計算する)
+            // 3) 旧リボ: 契約の誰か(本垢・参加者)に旧リボの残債が残っている間は借りられない。
+            //    本人だけでなく契約の全員を見るのは、旧リボが残っている人のサブ垢から借りる抜け道を塞ぐため。
+            //    (旧リボの廃止時に、この判定ごと削除する。)
+            if (await LegacyServerLoanRepository.HasDebtAsync(db, await ServerLoanRepository.GetContractAccountUuidsAsync(db, contractUuid)))
+                return ApiResult<ServerLoan>.Fail(ErrorCode.LegacyLoanOutstanding);
+
+            // 4) 借入枠の判定(枠は契約のログから毎回計算する)
             var limit = CalculateBorrowLimit(await ServerLoanRepository.GetLogsOldestFirstAsync(db, contractUuid), loan.BorrowAmount);
             if (loan.BorrowAmount + amount > limit)
                 return ApiResult<ServerLoan>.Fail(ErrorCode.BorrowLimitExceeded);
@@ -182,13 +189,13 @@ public partial class ServerLoanService
             // 支払額が未設定の契約は、この借入額をもとに初期値を設定する(残債を増やす前に判定しておく)。
             var needPayment = loan.PaymentAmount <= 0m;
 
-            // 4) 債務加算 + ServerLoanLog
+            // 5) 債務加算 + ServerLoanLog
             ServerLoanRepository.AdjustLoanCore(db, loan, amount, ServerLoanRepository.ServerLoanLogAction.Borrow, actorUuid: uuid);
 
             if (needPayment)
                 loan.PaymentAmount = CalculateInitialPaymentAmount(amount, await ServerLoanRepository.HasMembersAsync(db, contractUuid));
 
-            // 5) 借りたお金は、操作したアカウントの口座に入れる。user_bank 残高加算 + MoneyLog(同一 tx)
+            // 6) 借りたお金は、操作したアカウントの口座に入れる。user_bank 残高加算 + MoneyLog(同一 tx)
             await BankRepository.ChangeBalanceCoreAsync(
                 db, uuid, resolvedPlayer, amount,
                 "server_loan", "loan_borrow", "サーバーローン借入", "system");

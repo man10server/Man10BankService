@@ -211,6 +211,7 @@ create table server_loan_contract_member
 create index server_loan_contract_member_owner_uuid_index
     on server_loan_contract_member (owner_uuid);
 
+-- 旧リボ(0.5.0 までのサーバーローン)。残債が残っているプレイヤーが返し終わるまで使う。
 create table server_loan_log
 (
     id     int auto_increment
@@ -219,14 +220,13 @@ create table server_loan_log
     uuid   varchar(36)                        not null,
     action varchar(16)                        not null comment 'borrow/repay/interest',
     amount decimal(20)                        not null,
-    date   datetime default CURRENT_TIMESTAMP not null,
-    actor_uuid varchar(36)                    null comment '操作したプレイヤー。自動処理・運営の調整は NULL',
-    debt_after decimal(20)                    null comment '操作後の残債(監査用)'
+    date   datetime default CURRENT_TIMESTAMP not null
 );
 
 create index server_loan_log_uuid_date_index
     on server_loan_log (uuid, date);
 
+-- 旧リボ(0.5.0 までのサーバーローン)の残債。borrow_amount が 1 円以上の行だけが対象。
 create table server_loan_tbl
 (
     id             int auto_increment

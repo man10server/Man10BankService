@@ -43,6 +43,22 @@ public static class DbLockHelper
         return await db.ServerLoans.FirstOrDefaultAsync(x => x.Uuid == uuid);
     }
 
+    // 旧リボ(server_loan_tbl)の、残債が残っている行を UUID で取得する。MySQL 時は FOR UPDATE で行ロックする。
+    // 該当行が無ければ null。
+    public static async Task<Models.Database.LegacyServerLoan?> GetLegacyServerLoanForUpdateAsync(BankDbContext db, string uuid)
+    {
+        if (IsMySql(db))
+        {
+            return await db.LegacyServerLoans
+                .FromSqlInterpolated($"SELECT * FROM server_loan_tbl WHERE uuid = {uuid} AND borrow_amount > 0 ORDER BY id LIMIT 1 FOR UPDATE")
+                .FirstOrDefaultAsync();
+        }
+
+        // SQLite は decimal の比較を SQL に変換できないので、読んでから判定する。
+        var rows = await db.LegacyServerLoans.Where(x => x.Uuid == uuid).OrderBy(x => x.Id).ToListAsync();
+        return rows.FirstOrDefault(x => x.BorrowAmount > 0m);
+    }
+
     // cheque を ID で取得する。MySQL 時は FOR UPDATE で行ロックする。
     // 該当行が無ければ null。
     public static async Task<Models.Database.Cheque?> GetChequeForUpdateAsync(BankDbContext db, int id)
