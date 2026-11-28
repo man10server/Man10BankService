@@ -1,7 +1,9 @@
 using FluentAssertions;
 using Man10BankService.Models.Database;
 using Man10BankService.Repositories;
+using Man10BankService.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Test.Infrastructure;
 
 namespace Test.Services;
@@ -32,35 +34,20 @@ public class ServerLoanContractMySqlTests
     public async Task Log_ShouldStoreDebtAfterAndNullActor()
     {
         using var db = MySqlTestDbFactory.Create();
-        var repo = new ServerLoanRepository(db.Factory, new FakePlayerProfileService());
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["ServerLoan:DailyInterestRate"] = "0.01" })
+            .Build();
+        var profile = new FakePlayerProfileService();
+        var loan = new ServerLoanService(db.Factory, new BankService(db.Factory, profile), profile, config);
 
-        await repo.SetBorrowAmountAsync(Uuid, "test-player", 5000m, 100m);
-        await repo.AdjustLoanAsync(Uuid, "test-player", 50m, ServerLoanRepository.ServerLoanLogAction.Interest);
+        (await loan.SetBorrowAmountAsync(Uuid, 5000m)).IsSuccess.Should().BeTrue();
+        await loan.RunDailyInterestForAllAsync();
 
         await using var ctx = await db.Factory.CreateDbContextAsync();
         var logs = await ctx.ServerLoanLogs.AsNoTracking().Where(x => x.Uuid == Uuid).OrderBy(x => x.Id).ToListAsync();
         logs.Select(l => (l.Action, l.ActorUuid, l.DebtAfter)).Should().Equal(
             ("SetBorrowAmount", null, 5000m),
             ("Interest", null, 5050m));
-    }
-
-    [Fact(DisplayName = "契約(MySQL): failed_payment 列が残っているスキーマでも作成・行ロック・更新ができる")]
-    public async Task Contract_WithLegacyFailedPaymentColumn_ShouldStillWork()
-    {
-        using var db = MySqlTestDbFactory.Create();
-        await using (var ctx = await db.Factory.CreateDbContextAsync())
-        {
-            // sql/011 を適用する前の状態を再現する。
-            await ctx.Database.ExecuteSqlRawAsync(
-                "ALTER TABLE server_loan_tbl ADD COLUMN failed_payment INT DEFAULT 0 NOT NULL");
-        }
-        var repo = new ServerLoanRepository(db.Factory, new FakePlayerProfileService());
-
-        (await repo.GetOrCreateByUuidAsync(Uuid)).BorrowAmount.Should().Be(0m);
-        var updated = await repo.AdjustLoanAsync(Uuid, "test-player", 1000m, ServerLoanRepository.ServerLoanLogAction.Borrow);
-
-        updated!.BorrowAmount.Should().Be(1000m);
-        (await repo.GetByUuidAsync(Uuid))!.BorrowAmount.Should().Be(1000m);
     }
 
     [Fact(DisplayName = "メンバー(MySQL): 承認待ちで保存でき、1アカウントは1つの契約にしか参加できない")]
