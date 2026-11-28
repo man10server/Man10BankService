@@ -220,8 +220,11 @@ public partial class ServerLoanService
     // 手動返済: プレイヤーが自分の口座から返す。uuid が使う契約(参加先があればその本垢の契約)の残債を減らす。
     // 借入枠の評価対象は定期返済だけなので、EarlyRepay として記録する。残高不足でも延滞にはならない。
     // ロック順序規約: 自リソース行(server_loan)→user_bank 行。
-    public async Task<ApiResult<ServerLoan?>> RepayAsync(string uuid, decimal? payAmount)
+    public async Task<ApiResult<ServerLoan?>> RepayAsync(string uuid, decimal amount)
     {
+        if (amount <= 0m)
+            return ApiResult<ServerLoan?>.Fail(ErrorCode.ValidationError);
+
         var resolved = await _bank.ResolvePlayerNameAsync(uuid);
         if (!resolved.IsSuccess)
             return ApiResult<ServerLoan?>.Fail(resolved.Code);
@@ -238,24 +241,19 @@ public partial class ServerLoanService
             if (loan.BorrowAmount <= 0m)
                 return ApiResult<ServerLoan?>.Fail(ErrorCode.NoRepaymentNeeded);
 
-            var requested = payAmount is > 0m ? payAmount.Value : loan.PaymentAmount;
-            if (requested <= 0m)
-                return ApiResult<ServerLoan?>.Fail(ErrorCode.PaymentAmountNotSet);
-
-            var amount = Math.Min(requested, loan.BorrowAmount);
-            if (amount <= 0m)
-                return ApiResult<ServerLoan?>.Fail(ErrorCode.PaymentAmountZero);
+            // 残債を超える分は返済しない。
+            var pay = Math.Min(amount, loan.BorrowAmount);
 
             // 2) 操作したアカウントの口座を行ロックし、残高不足を判定
             var accounts = await LockBankAccountsAsync(db, [uuid]);
-            if (TotalBalance(accounts) < amount)
+            if (TotalBalance(accounts) < pay)
                 return ApiResult<ServerLoan?>.Fail(ErrorCode.InsufficientFunds);
 
             // 3) 残高減算 + MoneyLog
-            await WithdrawFromAccountsAsync(db, accounts, amount, "loan_repay", "サーバーローン返済", uuid, resolvedPlayer);
+            await WithdrawFromAccountsAsync(db, accounts, pay, "loan_repay", "サーバーローン返済", uuid, resolvedPlayer);
 
             // 4) 債務減算 + 返済ログ
-            ServerLoanRepository.AdjustLoanCore(db, loan, loan.Player, -amount, ServerLoanRepository.ServerLoanLogAction.EarlyRepay, actorUuid: uuid);
+            ServerLoanRepository.AdjustLoanCore(db, loan, loan.Player, -pay, ServerLoanRepository.ServerLoanLogAction.EarlyRepay, actorUuid: uuid);
 
             return ApiResult<ServerLoan?>.Ok(loan);
         });

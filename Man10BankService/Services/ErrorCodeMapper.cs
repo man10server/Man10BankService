@@ -21,8 +21,6 @@ public static class ErrorCodeMapper
         ErrorCode.RepayAmountMustExceedBorrowAmount => 400,
         ErrorCode.BorrowerMismatch => 400,
         ErrorCode.NoRepaymentNeeded => 400,
-        ErrorCode.PaymentAmountNotSet => 400,
-        ErrorCode.PaymentAmountZero => 400,
         ErrorCode.LinkInvalidTarget => 400,
 
         // 見つからない(404)

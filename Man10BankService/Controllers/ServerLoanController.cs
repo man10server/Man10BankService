@@ -51,7 +51,7 @@ public class ServerLoanController(ServerLoanService service) : ControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<ServerLoanResponse>> Repay(
         [FromRoute] string uuid,
-        [FromQuery, Range(typeof(decimal), AmountLimits.MinText, AmountLimits.MaxText, ErrorMessage = "金額は 0 以上 1 兆以下で指定してください。")] decimal? amount)
+        [FromQuery, BindRequired, Range(typeof(decimal), AmountLimits.MinText, AmountLimits.MaxText, ErrorMessage = "金額は 0 以上 1 兆以下で指定してください。")] decimal amount)
     {
         var res = await service.RepayAsync(uuid, amount);
         return this.ToActionResult(res, e => ServerLoanResponse.From(e!));
