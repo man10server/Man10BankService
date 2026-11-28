@@ -21,8 +21,6 @@ public static class ErrorCodeMapper
         ErrorCode.RepayAmountMustExceedBorrowAmount => 400,
         ErrorCode.BorrowerMismatch => 400,
         ErrorCode.NoRepaymentNeeded => 400,
-        ErrorCode.PaymentAmountNotSet => 400,
-        ErrorCode.PaymentAmountZero => 400,
         ErrorCode.LinkInvalidTarget => 400,
 
         // 見つからない(404)
@@ -53,7 +51,6 @@ public static class ErrorCodeMapper
 
         // 予期せぬエラー・補償失敗(500)
         ErrorCode.UnexpectedError => 500,
-        ErrorCode.SetBorrowAmountFailed => 500,
 
         // それ以外(成功に付随する補足コード等が誤って渡された場合)は 500 とする
         _ => 500

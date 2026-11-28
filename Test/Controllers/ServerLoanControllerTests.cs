@@ -337,8 +337,8 @@ public class ServerLoanControllerTests
         loanLogs.Any(l => l.Action == "EarlyRepay" && l.Amount == -expectedRepayAmount).Should().BeTrue();
     }
 
-    [Fact(DisplayName = "repay: 金額未指定と過払い要求は残債にクリップして成功する")]
-    public async Task Repay_NoAmount_And_Overpay_ShouldClipAndSucceed()
+    [Fact(DisplayName = "repay: 0 円は 400 で残債を変えず、過払い要求は残債にクリップして成功する")]
+    public async Task Repay_ZeroAmount_Should400_And_Overpay_ShouldClipAndSucceed()
     {
         using var env = BuildController();
         var ctrl = (ServerLoanController)env.Host.Controller;
@@ -351,15 +351,14 @@ public class ServerLoanControllerTests
         var before = beforeRes.Result
             .Should().BeOfType<OkObjectResult>().Which.Value
             .Should().BeOfType<ServerLoanResponse>().Which;
-        var noArg = await ctrl.Repay(uuid, amount: null);
-        noArg.Result.Should().BeOfType<OkObjectResult>();
+        var zero = await ctrl.Repay(uuid, amount: 0m);
+        zero.Result.Should().BeOfType<BadRequestObjectResult>();
 
         var afterRes = await ctrl.GetByUuid(uuid);
         var after = afterRes.Result
             .Should().BeOfType<OkObjectResult>().Which.Value
             .Should().BeOfType<ServerLoanResponse>().Which;
-        var used1 = before!.BorrowAmount - after!.BorrowAmount;
-        used1.Should().BeGreaterThan(0);
+        after!.BorrowAmount.Should().Be(before!.BorrowAmount);
 
         var remain = after.BorrowAmount;
         var overRes = await ctrl.Repay(uuid, amount: remain + 9999m);
@@ -375,8 +374,7 @@ public class ServerLoanControllerTests
         var loanLogs = loanLogRes2.Result
             .Should().BeOfType<OkObjectResult>().Which.Value
             .Should().BeOfType<List<ServerLoanLogResponse>>().Which;
-        loanLogs.Any(l => l.Action == "EarlyRepay" && l.Amount == -used1).Should().BeTrue();
-        loanLogs.Any(l => l.Action == "EarlyRepay" && l.Amount == -remain).Should().BeTrue();
+        loanLogs.Where(l => l.Action == "EarlyRepay").Select(l => l.Amount).Should().Equal(-remain);
     }
 
     [Fact(DisplayName = "overdue: 延滞していなければ overdue=false を返す")]
