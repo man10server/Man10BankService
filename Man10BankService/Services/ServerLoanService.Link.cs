@@ -68,7 +68,7 @@ public partial class ServerLoanService
                 return ApiResult<bool>.Fail(ErrorCode.LinkInvalidTarget);
             if (await db.ServerLoanMembers.AnyAsync(x => x.Uuid == uuid))
                 return ApiResult<bool>.Fail(ErrorCode.LinkAlreadyLinked);
-            if (await HasMembersAsync(db, uuid))
+            if (await ServerLoanRepository.HasMembersAsync(db, uuid))
                 return ApiResult<bool>.Fail(ErrorCode.LinkHasMembers);
             if (await IsEitherOverdueAsync(db, uuid, ownerUuid))
                 return ApiResult<bool>.Fail(ErrorCode.LinkBlockedByOverdue);
@@ -98,7 +98,7 @@ public partial class ServerLoanService
             // 申請を受けた後に、本垢が他の契約に参加した場合は承認できない。
             if (await ServerLoanRepository.ResolveContractUuidAsync(db, ownerUuid) != ownerUuid)
                 return ApiResult<bool>.Fail(ErrorCode.LinkAlreadyLinked);
-            if (await HasMembersAsync(db, memberUuid))
+            if (await ServerLoanRepository.HasMembersAsync(db, memberUuid))
                 return ApiResult<bool>.Fail(ErrorCode.LinkHasMembers);
             if (await IsEitherOverdueAsync(db, memberUuid, ownerUuid))
                 return ApiResult<bool>.Fail(ErrorCode.LinkBlockedByOverdue);
@@ -167,7 +167,7 @@ public partial class ServerLoanService
             ownerUuid = await ServerLoanRepository.ResolveContractUuidAsync(db, targetUuid);
             if (ownerUuid == memberUuid)
                 return ApiResult<bool>.Fail(ErrorCode.LinkInvalidTarget);
-            if (await HasMembersAsync(db, memberUuid))
+            if (await ServerLoanRepository.HasMembersAsync(db, memberUuid))
                 return ApiResult<bool>.Fail(ErrorCode.LinkHasMembers);
 
             var row = await db.ServerLoanMembers.FirstOrDefaultAsync(x => x.Uuid == memberUuid);

@@ -125,12 +125,6 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
         return await db.ServerLoans.AsNoTracking().ToListAsync();
     }
 
-    public async Task<ServerLoan?> GetByUuidAsync(string uuid)
-    {
-        await using var db = await factory.CreateDbContextAsync();
-        return await db.ServerLoans.AsNoTracking().FirstOrDefaultAsync(x => x.Uuid == uuid);
-    }
-
     // トランザクション合成用のコアメソッド。
     // 既にロック取得済みの loan エンティティ(同一 context にアタッチ済み)に対して
     // 残債(BorrowAmount)を更新し、ログを同一 context に追加する。SaveChanges / Commit は呼び出し側。
@@ -194,21 +188,20 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
     {
         await using var db = await factory.CreateDbContextAsync();
         var debt = await GetDebtAsync(db, uuid) ?? 0m;
-        var logs = await db.ServerLoanLogs
+        return (debt, await GetLogsOldestFirstAsync(db, uuid));
+    }
+
+    // 契約の全ログ(古い順)。借入枠はこの並びを先頭からたどって求める。
+    public static async Task<List<ServerLoanLog>> GetLogsOldestFirstAsync(BankDbContext db, string uuid)
+    {
+        return await db.ServerLoanLogs
             .AsNoTracking()
             .Where(x => x.Uuid == uuid)
             .OrderBy(x => x.Date).ThenBy(x => x.Id)
             .ToListAsync();
-        return (debt, logs);
     }
 
-    // 直近の定期返済(週次)が失敗かどうか。早期返済は判定に含めない。
-    public async Task<bool> IsLatestScheduledRepayFailureAsync(string uuid)
-    {
-        await using var db = await factory.CreateDbContextAsync();
-        return await IsLatestScheduledRepayFailureAsync(db, uuid);
-    }
-
+    // 直近の定期返済(週次)が失敗かどうか。手動返済は判定に含めない。
     public static async Task<bool> IsLatestScheduledRepayFailureAsync(BankDbContext db, string uuid)
     {
         var latest = await GetLatestScheduledRepayLogAsync(db, uuid);
