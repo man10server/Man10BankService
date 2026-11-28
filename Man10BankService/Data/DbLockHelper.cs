@@ -29,14 +29,14 @@ public static class DbLockHelper
         return await db.UserBanks.FirstOrDefaultAsync(x => x.Uuid == uuid);
     }
 
-    // server_loan の行を UUID で取得する。MySQL 時は FOR UPDATE で行ロックする。
+    // サーバーローンの契約(server_loan_contract)の行を UUID で取得する。MySQL 時は FOR UPDATE で行ロックする。
     // 該当行が無ければ null。
     public static async Task<Models.Database.ServerLoan?> GetServerLoanForUpdateAsync(BankDbContext db, string uuid)
     {
         if (IsMySql(db))
         {
             return await db.ServerLoans
-                .FromSqlInterpolated($"SELECT * FROM server_loan_tbl WHERE uuid = {uuid} FOR UPDATE")
+                .FromSqlInterpolated($"SELECT * FROM server_loan_contract WHERE uuid = {uuid} FOR UPDATE")
                 .FirstOrDefaultAsync();
         }
 

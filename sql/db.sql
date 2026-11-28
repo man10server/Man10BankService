@@ -166,6 +166,51 @@ create index server_estate_history_date_index
 create index server_estate_history_year_month_day_hour_index
     on server_estate_history (year, month, day, hour);
 
+create table server_loan_contract
+(
+    id             int auto_increment
+        primary key,
+    uuid           varchar(36)                        not null comment '契約の本垢',
+    player         varchar(16)                        not null comment '本垢の名前',
+    borrow_amount  decimal(20) default 0              not null comment '残債(元本 + 利息)',
+    payment_amount decimal(20) default 0              not null comment '支払額(設定)',
+    stop_interest  tinyint     default 0              not null comment '1 の間は利息を付けない',
+    last_pay_date  datetime default CURRENT_TIMESTAMP not null comment '前回返済日',
+    created_at     datetime default CURRENT_TIMESTAMP not null
+);
+
+create unique index server_loan_contract_uuid_unique
+    on server_loan_contract (uuid);
+
+create table server_loan_contract_log
+(
+    id         int auto_increment
+        primary key,
+    uuid       varchar(36)                        not null comment '契約の本垢',
+    player     varchar(16)                        not null comment '本垢の名前',
+    action     varchar(16)                        not null comment '操作の種類',
+    amount     decimal(20)                        not null comment '残債の増減',
+    debt_after decimal(20)                        not null comment '操作後の残債(監査用)',
+    actor_uuid varchar(36)                        null comment '操作したプレイヤー。自動処理・運営の調整は NULL',
+    date       datetime default CURRENT_TIMESTAMP not null
+);
+
+create index server_loan_contract_log_uuid_date_index
+    on server_loan_contract_log (uuid, date);
+
+create table server_loan_contract_member
+(
+    uuid         varchar(36)                        not null comment '参加するアカウント'
+        primary key,
+    owner_uuid   varchar(36)                        not null comment '参加先の契約の本垢(server_loan_contract.uuid)',
+    linked_by    varchar(16)                        not null comment '紐付けた人(依頼した本人、または運営)',
+    requested_at datetime default CURRENT_TIMESTAMP not null,
+    approved_at  datetime                           null comment '承認日時。NULL の間は承認待ち'
+);
+
+create index server_loan_contract_member_owner_uuid_index
+    on server_loan_contract_member (owner_uuid);
+
 create table server_loan_log
 (
     id     int auto_increment
@@ -181,19 +226,6 @@ create table server_loan_log
 
 create index server_loan_log_uuid_date_index
     on server_loan_log (uuid, date);
-
-create table server_loan_member
-(
-    uuid         varchar(36)                        not null comment '参加するアカウント'
-        primary key,
-    owner_uuid   varchar(36)                        not null comment '参加先の契約の本垢(server_loan_tbl.uuid)',
-    linked_by    varchar(16)                        not null comment '紐付けた人(申請した本人、または運営)',
-    requested_at datetime default CURRENT_TIMESTAMP not null,
-    approved_at  datetime                           null comment '承認日時。NULL の間は承認待ち'
-);
-
-create index server_loan_member_owner_uuid_index
-    on server_loan_member (owner_uuid);
 
 create table server_loan_tbl
 (

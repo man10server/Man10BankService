@@ -3,11 +3,11 @@ using Man10BankService.Repositories;
 
 namespace Man10BankService.Services;
 
-// 借入枠の計算。枠は DB に保存せず、契約のログ(server_loan_log)を古い順にたどって毎回求める。
+// 借入枠の計算。枠は DB に保存せず、契約のログ(server_loan_contract_log)を古い順にたどって毎回求める。
 // 期日どおりの定期返済を重ねると増え、定期返済に失敗すると減る。手動返済や延滞分の回収では変わらない。
 public partial class ServerLoanService
 {
-    // 借入枠の算定で参照するログの種類(server_loan_log.action の値)
+    // 借入枠の算定で参照するログの種類(server_loan_contract_log.action の値)
     private const string RepaySuccessAction = nameof(ServerLoanRepository.ServerLoanLogAction.RepaySuccess);
     private const string RepayFailureAction = nameof(ServerLoanRepository.ServerLoanLogAction.RepayFailure);
     private const string InterestAction = nameof(ServerLoanRepository.ServerLoanLogAction.Interest);

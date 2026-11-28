@@ -83,7 +83,7 @@ public partial class ServerLoanService
     {
         return await _bank.RunExclusiveAsync<bool>(async db =>
         {
-            // 1) server_loan 行ロック
+            // 1) 契約の行ロック
             var loan = await DbLockHelper.GetServerLoanForUpdateAsync(db, ownerUuid);
             if (loan == null)
                 return ApiResult<bool>.Ok(false);

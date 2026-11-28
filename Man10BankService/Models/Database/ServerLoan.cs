@@ -2,7 +2,7 @@ using System.ComponentModel.DataAnnotations;
 
 namespace Man10BankService.Models.Database;
 
-// サーバーローンの契約(server_loan_tbl)。1 プレイヤーにつき 1 行で、残債を持つ単位になる。
+// サーバーローンの契約(server_loan_contract)。1 プレイヤーにつき 1 行で、残債を持つ単位になる。
 // 他のプレイヤーの契約に参加しているアカウント(ServerLoanMember)は、自分の行ではなく参加先の行を使う。
 // 借入枠と延滞の状態は列に持たず、ログ(ServerLoanLog)から求める。
 public class ServerLoan
@@ -13,8 +13,6 @@ public class ServerLoan
     public required string Player { get; set; }
     [StringLength(36)]
     public required string Uuid { get; set; }
-    // 行を作った日時。
-    public DateTime BorrowDate { get; set; }
     // 前回返済日。返済(定期・手動・延滞分の回収)のたびに更新し、残債 0 から借りたときにも置き直す。
     public DateTime LastPayDate { get; set; }
     // 残債(元本 + 利息)。

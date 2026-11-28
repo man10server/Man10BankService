@@ -168,39 +168,30 @@ public class BankDbContext : DbContext
 
         modelBuilder.Entity<ServerLoan>(e =>
         {
-            e.ToTable("server_loan_tbl");
+            e.ToTable("server_loan_contract");
             e.HasKey(x => x.Id);
             e.HasIndex(x => x.Uuid).IsUnique();
-            e.HasIndex(x => new { x.Uuid, x.BorrowAmount });
+            e.Property(x => x.Uuid).HasColumnName("uuid");
             e.Property(x => x.BorrowAmount).HasColumnName("borrow_amount").HasPrecision(20, 0);
             e.Property(x => x.PaymentAmount).HasColumnName("payment_amount").HasPrecision(20, 0);
-            e.Property(x => x.BorrowDate).HasColumnName("borrow_date");
-            e.Property(x => x.LastPayDate).HasColumnName("last_pay_date");
-            e.Property(x => x.StopInterest).HasColumnName("stop_interest");
-            e.Property(x => x.Uuid).HasColumnName("uuid");
-            e.Property(x => x.Player).HasDefaultValue("");
-            e.Property(x => x.Uuid).HasDefaultValue("");
-            e.Property(x => x.BorrowDate).HasDefaultValueSql("CURRENT_TIMESTAMP").ValueGeneratedOnAdd();
-            e.Property(x => x.LastPayDate).HasDefaultValueSql("CURRENT_TIMESTAMP");
-            e.Property(x => x.StopInterest).HasDefaultValue(false);
+            e.Property(x => x.StopInterest).HasColumnName("stop_interest").HasDefaultValue(false);
+            e.Property(x => x.LastPayDate).HasColumnName("last_pay_date").HasDefaultValueSql("CURRENT_TIMESTAMP");
         });
 
         modelBuilder.Entity<ServerLoanLog>(e =>
         {
-            e.ToTable("server_loan_log");
+            e.ToTable("server_loan_contract_log");
             e.HasKey(x => x.Id);
             e.HasIndex(x => new { x.Uuid, x.Date });
             e.Property(x => x.Amount).HasPrecision(20, 0);
             e.Property(x => x.ActorUuid).HasColumnName("actor_uuid");
             e.Property(x => x.DebtAfter).HasColumnName("debt_after").HasPrecision(20, 0);
-            e.Property(x => x.Player).HasDefaultValue("");
-            e.Property(x => x.Uuid).HasDefaultValue("");
             e.Property(x => x.Date).HasDefaultValueSql("CURRENT_TIMESTAMP").ValueGeneratedOnAdd();
         });
 
         modelBuilder.Entity<ServerLoanMember>(e =>
         {
-            e.ToTable("server_loan_member");
+            e.ToTable("server_loan_contract_member");
             e.HasKey(x => x.Uuid);
             e.HasIndex(x => x.OwnerUuid);
             e.Property(x => x.OwnerUuid).HasColumnName("owner_uuid");
