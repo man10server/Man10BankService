@@ -3448,11 +3448,11 @@
                     "id",
                     "player",
                     "uuid",
-                    "borrowDate",
                     "lastPayDate",
                     "borrowAmount",
                     "paymentAmount",
-                    "stopInterest"
+                    "stopInterest",
+                    "legacy"
                 ],
                 "type": "object",
                 "properties": {
@@ -3465,10 +3465,6 @@
                     },
                     "uuid": {
                         "type": "string"
-                    },
-                    "borrowDate": {
-                        "type": "string",
-                        "format": "date-time"
                     },
                     "lastPayDate": {
                         "type": "string",
@@ -3483,6 +3479,9 @@
                         "format": "double"
                     },
                     "stopInterest": {
+                        "type": "boolean"
+                    },
+                    "legacy": {
                         "type": "boolean"
                     }
                 }
