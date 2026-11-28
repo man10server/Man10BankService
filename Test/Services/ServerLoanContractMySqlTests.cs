@@ -34,8 +34,8 @@ public class ServerLoanContractMySqlTests
         using var db = MySqlTestDbFactory.Create();
         var repo = new ServerLoanRepository(db.Factory, new FakePlayerProfileService());
 
-        await repo.SetBorrowAmountAsync(Uuid, "test-player", 5000m, 100m);
-        await repo.AdjustLoanAsync(Uuid, "test-player", 50m, ServerLoanRepository.ServerLoanLogAction.Interest);
+        await repo.SetBorrowAmountAsync(Uuid, 5000m, 100m);
+        await repo.AdjustLoanAsync(Uuid, 50m, ServerLoanRepository.ServerLoanLogAction.Interest);
 
         await using var ctx = await db.Factory.CreateDbContextAsync();
         var logs = await ctx.ServerLoanLogs.AsNoTracking().Where(x => x.Uuid == Uuid).OrderBy(x => x.Id).ToListAsync();
@@ -57,7 +57,7 @@ public class ServerLoanContractMySqlTests
         var repo = new ServerLoanRepository(db.Factory, new FakePlayerProfileService());
 
         (await repo.GetOrCreateByUuidAsync(Uuid)).BorrowAmount.Should().Be(0m);
-        var updated = await repo.AdjustLoanAsync(Uuid, "test-player", 1000m, ServerLoanRepository.ServerLoanLogAction.Borrow);
+        var updated = await repo.AdjustLoanAsync(Uuid, 1000m, ServerLoanRepository.ServerLoanLogAction.Borrow);
 
         updated!.BorrowAmount.Should().Be(1000m);
         (await repo.GetByUuidAsync(Uuid))!.BorrowAmount.Should().Be(1000m);

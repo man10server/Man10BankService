@@ -224,20 +224,20 @@ public partial class ServerLoanService
     private async Task<decimal> JoinContractCoreAsync(BankDbContext db, string memberUuid, string ownerUuid, bool resetLimit = false)
     {
         var repo = new ServerLoanRepository(_dbFactory, _profileService);
-        var owner = await repo.GetOrCreateForUpdateAsync(db, ownerUuid, string.Empty);
+        var owner = await repo.GetOrCreateForUpdateAsync(db, ownerUuid);
         var own = await DbLockHelper.GetServerLoanForUpdateAsync(db, memberUuid);
 
         var moved = Math.Max(0m, own?.BorrowAmount ?? 0m);
         if (own != null && moved > 0m)
-            ServerLoanRepository.AdjustLoanCore(db, own, string.Empty, -moved, ServerLoanRepository.ServerLoanLogAction.SetBorrowAmount, actorUuid: memberUuid);
+            ServerLoanRepository.AdjustLoanCore(db, own, -moved, ServerLoanRepository.ServerLoanLogAction.SetBorrowAmount, actorUuid: memberUuid);
 
         // 支払額が未設定の契約に残債が移ってきた場合は、借入時と同じく初期値を設定する。
         var needPayment = owner.PaymentAmount <= 0m && moved > 0m;
-        ServerLoanRepository.AdjustLoanCore(db, owner, string.Empty, moved, ServerLoanRepository.ServerLoanLogAction.MemberJoin, actorUuid: memberUuid);
+        ServerLoanRepository.AdjustLoanCore(db, owner, moved, ServerLoanRepository.ServerLoanLogAction.MemberJoin, actorUuid: memberUuid);
         if (needPayment)
             owner.PaymentAmount = CalculateInitialPaymentAmount(owner.BorrowAmount, linked: true);
         if (resetLimit)
-            ServerLoanRepository.AdjustLoanCore(db, owner, string.Empty, 0m, ServerLoanRepository.ServerLoanLogAction.LimitReset);
+            ServerLoanRepository.AdjustLoanCore(db, owner, 0m, ServerLoanRepository.ServerLoanLogAction.LimitReset);
 
         return moved;
     }
@@ -246,8 +246,8 @@ public partial class ServerLoanService
     private async Task LeaveContractCoreAsync(BankDbContext db, ServerLoanMember row)
     {
         var repo = new ServerLoanRepository(_dbFactory, _profileService);
-        var owner = await repo.GetOrCreateForUpdateAsync(db, row.OwnerUuid, string.Empty);
-        ServerLoanRepository.AdjustLoanCore(db, owner, string.Empty, 0m, ServerLoanRepository.ServerLoanLogAction.MemberLeave, actorUuid: row.Uuid);
+        var owner = await repo.GetOrCreateForUpdateAsync(db, row.OwnerUuid);
+        ServerLoanRepository.AdjustLoanCore(db, owner, 0m, ServerLoanRepository.ServerLoanLogAction.MemberLeave, actorUuid: row.Uuid);
         db.ServerLoanMembers.Remove(row);
     }
 

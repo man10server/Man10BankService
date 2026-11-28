@@ -193,7 +193,10 @@ public partial class ServerLoanService
                 return ApiResult<ServerLoan?>.Fail(ErrorCode.Conflict);
 
             // 1) server_loan 行ロック(MySQL 時 FOR UPDATE)
-            var loan = await repo.GetOrCreateForUpdateAsync(db, contractUuid, ContractPlayerName(contractUuid, uuid, resolvedPlayer));
+            var loan = await repo.GetOrCreateForUpdateAsync(db, contractUuid);
+            // 本垢自身が借りるときは、契約の行に持つ名前を最新の名前にしておく(改名への追従)。
+            if (contractUuid == uuid)
+                loan.Player = resolvedPlayer;
 
             // 2) ロック下の確定値で上限チェック
             if (loan.BorrowAmount + amount > limit)
@@ -203,7 +206,7 @@ public partial class ServerLoanService
             var needPayment = loan.PaymentAmount <= 0m;
 
             // 3) 債務加算 + ServerLoanLog
-            ServerLoanRepository.AdjustLoanCore(db, loan, ContractPlayerName(contractUuid, uuid, resolvedPlayer), amount, ServerLoanRepository.ServerLoanLogAction.Borrow, actorUuid: uuid);
+            ServerLoanRepository.AdjustLoanCore(db, loan, amount, ServerLoanRepository.ServerLoanLogAction.Borrow, actorUuid: uuid);
 
             if (needPayment)
                 loan.PaymentAmount = CalculateInitialPaymentAmount(amount, await HasMembersAsync(db, contractUuid));
@@ -237,7 +240,7 @@ public partial class ServerLoanService
             var contractUuid = await ServerLoanRepository.ResolveContractUuidAsync(db, uuid);
 
             // 1) server_loan 行ロック
-            var loan = await repo.GetOrCreateForUpdateAsync(db, contractUuid, ContractPlayerName(contractUuid, uuid, resolvedPlayer));
+            var loan = await repo.GetOrCreateForUpdateAsync(db, contractUuid);
             if (loan.BorrowAmount <= 0m)
                 return ApiResult<ServerLoan?>.Fail(ErrorCode.NoRepaymentNeeded);
 
@@ -245,15 +248,17 @@ public partial class ServerLoanService
             var pay = Math.Min(amount, loan.BorrowAmount);
 
             // 2) 操作したアカウントの口座を行ロックし、残高不足を判定
-            var accounts = await LockBankAccountsAsync(db, [uuid]);
-            if (TotalBalance(accounts) < pay)
+            var account = await DbLockHelper.GetUserBankForUpdateAsync(db, uuid);
+            if ((account?.Balance ?? 0m) < pay)
                 return ApiResult<ServerLoan?>.Fail(ErrorCode.InsufficientFunds);
 
             // 3) 残高減算 + MoneyLog
-            await WithdrawFromAccountsAsync(db, accounts, pay, "loan_repay", "サーバーローン返済", uuid, resolvedPlayer);
+            await BankRepository.ChangeBalanceCoreAsync(
+                db, uuid, resolvedPlayer, -pay,
+                "server_loan", "loan_repay", "サーバーローン返済", "system");
 
             // 4) 債務減算 + 返済ログ
-            ServerLoanRepository.AdjustLoanCore(db, loan, loan.Player, -pay, ServerLoanRepository.ServerLoanLogAction.EarlyRepay, actorUuid: uuid);
+            ServerLoanRepository.AdjustLoanCore(db, loan, -pay, ServerLoanRepository.ServerLoanLogAction.EarlyRepay, actorUuid: uuid);
 
             return ApiResult<ServerLoan?>.Ok(loan);
         });
@@ -266,24 +271,20 @@ public partial class ServerLoanService
     // 戻り値は、ログを記録したかどうか。
     private async Task<ApiResult<bool>> RepayScheduledAsync(string ownerUuid)
     {
-        var resolved = await _bank.ResolvePlayerNameAsync(ownerUuid);
-        if (!resolved.IsSuccess)
-            return ApiResult<bool>.Fail(resolved.Code);
-        var resolvedPlayer = resolved.Data!;
-
-        var repo = new ServerLoanRepository(_dbFactory, _profileService);
-
         return await _bank.RunExclusiveAsync<bool>(async db =>
         {
             // 1) server_loan 行ロック
-            var loan = await repo.GetOrCreateForUpdateAsync(db, ownerUuid, resolvedPlayer);
+            var loan = await DbLockHelper.GetServerLoanForUpdateAsync(db, ownerUuid);
+            if (loan == null)
+                return ApiResult<bool>.Ok(false);
+
             var debt = loan.BorrowAmount;
             if (debt <= 0m)
             {
                 if (!await ServerLoanRepository.IsLatestScheduledRepayFailureAsync(db, ownerUuid))
                     return ApiResult<bool>.Ok(false);
 
-                ServerLoanRepository.AdjustLoanCore(db, loan, loan.Player, 0m, ServerLoanRepository.ServerLoanLogAction.RepaySuccess);
+                ServerLoanRepository.AdjustLoanCore(db, loan, 0m, ServerLoanRepository.ServerLoanLogAction.RepaySuccess);
                 return ApiResult<bool>.Ok(true);
             }
 
@@ -297,15 +298,15 @@ public partial class ServerLoanService
             if (TotalBalance(accounts) < amount)
             {
                 // 残債は変えず、引き落とそうとした額を失敗として記録する(これで延滞になる)。
-                ServerLoanRepository.AdjustLoanCore(db, loan, loan.Player, amount, ServerLoanRepository.ServerLoanLogAction.RepayFailure);
+                ServerLoanRepository.AdjustLoanCore(db, loan, amount, ServerLoanRepository.ServerLoanLogAction.RepayFailure);
                 return ApiResult<bool>.Ok(true);
             }
 
             // 3) 残高減算 + MoneyLog
-            await WithdrawFromAccountsAsync(db, accounts, amount, "loan_repay", "サーバーローン返済", ownerUuid, resolvedPlayer);
+            await WithdrawFromAccountsAsync(db, accounts, amount, "loan_repay", "サーバーローン返済");
 
             // 4) 債務減算 + 返済ログ
-            ServerLoanRepository.AdjustLoanCore(db, loan, loan.Player, -amount, ServerLoanRepository.ServerLoanLogAction.RepaySuccess);
+            ServerLoanRepository.AdjustLoanCore(db, loan, -amount, ServerLoanRepository.ServerLoanLogAction.RepaySuccess);
             return ApiResult<bool>.Ok(true);
         });
     }
@@ -313,42 +314,38 @@ public partial class ServerLoanService
     // 延滞分の回収: 直近の定期返済が失敗のままの契約について、未回収分を銀行残高のある分だけ回収する。
     // 契約の全アカウント(本垢→参加が古い順)の口座から回収する。
     // 失敗額を回収しきるか残債が 0 になったら、0 円の成功ログを残して延滞を解消する(借入枠は増えない)。
-    private async Task<ApiResult<ServerLoan?>> CollectOverdueAsync(string uuid)
+    // 戻り値は、ログを記録したかどうか。
+    private async Task<ApiResult<bool>> CollectOverdueAsync(string ownerUuid)
     {
-        var resolved = await _bank.ResolvePlayerNameAsync(uuid);
-        if (!resolved.IsSuccess)
-            return ApiResult<ServerLoan?>.Fail(resolved.Code);
-        var resolvedPlayer = resolved.Data!;
-
-        var repo = new ServerLoanRepository(_dbFactory, _profileService);
-
-        return await _bank.RunExclusiveAsync<ServerLoan?>(async db =>
+        return await _bank.RunExclusiveAsync<bool>(async db =>
         {
-            var loan = await repo.GetOrCreateForUpdateAsync(db, uuid, resolvedPlayer);
-            if (loan.BorrowAmount <= 0m)
-                return ApiResult<ServerLoan?>.Fail(ErrorCode.NoRepaymentNeeded);
+            var loan = await DbLockHelper.GetServerLoanForUpdateAsync(db, ownerUuid);
+            if (loan == null || loan.BorrowAmount <= 0m)
+                return ApiResult<bool>.Ok(false);
 
-            var uncollected = await ServerLoanRepository.GetUncollectedOverdueAmountAsync(db, uuid);
+            // 延滞中でなければ(直近の定期返済が失敗でなければ)回収するものは無い。
+            var uncollected = await ServerLoanRepository.GetUncollectedOverdueAmountAsync(db, ownerUuid);
             if (uncollected is null)
-                return ApiResult<ServerLoan?>.Fail(ErrorCode.NoRepaymentNeeded);
+                return ApiResult<bool>.Ok(false);
 
-            var accounts = await LockBankAccountsAsync(db, await ServerLoanRepository.GetContractAccountUuidsAsync(db, uuid));
+            // 回収したい額(target)のうち、全員の口座にある分(amount)だけ回収する。
+            var accounts = await LockBankAccountsAsync(db, await ServerLoanRepository.GetContractAccountUuidsAsync(db, ownerUuid));
             var target = Math.Min(uncollected.Value, loan.BorrowAmount);
             var amount = Math.Min(target, TotalBalance(accounts));
             if (target > 0m && amount <= 0m)
-                return ApiResult<ServerLoan?>.Fail(ErrorCode.InsufficientFunds);
+                return ApiResult<bool>.Ok(false);
 
             if (amount > 0m)
             {
-                await WithdrawFromAccountsAsync(db, accounts, amount, "loan_overdue_collect", "サーバーローン延滞分の回収", uuid, resolvedPlayer);
-
-                ServerLoanRepository.AdjustLoanCore(db, loan, loan.Player, -amount, ServerLoanRepository.ServerLoanLogAction.OverdueCollect);
+                await WithdrawFromAccountsAsync(db, accounts, amount, "loan_overdue_collect", "サーバーローン延滞分の回収");
+                ServerLoanRepository.AdjustLoanCore(db, loan, -amount, ServerLoanRepository.ServerLoanLogAction.OverdueCollect);
             }
 
+            // 回収しきったら延滞を解消する。
             if (amount >= target)
-                ServerLoanRepository.AdjustLoanCore(db, loan, loan.Player, 0m, ServerLoanRepository.ServerLoanLogAction.RepaySuccess);
+                ServerLoanRepository.AdjustLoanCore(db, loan, 0m, ServerLoanRepository.ServerLoanLogAction.RepaySuccess);
 
-            return ApiResult<ServerLoan?>.Ok(loan);
+            return ApiResult<bool>.Ok(true);
         });
     }
 
@@ -373,10 +370,8 @@ public partial class ServerLoanService
 
     // 先頭の口座から順に、合計が amount になるまで引き落とす(残高 + MoneyLog。SaveChanges は呼び出し側)。
     // 呼び出し前に、口座の合計残高が amount 以上であることを確かめておくこと。
-    // actorUuid の口座には、解決済みの最新の名前 actorPlayer を使う。
-    private static async Task WithdrawFromAccountsAsync(
-        BankDbContext db, IEnumerable<UserBank> accounts, decimal amount, string note, string displayNote,
-        string actorUuid, string actorPlayer)
+    private async Task WithdrawFromAccountsAsync(
+        BankDbContext db, IEnumerable<UserBank> accounts, decimal amount, string note, string displayNote)
     {
         var remaining = amount;
         foreach (var account in accounts)
@@ -388,7 +383,8 @@ public partial class ServerLoanService
             if (withdraw <= 0m)
                 continue;
 
-            var player = account.Uuid == actorUuid ? actorPlayer : account.Player;
+            // 入出金ログには名簿の最新の名前を残す。名簿に無ければ口座の名前を使う。
+            var player = await _profileService.GetNameByUuidAsync(account.Uuid) ?? account.Player;
             await BankRepository.ChangeBalanceCoreAsync(
                 db, account.Uuid, player, -withdraw,
                 "server_loan", note, displayNote, "system");
@@ -450,13 +446,6 @@ public partial class ServerLoanService
     private static Task<bool> HasMembersAsync(BankDbContext db, string contractUuid)
     {
         return ServerLoanRepository.HasMembersAsync(db, contractUuid);
-    }
-
-    // 契約の行(server_loan_tbl.player)に書く本垢の名前。
-    // 操作したアカウントが本垢自身ならその名前を、参加しているアカウントなら空(既存の名前を保つ)を返す。
-    private static string ContractPlayerName(string contractUuid, string actorUuid, string actorPlayer)
-    {
-        return contractUuid == actorUuid ? actorPlayer : string.Empty;
     }
 
     // uuid が使う契約に残債があり延滞中(直近の定期返済が失敗のまま)かどうか。ローンが無いプレイヤーは false で、行は作らない。
@@ -626,7 +615,7 @@ public partial class ServerLoanService
             if (player == null)
                 return ApiResult<ServerLoan?>.Fail(ErrorCode.PlayerNotFound);
 
-            var loan = await repo.SetBorrowAmountAsync(contractUuid, player, amount, paymentAmount);
+            var loan = await repo.SetBorrowAmountAsync(contractUuid, amount, paymentAmount);
             return ApiResult<ServerLoan?>.Ok(loan);
         }
         catch (Exception)
@@ -719,7 +708,7 @@ public partial class ServerLoanService
         return candidate;
     }
     
-    private async Task<ApiResult<ServerLoan?>> AddDailyInterestAsync(string uuid, string player, bool linked)
+    private async Task<ApiResult<ServerLoan?>> AddDailyInterestAsync(string uuid, bool linked)
     {
         try
         {
@@ -735,10 +724,7 @@ public partial class ServerLoanService
             if (rounded <= 0m)
                 return ApiResult<ServerLoan?>.Ok(loan, ErrorCode.InterestZero);
 
-            var updated = await repo.AdjustLoanAsync(uuid,
-                string.IsNullOrWhiteSpace(player) ? loan.Player : player,
-                rounded,
-                ServerLoanRepository.ServerLoanLogAction.Interest);
+            var updated = await repo.AdjustLoanAsync(uuid, rounded, ServerLoanRepository.ServerLoanLogAction.Interest);
 
             return ApiResult<ServerLoan?>.Ok(updated);
         }
@@ -779,7 +765,7 @@ public partial class ServerLoanService
         {
             if (await repo.HasInterestLogOnDateAsync(loan.Uuid, date))
                 continue;
-            await AddDailyInterestAsync(loan.Uuid, loan.Player, linkedOwnerUuids.Contains(loan.Uuid));
+            await AddDailyInterestAsync(loan.Uuid, linkedOwnerUuids.Contains(loan.Uuid));
         }
     }
 

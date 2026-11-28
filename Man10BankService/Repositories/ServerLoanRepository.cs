@@ -84,17 +84,7 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
         var loan = await db.ServerLoans.AsNoTracking().FirstOrDefaultAsync(x => x.Uuid == uuid);
         if (loan != null) return loan;
 
-        var player = await profileService.GetNameByUuidAsync(uuid);
-        if (player == null) throw new ArgumentException("指定された UUID のプレイヤーが見つかりません。", nameof(uuid));
-        loan = new ServerLoan
-        {
-            Uuid = uuid,
-            Player = player,
-            BorrowAmount = 0m,
-            PaymentAmount = 0m,
-            LastPayDate = DateTime.UtcNow,
-            StopInterest = false,
-        };
+        loan = await NewContractAsync(uuid);
         await db.ServerLoans.AddAsync(loan);
         try
         {
@@ -112,22 +102,26 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
         return loan;
     }
 
-    // トランザクション内で server_loan 行を取得/作成する。
+    // トランザクション内で契約の行を取得する。無ければ残債 0 の行を作る。
     // 既存行は FOR UPDATE で行ロックする(MySQL 時)。作成も同一 context で行い、SaveChanges は呼ばない。
-    public async Task<ServerLoan> GetOrCreateForUpdateAsync(BankDbContext db, string uuid, string player)
+    public async Task<ServerLoan> GetOrCreateForUpdateAsync(BankDbContext db, string uuid)
     {
         var loan = await DbLockHelper.GetServerLoanForUpdateAsync(db, uuid);
         if (loan != null) return loan;
 
-        if (string.IsNullOrWhiteSpace(player))
-        {
-            var resolved = await profileService.GetNameByUuidAsync(uuid);
-            if (resolved == null)
-                throw new ArgumentException("指定された UUID のプレイヤーが見つかりません。", nameof(uuid));
-            player = resolved;
-        }
+        loan = await NewContractAsync(uuid);
+        await db.ServerLoans.AddAsync(loan);
+        return loan;
+    }
 
-        loan = new ServerLoan
+    // 残債 0 の新しい契約。本垢の名前は名簿から引く。名簿に無いプレイヤーの契約は作れない。
+    private async Task<ServerLoan> NewContractAsync(string uuid)
+    {
+        var player = await profileService.GetNameByUuidAsync(uuid);
+        if (player == null)
+            throw new ArgumentException("指定された UUID のプレイヤーが見つかりません。", nameof(uuid));
+
+        return new ServerLoan
         {
             Uuid = uuid,
             Player = player,
@@ -136,8 +130,6 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
             LastPayDate = DateTime.UtcNow,
             StopInterest = false,
         };
-        await db.ServerLoans.AddAsync(loan);
-        return loan;
     }
 
     public async Task<List<ServerLoan>> GetAllAsync()
@@ -157,12 +149,9 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
     // 残債(BorrowAmount)を更新し、ログを同一 context に追加する。SaveChanges / Commit は呼び出し側。
     // actorUuid には操作したプレイヤーを渡す(自動処理は null)。
     public static void AdjustLoanCore(
-        BankDbContext db, ServerLoan loan, string player, decimal delta, ServerLoanLogAction action,
+        BankDbContext db, ServerLoan loan, decimal delta, ServerLoanLogAction action,
         string? actorUuid = null)
     {
-        if (!string.IsNullOrWhiteSpace(player))
-            loan.Player = player;
-
         switch (action)
         {
             case ServerLoanLogAction.Borrow:
@@ -202,13 +191,13 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
     }
 
     // 単一 DbContext・単一トランザクションで残債を更新する独立メソッド。
-    public async Task<ServerLoan?> AdjustLoanAsync(string uuid, string player, decimal delta, ServerLoanLogAction action)
+    public async Task<ServerLoan?> AdjustLoanAsync(string uuid, decimal delta, ServerLoanLogAction action)
     {
         await using var db = await factory.CreateDbContextAsync();
         await using var tx = await db.Database.BeginTransactionAsync();
 
-        var loan = await GetOrCreateForUpdateAsync(db, uuid, player);
-        AdjustLoanCore(db, loan, player, delta, action);
+        var loan = await GetOrCreateForUpdateAsync(db, uuid);
+        AdjustLoanCore(db, loan, delta, action);
         await db.SaveChangesAsync();
         await tx.CommitAsync();
         return loan;
@@ -329,7 +318,7 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
         await using var db = await factory.CreateDbContextAsync();
         await using var tx = await db.Database.BeginTransactionAsync();
 
-        var loan = await GetOrCreateForUpdateAsync(db, uuid, string.Empty);
+        var loan = await GetOrCreateForUpdateAsync(db, uuid);
 
         loan.PaymentAmount = paymentAmount;
         await db.SaveChangesAsync();
@@ -337,25 +326,12 @@ public class ServerLoanRepository(IDbContextFactory<BankDbContext> factory, IPla
         return loan;
     }
 
-    public async Task<ServerLoan?> SetBorrowAmountAsync(string uuid, string player, decimal borrowAmount, decimal paymentAmount)
+    public async Task<ServerLoan?> SetBorrowAmountAsync(string uuid, decimal borrowAmount, decimal paymentAmount)
     {
         await using var db = await factory.CreateDbContextAsync();
         await using var tx = await db.Database.BeginTransactionAsync();
 
-        var loan = await DbLockHelper.GetServerLoanForUpdateAsync(db, uuid);
-        if (loan == null)
-        {
-            loan = new ServerLoan
-            {
-                Uuid = uuid,
-                Player = player,
-                BorrowAmount = 0m,
-                PaymentAmount = 0m,
-                LastPayDate = DateTime.UtcNow,
-                StopInterest = false,
-            };
-            await db.ServerLoans.AddAsync(loan);
-        }
+        var loan = await GetOrCreateForUpdateAsync(db, uuid);
         var delta = borrowAmount - loan.BorrowAmount;
 
         loan.BorrowAmount = borrowAmount;
